@@ -1,5 +1,5 @@
 [project]
-name = "ai-options-trader"
+name = "avocado"
 version = "0.1.0"
 description = "Execution-aware AI-assisted options selector using Alpaca."
 readme = "README.md"
@@ -16,6 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
+avocado = "ai_options_trader.cli:app"
 ai-options-trader = "ai_options_trader.cli:app"
 
 [tool.pytest.ini_options]

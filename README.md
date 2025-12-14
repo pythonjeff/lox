@@ -17,8 +17,8 @@ cp .env.example .env
 
 3. Run a dry-run selection:
 ```bash
-ai-options-trader --ticker NVDA --sentiment positive
-# (also supported)
+avocado select --ticker NVDA --sentiment positive
+# (alias also supported)
 ai-options-trader select --ticker NVDA --sentiment positive
 ```
 
