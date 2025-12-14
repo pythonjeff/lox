@@ -4,7 +4,7 @@ from typing import Dict
 import pandas as pd
 
 from ai_options_trader.config import Settings
-from ai_options_trader.macro.fred import FredClient, DEFAULT_SERIES
+from ai_options_trader.data.fred import FredClient, DEFAULT_SERIES
 from ai_options_trader.macro.transforms import (
     to_daily_index,
     merge_series_daily,

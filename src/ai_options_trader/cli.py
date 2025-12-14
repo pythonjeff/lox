@@ -110,7 +110,7 @@ def macro_equity_sensitivity(
     Quantify how equities move with rates/inflation expectations.
     """
     from ai_options_trader.macro.signals import build_macro_dataset
-    from ai_options_trader.macro.market import fetch_equity_daily_closes
+    from ai_options_trader.data.market import fetch_equity_daily_closes
     from ai_options_trader.macro.equity import returns, delta, latest_sensitivity_table
 
     settings = load_settings()
@@ -158,7 +158,7 @@ def macro_beta_adjusted_sensitivity(
     """
     from ai_options_trader.config import Settings
     from ai_options_trader.macro.signals import build_macro_dataset
-    from ai_options_trader.macro.market import fetch_equity_daily_closes
+    from ai_options_trader.data.market import fetch_equity_daily_closes
     from ai_options_trader.macro.equity import returns, delta
     from ai_options_trader.macro.equity_beta_adjusted import (
         strip_market_beta,
