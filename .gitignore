@@ -8,3 +8,6 @@ build/
 .mypy_cache/
 .coverage
 htmlcov/
+*.egg-info/
+data/cache/
+.DS_Store

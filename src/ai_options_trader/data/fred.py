@@ -79,5 +79,3 @@ class FredClient:
 
         df.to_csv(cache_path, index=False)
         return df
-
-

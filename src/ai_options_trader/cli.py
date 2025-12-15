@@ -13,6 +13,9 @@ from ai_options_trader.macro.signals import build_macro_state
 app = typer.Typer(add_completion=False, help="AI Options Trader CLI")
 macro_app = typer.Typer(add_completion=False, help="Macro signals and datasets")
 app.add_typer(macro_app, name="macro")
+tariff_app = typer.Typer(add_completion=False, help="Tariff / cost-push regime signals")
+app.add_typer(tariff_app, name="tariff")
+
 
 
 @app.command()
@@ -224,6 +227,64 @@ def macro_beta_adjusted_sensitivity(
     result = pd.concat(tables, axis=1).T
     print(result)
 
+@tariff_app.command("snapshot")
+def tariff_snapshot(
+    basket: str = typer.Option("import_retail_apparel", "--basket"),
+    start: str = typer.Option("2016-01-01", "--start"),
+    benchmark: str = typer.Option("XLY", "--benchmark", help="Sector or market benchmark (e.g., XLY, SPY)"),
+    refresh: bool = typer.Option(False, "--refresh"),
+):
+    """
+    Compute tariff/cost-push regime snapshot for an import-exposed basket.
+    """
+    from ai_options_trader.config import Settings
+    from ai_options_trader.data.fred import FredClient
+    from ai_options_trader.data.market import fetch_equity_daily_closes
+    from ai_options_trader.tariff.universe import BASKETS
+    from ai_options_trader.tariff.proxies import DEFAULT_COST_PROXY_SERIES
+    from ai_options_trader.tariff.signals import build_tariff_regime_state
+
+    settings = Settings()
+
+    if basket not in BASKETS:
+        raise typer.BadParameter(f"Unknown basket: {basket}. Choose from: {list(BASKETS.keys())}")
+
+    universe = BASKETS[basket].tickers
+
+    # --- Cost proxies (FRED) ---
+    fred = FredClient(api_key=settings.FRED_API_KEY)
+
+    frames = []
+    for col, sid in DEFAULT_COST_PROXY_SERIES.items():
+        df = fred.fetch_series(sid, start_date=start, refresh=refresh)
+        df = df.rename(columns={"value": col}).set_index("date")
+        frames.append(df[[col]])
+
+    cost_df = pd.concat(frames, axis=1).sort_index()
+
+    # Align to daily for merging with equities
+    cost_df = cost_df.resample("D").ffill()
+
+    # --- Equities (Alpaca) ---
+    symbols = sorted(set(universe + [benchmark]))
+    px = fetch_equity_daily_closes(
+        api_key=settings.ALPACA_API_KEY,
+        api_secret=settings.ALPACA_API_SECRET,
+        symbols=symbols,
+        start=start,
+    )
+    px = px.sort_index().ffill().dropna(how="all")
+
+    state = build_tariff_regime_state(
+        cost_df=cost_df,
+        equity_prices=px,
+        universe=universe,
+        benchmark=benchmark,
+        basket_name=basket,
+        start_date=start,
+    )
+
+    print(state)
 
 
 def main():
