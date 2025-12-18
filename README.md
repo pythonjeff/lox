@@ -1,4 +1,4 @@
-# Avocado 🥑 — options “spreads-first” research CLI (Alpaca)
+## Avocado 🥑 — options “spreads-first” research CLI (Alpaca)
 
 **Avocado** is a research-grade, execution-aware CLI that helps you go from **market view → spread idea → execution-ready legs** on Alpaca.
 
@@ -8,7 +8,7 @@ The core idea: **spreads are how you express an opinion with defined risk** (cre
 - **Pick liquid, reasonably-priced option legs** that fit constraints (DTE, delta, spread width, risk budget)
 - **Log and explain** why it chose what it chose, so you can trust (or override) it
 
-> Current state: the `select` command picks a **single best leg** (call/put) and prints sizing + diagnostics. It’s intentionally built as the *leg-selection engine* you need to construct verticals, calendars, iron condors, etc. (spreads wiring is the next natural step).
+> Current state: `select` and `ideas` pick **single legs** (call/put) and print sizing + diagnostics. This is intentionally the *leg-selection engine* you need to construct verticals, calendars, iron condors, etc. (spreads wiring is the next natural step).
 
 ## Quickstart
 
@@ -81,6 +81,54 @@ Notes:
 ```bash
 avocado regimes --llm --llm-model gpt-4o-mini --llm-temperature 0.2
 avocado regimes --baskets import_retail_apparel,big_box_retail --benchmark XLY
+```
+
+### Thesis-driven ideas (AI bubble + inflation underpriced in tech + tariffs underpriced)
+
+Generate a ranked idea list from the current regimes and factor sensitivities:
+
+```bash
+avocado ideas ai-bubble --top 15
+```
+
+Pull option chains and select a liquid **starter leg** per idea (calls/puts depending on direction):
+
+```bash
+avocado ideas ai-bubble --with-legs --top 10 --target-dte 45
+```
+
+Interactive review (one idea at a time), with optional **paper execution** (always asks for confirmation):
+
+```bash
+avocado ideas ai-bubble --interactive --with-legs --execute --top 10
+```
+
+Notes:
+- The idea engine is in `src/ai_options_trader/ideas/ai_bubble.py`
+- The option-leg selector “brain” is `src/ai_options_trader/strategy/selector.py`
+
+### Tracking (recommendations → executions → performance)
+
+Avocado logs every idea run and links executed orders to those recommendations in a local SQLite DB:
+- Default: `data/tracker.sqlite3`
+- Override: set `AOT_TRACKER_DB=/path/to/tracker.sqlite3`
+
+Show recent recommendations + executions:
+
+```bash
+avocado track recent --limit 20
+```
+
+Sync order status/fills from Alpaca into the local DB:
+
+```bash
+avocado track sync --limit 50
+```
+
+Quick performance snapshot (current Alpaca positions for tracked symbols):
+
+```bash
+avocado track report
 ```
 
 ### Equity sensitivity (optional: “what drives this stock?”)

@@ -21,6 +21,8 @@ class TariffInputs(BaseModel):
 class TariffRegimeState(BaseModel):
     asof: str
     start_date: str
+    basket: str | None = None
     universe: List[str]
+    benchmark: str | None = None
     inputs: TariffInputs
     notes: str = ""

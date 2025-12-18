@@ -17,6 +17,10 @@ class ScoredOption:
     strike: float
     dte_days: int
     delta: float
+    gamma: float | None
+    theta: float | None
+    vega: float | None
+    iv: float | None
     mid: float
     spread_pct: float
     oi: int
@@ -126,6 +130,10 @@ def choose_best_option(
             strike=strike,
             dte_days=dte_days,
             delta=delta,
+            gamma=getattr(c, "gamma", None),
+            theta=getattr(c, "theta", None),
+            vega=getattr(c, "vega", None),
+            iv=getattr(c, "iv", None),
             mid=mid,
             spread_pct=sp,
             oi=oi,

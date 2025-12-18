@@ -18,6 +18,10 @@ class OptionCandidate:
     strike: float
     dte_days: int
     delta: float | None
+    gamma: float | None
+    theta: float | None
+    vega: float | None
+    iv: float | None
     oi: int | None
     volume: int | None
     bid: float | None
@@ -49,6 +53,10 @@ def to_candidates(chain: dict[str, Any], ticker: str) -> Iterable[OptionCandidat
         trade = getattr(snap, "latest_trade", None)
 
         delta = getattr(greeks, "delta", None) if greeks else None
+        gamma = getattr(greeks, "gamma", None) if greeks else None
+        theta = getattr(greeks, "theta", None) if greeks else None
+        vega = getattr(greeks, "vega", None) if greeks else None
+        iv = getattr(snap, "implied_volatility", None)
         bid = getattr(quote, "bid_price", None) if quote else None
         ask = getattr(quote, "ask_price", None) if quote else None
         last = getattr(trade, "price", None) if trade else None
@@ -64,6 +72,10 @@ def to_candidates(chain: dict[str, Any], ticker: str) -> Iterable[OptionCandidat
             strike=0.0,
             dte_days=0,
             delta=float(delta) if delta is not None else None,
+            gamma=float(gamma) if gamma is not None else None,
+            theta=float(theta) if theta is not None else None,
+            vega=float(vega) if vega is not None else None,
+            iv=float(iv) if iv is not None else None,
             oi=int(oi) if oi is not None else None,
             volume=int(vol) if vol is not None else None,
             bid=float(bid) if bid is not None else None,
