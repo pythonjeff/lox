@@ -1,154 +1,189 @@
-## Avocado 🥑 — options “spreads-first” research CLI (Alpaca)
+## Avocado — systematic options idea generation & execution (Alpaca)
 
-**Avocado** is a research-grade, execution-aware CLI that helps you go from **market view → spread idea → execution-ready legs** on Alpaca.
+**Avocado** is a research and execution CLI designed to turn a macro thesis into **tradeable options expressions**:
+- **Regime-aware context** (macro + tariff/cost-push)
+- **Deterministic contract selection** (DTE / delta / spread / liquidity)
+- **Explainability** (why an idea exists, what inputs drove it, and what to check next)
+- **Paper execution + tracking** (log recommendations, link executed orders, track P&L)
 
-The core idea: **spreads are how you express an opinion with defined risk** (credit/debit, capped downside, volatility-aware). Avocado’s job is to:
-
-- **Decide direction / bias** (sentiment + macro regime context)
-- **Pick liquid, reasonably-priced option legs** that fit constraints (DTE, delta, spread width, risk budget)
-- **Log and explain** why it chose what it chose, so you can trust (or override) it
-
-> Current state: `select` and `ideas` pick **single legs** (call/put) and print sizing + diagnostics. This is intentionally the *leg-selection engine* you need to construct verticals, calendars, iron condors, etc. (spreads wiring is the next natural step).
+**Important**: This is a research tool. Nothing here is financial advice. Use paper trading first.
 
 ## Quickstart
 
-1. Create a virtualenv and install:
 ```bash
+cd /path/to/repo
 pip install -e .
-```
-
-2. Copy env template and set keys:
-```bash
 cp .env.example .env
 ```
 
-3. Run a dry-run selection:
-```bash
-avocado select --ticker NVDA --sentiment positive
-# (alias also supported)
-ai-options-trader select --ticker NVDA --sentiment positive
-```
+Minimum environment:
+- **Alpaca**: `ALPACA_API_KEY`, `ALPACA_API_SECRET` (and optionally `ALPACA_DATA_KEY`, `ALPACA_DATA_SECRET`)
+- **FRED**: `FRED_API_KEY` (for macro/tariff signals)
+- **LLM (optional)**: `OPENAI_API_KEY`, `OPENAI_MODEL`
+- **FMP (optional, recommended for news/calendar)**: `FMP_API_KEY`
 
-> By default this is **dry-run only** (no orders are submitted).
->
-> Note: Alpaca's `get_option_chain()` snapshots may not include open interest / volume. In that case, those thresholds are treated as best-effort (only enforced when the fields are present). Use `--debug` to see filter diagnostics.
+## Core workflow (recommended)
 
-## What Avocado can do today
-
-### Options leg selection (spread building block)
-
-- **Input**: ticker + sentiment (`positive` → calls, `negative` → puts)
-- **Filters**: DTE window, delta target, bid/ask spread sanity, (best-effort) liquidity
-- **Output**: an option contract symbol + pricing + position sizing budget
-
-```bash
-avocado select --ticker AAPL --sentiment positive --target-dte 30 --debug
-```
-
-### Macro regime + datasets (context for spreads)
-
-Avocado also computes a lightweight macro state and a simple “regime” label you can use to choose spread structures (e.g., defined-risk premium selling vs directional debit spreads).
-
-```bash
-avocado macro snapshot
-```
-
-### Regime dashboard (macro + tariff baskets) + LLM summary
-
-Print **macro regime + tariff/cost-push regimes** across all baskets:
+### 1) Inspect regimes (macro + tariff) and optional LLM readout
 
 ```bash
 avocado regimes
+avocado regimes --llm
 ```
 
-See available tariff baskets:
+List available tariff baskets:
 
 ```bash
 avocado tariff baskets
 ```
 
-Have an LLM read the regimes and produce a short **summary + risks + follow-up checklist**:
-
-```bash
-avocado regimes --llm
-```
-
-Notes:
-- **Data requirements**: tariff regimes require Alpaca **data** keys (or trading keys) + `FRED_API_KEY`.
-- **LLM requirements**: `OPENAI_API_KEY` (and optionally `OPENAI_MODEL` in `.env`).
-- **Optional overrides**:
-
-```bash
-avocado regimes --llm --llm-model gpt-4o-mini --llm-temperature 0.2
-avocado regimes --baskets import_retail_apparel,big_box_retail --benchmark XLY
-```
-
-### Thesis-driven ideas (AI bubble + inflation underpriced in tech + tariffs underpriced)
-
-Generate a ranked idea list from the current regimes and factor sensitivities:
+### 2) Generate thesis-driven ideas (AI bubble / inflation / tariffs)
 
 ```bash
 avocado ideas ai-bubble --top 15
 ```
 
-Pull option chains and select a liquid **starter leg** per idea (calls/puts depending on direction):
+Pull option chains and select a liquid **starter leg** per idea:
 
 ```bash
 avocado ideas ai-bubble --with-legs --top 10 --target-dte 45
 ```
 
-Interactive review (one idea at a time), with optional **paper execution** (always asks for confirmation):
+### 3) Review ideas one-by-one and optionally execute (paper)
 
 ```bash
 avocado ideas ai-bubble --interactive --with-legs --execute --top 10
 ```
 
-Notes:
-- The idea engine is in `src/ai_options_trader/ideas/ai_bubble.py`
-- The option-leg selector “brain” is `src/ai_options_trader/strategy/selector.py`
+Execution safety:
+- Orders are only sent when you confirm interactively
+- When `ALPACA_PAPER` is false, execution is refused
 
-### Tracking (recommendations → executions → performance)
+## Architecture
 
-Avocado logs every idea run and links executed orders to those recommendations in a local SQLite DB:
-- Default: `data/tracker.sqlite3`
-- Override: set `AOT_TRACKER_DB=/path/to/tracker.sqlite3`
+High-level pipeline:
 
-Show recent recommendations + executions:
+```text
+                ┌───────────────────────────────────────────────────────────┐
+                │                         CLI (Typer)                       │
+                │                   src/ai_options_trader/cli.py            │
+                └───────────────┬───────────────────────────────┬──────────┘
+                                │                               │
+                                │                               │
+                 ┌──────────────▼───────────────┐  ┌───────────▼───────────┐
+                 │     Regimes / Datasets       │  │     Thesis → Ideas     │
+                 │  macro/*  tariff/*  data/*   │  │  ideas/ai_bubble.py    │
+                 └──────────────┬───────────────┘  └───────────┬───────────┘
+                                │                               │
+                                │                               │
+                  ┌─────────────▼─────────────┐    ┌───────────▼───────────┐
+                  │     Data Providers        │    │   Option Leg Selector  │
+                  │  FRED (fred.py)           │    │ strategy/selector.py   │
+                  │  Alpaca (market.py,       │    │ (filters + scoring +   │
+                  │         alpaca.py)         │    │  sizing hooks)         │
+                  └─────────────┬─────────────┘    └───────────┬───────────┘
+                                │                               │
+                                │                               │
+                      ┌─────────▼─────────┐           ┌─────────▼─────────┐
+                      │  Execution (opt)  │           │ Tracking (SQLite) │
+                      │ execution/alpaca  │           │ tracking/store.py │
+                      └─────────┬─────────┘           └─────────┬─────────┘
+                                │                               │
+                                └───────────────┬───────────────┘
+                                                │
+                                      ┌─────────▼─────────┐
+                                      │ Reports / Sync     │
+                                      │ `avocado track …`  │
+                                      └────────────────────┘
+```
+
+Where the “brains” live:
+- **Idea engine (direction + ranking + explainability)**: `src/ai_options_trader/ideas/ai_bubble.py`
+- **Regimes**:
+  - Macro dataset/state: `src/ai_options_trader/macro/signals.py`
+  - Macro regime label: `src/ai_options_trader/macro/regime.py`
+  - Tariff regime: `src/ai_options_trader/tariff/signals.py`
+- **Option selector (filters + scoring)**: `src/ai_options_trader/strategy/selector.py`
+- **Order submission (paper/live guardrails)**: `src/ai_options_trader/execution/alpaca.py`
+- **Tracker DB**: `src/ai_options_trader/tracking/store.py`
+
+## Tracking & reporting
+
+Avocado logs:
+- Every **recommendation** (per run id)
+- Every **execution** (links Alpaca order id back to the recommendation)
+
+Storage:
+- Default SQLite DB: `data/tracker.sqlite3`
+- Override: `AOT_TRACKER_DB=/path/to/tracker.sqlite3`
+
+Commands:
 
 ```bash
 avocado track recent --limit 20
-```
-
-Sync order status/fills from Alpaca into the local DB:
-
-```bash
 avocado track sync --limit 50
-```
-
-Quick performance snapshot (current Alpaca positions for tracked symbols):
-
-```bash
 avocado track report
 ```
 
-### Equity sensitivity (optional: “what drives this stock?”)
+## What to edit (the “brains”)
 
-Useful for deciding whether to structure spreads around rates / breakevens sensitivity.
+- **Idea engine (thesis → ranked tickers + direction + why)**: `src/ai_options_trader/ideas/ai_bubble.py`
+- **Option selector (filters + scoring + sizing)**: `src/ai_options_trader/strategy/selector.py`
+- **Risk sizing constraints**: `src/ai_options_trader/strategy/risk.py` and `src/ai_options_trader/config.py`
+- **Data inputs**:
+  - FRED: `src/ai_options_trader/data/fred.py`
+  - Alpaca option snapshots / greeks: `src/ai_options_trader/data/alpaca.py`
+
+## Command reference (high signal)
+
+### Macro
 
 ```bash
+avocado macro snapshot
+avocado macro news --provider fmp --days 7
+avocado macro outlook --provider fmp --days 7
 avocado macro equity-sensitivity --tickers NVDA,AMD,MSFT,GOOGL --benchmark QQQ
 avocado macro beta-adjusted-sensitivity --tickers NVDA,AMD,MSFT,GOOGL --benchmark QQQ
 ```
 
-## Why “spreads-first”
+### News & sentiment (positions / tickers)
 
-If you’re trading options in the real world, “pick a contract” isn’t the end goal. You usually want:
+Summarize recent ticker-specific news (uses Alpaca open positions by default, or pass tickers explicitly):
 
-- **Defined risk**: cap worst-case loss
-- **Cleaner thesis expression**: directional view + volatility view
-- **Better fills**: choose liquid legs and sane bid/ask conditions
+```bash
+avocado track news-brief --provider fmp --days 7 --tickers AAPL,MSFT
+avocado track news-brief --provider fmp --days 7
+```
 
-Avocado is designed to make that workflow systematic: **select legs first, then compose them into spreads**.
+Explain mode (includes reasons + evidence indices and prints indexed inputs):
+
+```bash
+avocado track news-brief --provider fmp --days 7 --tickers AAPL --explain
+```
+
+### Single-name leg selection
+
+```bash
+avocado select --ticker AAPL --sentiment positive --target-dte 30 --debug
+```
+
+### Tariff
+
+```bash
+avocado tariff snapshot --basket import_retail_apparel --benchmark XLY
+avocado tariff baskets
+```
+
+## Notes & limitations
+
+- **Option snapshot completeness varies**: OI/volume/greeks may be missing; filters are best-effort when fields are absent.
+- **This repo is “legs-first”**: verticals/condors/etc. are the next layer (compose legs into spreads).
+- **Cache**: FRED data is cached under `data/cache/` (recommended: do not commit cache artifacts).
+- **News sources**:
+  - Ticker news uses **FMP** `stock_news` (provider `fmp`) and filters to your lookback window.
+  - Macro news uses **FMP** `general_news` (provider `fmp`) and topic-tags items heuristically.
+- **Economic “What to watch”**: uses **FMP** `economic_calendar` when available for next release dates; falls back to official schedule scraping when needed.
 
 ## Roadmap
+
 See `docs/OBJECTIVES.md`.
