@@ -20,7 +20,7 @@ dependencies = [
 
 [project.scripts]
 lox = "ai_options_trader.cli:app"
-# Back-compat alias (can be removed later)
+# Back-compat aliases (can be removed later)
 avocado = "ai_options_trader.cli:app"
 ai-options-trader = "ai_options_trader.cli:app"
 

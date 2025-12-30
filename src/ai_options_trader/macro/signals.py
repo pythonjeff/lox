@@ -15,7 +15,7 @@ from ai_options_trader.macro.transforms import (
 from ai_options_trader.macro.models import MacroState, MacroInputs
 
 
-def build_macro_dataset(settings: Settings, start_date: str = "2016-01-01", refresh: bool = False) -> pd.DataFrame:
+def build_macro_dataset(settings: Settings, start_date: str = "2011-01-01", refresh: bool = False) -> pd.DataFrame:
     if not settings.FRED_API_KEY:
         raise RuntimeError("Missing FRED_API_KEY in environment / .env")
 
@@ -40,6 +40,15 @@ def build_macro_dataset(settings: Settings, start_date: str = "2016-01-01", refr
         core["CORE_CPI_YOY"] = core["value"].pct_change(12) * 100.0
         series_frames["CPILFESL"] = core
 
+    # Compute payroll-derived metrics on the *monthly* payroll observations, then ffill onto daily grid.
+    # PAYEMS is a level series (thousands of employees).
+    if "PAYEMS" in series_frames:
+        p = series_frames["PAYEMS"].copy().sort_values("date")
+        p["PAYROLLS_YOY"] = p["value"].pct_change(12) * 100.0
+        p["PAYROLLS_MOM"] = p["value"].pct_change(1) * 100.0
+        p["PAYROLLS_3M_ANN"] = ((p["value"] / p["value"].shift(3)) ** (12.0 / 3.0) - 1.0) * 100.0
+        series_frames["PAYEMS"] = p
+
     # Create daily index and merge (monthly series will be forward-filled)
     # Use the max date across all series
     max_date = max(df["date"].max() for df in series_frames.values())
@@ -60,8 +69,33 @@ def build_macro_dataset(settings: Settings, start_date: str = "2016-01-01", refr
     return merged
 
 
-def build_macro_state(settings: Settings, start_date: str = "2016-01-01", refresh: bool = False) -> MacroState:
+def build_macro_state(settings: Settings, start_date: str = "2011-01-01", refresh: bool = False) -> MacroState:
+    return build_macro_state_at(
+        settings=settings,
+        start_date=start_date,
+        refresh=refresh,
+        asof=None,
+    )
+
+
+def build_macro_state_at(
+    settings: Settings,
+    start_date: str = "2011-01-01",
+    refresh: bool = False,
+    asof: str | None = None,
+) -> MacroState:
+    """
+    Build a MacroState as-of a given date (inclusive).
+
+    If asof is None, uses the latest available observation.
+    """
     df = build_macro_dataset(settings=settings, start_date=start_date, refresh=refresh)
+    if asof:
+        asof_ts = pd.to_datetime(asof)
+        df = df[df["date"] <= asof_ts]
+        if df.empty:
+            raise ValueError(f"No macro data available on or before asof={asof} (start_date={start_date}).")
+
     last = df.dropna(subset=["CPIAUCSL", "DGS10", "T5YIE"]).iloc[-1]
 
     inputs = MacroInputs(
@@ -71,6 +105,9 @@ def build_macro_state(settings: Settings, start_date: str = "2016-01-01", refres
         cpi_6m_annualized=float(last["CPI_6M_ANN"]) if pd.notna(last["CPI_6M_ANN"]) else None,
         breakeven_5y=float(last["T5YIE"]) if pd.notna(last["T5YIE"]) else None,
         breakeven_10y=float(last["T10YIE"]) if pd.notna(last["T10YIE"]) else None,
+        payrolls_yoy=float(last["PAYROLLS_YOY"]) if "PAYROLLS_YOY" in last and pd.notna(last["PAYROLLS_YOY"]) else None,
+        payrolls_3m_annualized=float(last["PAYROLLS_3M_ANN"]) if "PAYROLLS_3M_ANN" in last and pd.notna(last["PAYROLLS_3M_ANN"]) else None,
+        payrolls_mom=float(last["PAYROLLS_MOM"]) if "PAYROLLS_MOM" in last and pd.notna(last["PAYROLLS_MOM"]) else None,
         eff_fed_funds=float(last["DFF"]) if pd.notna(last["DFF"]) else None,
         ust_2y=float(last["DGS2"]) if pd.notna(last["DGS2"]) else None,
         ust_10y=float(last["DGS10"]) if pd.notna(last["DGS10"]) else None,

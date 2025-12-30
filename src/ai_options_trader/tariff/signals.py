@@ -61,7 +61,7 @@ def build_tariff_regime_state(
     universe: list[str] | None = None,
     benchmark: str = "XLY",
     basket_name: str = "import_retail_apparel",
-    start_date: str = "2016-01-01",
+    start_date: str = "2011-01-01",
     spec: TariffRegimeSpec = DEFAULT_TARIFF_SPEC,
 ) -> TariffRegimeState:
     """

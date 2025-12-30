@@ -15,6 +15,11 @@ class MacroInputs(BaseModel):
     breakeven_5y: Optional[float] = None
     breakeven_10y: Optional[float] = None
 
+    # Labor market
+    payrolls_yoy: Optional[float] = None  # PAYEMS YoY % change
+    payrolls_3m_annualized: Optional[float] = None  # PAYEMS 3m annualized % change
+    payrolls_mom: Optional[float] = None  # PAYEMS MoM % change
+
     # Rates
     eff_fed_funds: Optional[float] = None
     ust_2y: Optional[float] = None

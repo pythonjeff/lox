@@ -10,4 +10,7 @@ build/
 htmlcov/
 *.egg-info/
 data/cache/
+data/tracker.sqlite3
+data/tracker.sqlite3-shm
+data/tracker.sqlite3-wal
 .DS_Store

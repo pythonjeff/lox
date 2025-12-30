@@ -18,6 +18,8 @@ DEFAULT_SERIES = {
     # inflation "reality"
     "CPIAUCSL": FredSeries("CPIAUCSL", "monthly"),
     "CPILFESL": FredSeries("CPILFESL", "monthly"),
+    # labor market
+    "PAYEMS": FredSeries("PAYEMS", "monthly"),  # Total Nonfarm Payrolls (level)
     # inflation "expectations"
     "T5YIE": FredSeries("T5YIE", "daily"),
     "T10YIE": FredSeries("T10YIE", "daily"),
@@ -40,7 +42,7 @@ class FredClient:
     def fetch_series(
         self,
         series_id: str,
-        start_date: str = "2016-01-01",
+        start_date: str = "2011-01-01",
         refresh: bool = False,
     ) -> pd.DataFrame:
         """

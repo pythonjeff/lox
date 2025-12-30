@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 from ai_options_trader.config import Settings
-from ai_options_trader.econ_release import fetch_fmp_economic_calendar, normalize_fmp_economic_calendar, next_release
+from ai_options_trader.data.econ_release import fetch_fmp_economic_calendar, normalize_fmp_economic_calendar, next_release
 from ai_options_trader.data.fred import FredClient
 import pandas as pd
 

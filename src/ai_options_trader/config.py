@@ -14,7 +14,6 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     OPENAI_MODEL: str = "gpt-4o-mini"
     FRED_API_KEY: str | None = None
-    FMP_API_KEY: str | None = None
 
     # Backwards-compatible snake_case accessors used across the codebase.
     # Pydantic v2 uses field names as attribute names; these properties allow both styles.
@@ -50,10 +49,6 @@ class Settings(BaseSettings):
     def fred_api_key(self) -> str | None:
         return self.FRED_API_KEY
 
-    @property
-    def fmp_api_key(self) -> str | None:
-        return self.FMP_API_KEY
-
 class StrategyConfig(BaseModel):
     target_dte_days: int = 30
     target_delta_abs: float = 0.35
@@ -70,10 +65,4 @@ class RiskConfig(BaseModel):
     max_premium_per_contract: float | None = None  # e.g., 5.00 means $500/contract
 
 def load_settings() -> Settings:
-    # In normal local usage, `.env` is readable and will be used (see model_config env_file).
-    # In some restricted environments (e.g., sandboxes where `.env` is not accessible),
-    # attempting to read it can raise PermissionError. Fall back to "no env file".
-    try:
-        return Settings()
-    except PermissionError:
-        return Settings(_env_file=None)
+    return Settings()

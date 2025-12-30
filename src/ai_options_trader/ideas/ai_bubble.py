@@ -7,7 +7,7 @@ import pandas as pd
 
 from ai_options_trader.config import Settings
 from ai_options_trader.ideas.models import Idea
-from ai_options_trader.macro.regime import classify_macro_regime
+from ai_options_trader.macro.regime import classify_macro_regime_from_state
 from ai_options_trader.macro.signals import build_macro_dataset, build_macro_state
 from ai_options_trader.macro.equity import delta as series_delta
 from ai_options_trader.macro.equity import latest_sensitivity_table, returns as price_returns
@@ -47,7 +47,7 @@ def _rank01(values: pd.Series) -> pd.Series:
 def build_ai_bubble_ideas(
     *,
     settings: Settings,
-    start_date: str = "2016-01-01",
+    start_date: str = "2011-01-01",
     refresh: bool = False,
     macro_window: int = 252,
     macro_benchmark: str = "QQQ",
@@ -69,9 +69,17 @@ def build_ai_bubble_ideas(
 
     # --- Macro regime ---
     macro_state = build_macro_state(settings=settings, start_date=start_date, refresh=refresh)
-    macro_regime = classify_macro_regime(
-        inflation_momentum_minus_be=macro_state.inputs.inflation_momentum_minus_be5y,
-        real_yield=macro_state.inputs.real_yield_proxy_10y,
+    macro_regime = classify_macro_regime_from_state(
+        cpi_yoy=macro_state.inputs.cpi_yoy,
+        payrolls_3m_annualized=macro_state.inputs.payrolls_3m_annualized,
+        inflation_momentum_minus_be5y=macro_state.inputs.inflation_momentum_minus_be5y,
+        real_yield_proxy_10y=macro_state.inputs.real_yield_proxy_10y,
+        z_inflation_momentum_minus_be5y=macro_state.inputs.components.get("z_infl_mom_minus_be5y") if macro_state.inputs.components else None,
+        z_real_yield_proxy_10y=macro_state.inputs.components.get("z_real_yield_proxy_10y") if macro_state.inputs.components else None,
+        use_zscores=True,
+        cpi_target=3.0,
+        infl_thresh=0.0,
+        real_thresh=0.0,
     )
 
     # Signals we already compute
