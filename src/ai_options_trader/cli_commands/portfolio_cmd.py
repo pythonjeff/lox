@@ -23,7 +23,7 @@ from ai_options_trader.usd.signals import build_usd_state
 def register(app: typer.Typer) -> None:
     @app.command("portfolio")
     def portfolio(
-        start: str = typer.Option("2011-01-01", "--start", help="Start date YYYY-MM-DD for price + regime datasets"),
+        start: str = typer.Option("2012-01-01", "--start", help="Start date YYYY-MM-DD for price + regime datasets"),
         refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads (regimes)"),
         max_risk_pct_cash: float = typer.Option(
             0.50, "--max-risk-pct-cash", help="Max fraction of Alpaca cash to deploy (0..1)"
@@ -167,11 +167,12 @@ def register(app: typer.Typer) -> None:
 
     @app.command("portfolio-eval")
     def portfolio_eval(
-        start: str = typer.Option("2011-01-01", "--start", help="Start date YYYY-MM-DD for price + regime datasets"),
+        start: str = typer.Option("2012-01-01", "--start", help="Start date YYYY-MM-DD for price + regime datasets"),
         refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads (regimes)"),
         splits: int = typer.Option(6, "--splits", help="TimeSeriesSplit folds for walk-forward eval"),
         prob_threshold: float = typer.Option(0.50, "--prob-threshold", help="Classifier threshold for confusion matrix"),
         dump_dataset_summary: bool = typer.Option(True, "--summary/--no-summary", help="Print dataset shape/missingness summary"),
+        json_out: bool = typer.Option(False, "--json", help="Print raw JSON output (otherwise print a readable report)"),
     ):
         """
         Offline evaluation of the portfolio ML models (walk-forward, time-series split).
@@ -213,6 +214,7 @@ def register(app: typer.Typer) -> None:
                 "y_cols": int(ds.y.shape[1]),
                 "date_start": str(ds.X.index.min().date()) if len(ds.X.index) else None,
                 "date_end": str(ds.X.index.max().date()) if len(ds.X.index) else None,
+                "requested_start": start,
             }
             console.print(Panel(json.dumps(summary, indent=2), title="Dataset summary", expand=False))
 
@@ -221,6 +223,57 @@ def register(app: typer.Typer) -> None:
             "6m": walk_forward_evaluation(X=ds.X, y=ds.y["fwd_ret_6m"], splits=int(splits), prob_threshold=float(prob_threshold)),
             "12m": walk_forward_evaluation(X=ds.X, y=ds.y["fwd_ret_12m"], splits=int(splits), prob_threshold=float(prob_threshold)),
         }
-        console.print(Panel(json.dumps(out, indent=2, default=str), title="Portfolio model eval", expand=False))
+
+        if json_out:
+            console.print(Panel(json.dumps(out, indent=2, default=str), title="Portfolio model eval (JSON)", expand=False))
+            return
+
+        from rich.table import Table
+
+        def _get(d: dict, path: str, default=None):
+            cur = d
+            for part in path.split("."):
+                if not isinstance(cur, dict) or part not in cur:
+                    return default
+                cur = cur[part]
+            return cur
+
+        t = Table(title="Portfolio model eval (walk-forward)", show_lines=True)
+        t.add_column("Horizon", style="bold")
+        t.add_column("n")
+        t.add_column("pos_rate")
+        t.add_column("AUC (overall)")
+        t.add_column("AUC (fold mean)")
+        t.add_column("logloss")
+        t.add_column("brier")
+        t.add_column("acc")
+        t.add_column("CM [[tn,fp],[fn,tp]]")
+        t.add_column("MAE")
+        t.add_column("RMSE")
+        t.add_column("R²")
+
+        for h in ("3m", "6m", "12m"):
+            d = out[h]
+            status = d.get("status")
+            if status != "ok":
+                t.add_row(h, str(d.get("n", "")), "", "", "", "", "", "", str(status), "", "", "")
+                continue
+            cm = _get(d, "classification.confusion_matrix", default=None)
+            t.add_row(
+                h,
+                str(d.get("n")),
+                f"{_get(d, 'classification.pos_rate', 0.0):.2f}",
+                f"{_get(d, 'classification.auc', float('nan')):.3f}",
+                f"{_get(d, 'classification.auc_folds_mean', float('nan')):.3f}",
+                f"{_get(d, 'classification.logloss', float('nan')):.3f}",
+                f"{_get(d, 'classification.brier', float('nan')):.3f}",
+                f"{_get(d, 'classification.accuracy', float('nan')):.3f}",
+                json.dumps(cm),
+                f"{_get(d, 'regression.mae', float('nan')):.2f}",
+                f"{_get(d, 'regression.rmse', float('nan')):.2f}",
+                f"{_get(d, 'regression.r2', float('nan')):.3f}",
+            )
+
+        console.print(t)
 
 

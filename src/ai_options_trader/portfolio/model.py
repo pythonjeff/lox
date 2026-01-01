@@ -257,6 +257,7 @@ def walk_forward_evaluation(
     y_all: list[float] = []
 
     fold_aucs: list[float] = []
+    valid_folds = 0
 
     for train_idx, test_idx in tscv.split(X2):
         Xtr, Xte = X2.iloc[train_idx], X2.iloc[test_idx]
@@ -266,6 +267,7 @@ def walk_forward_evaluation(
         # Need both classes in fold to compute AUC/logloss meaningfully
         if ytr_b.nunique() < 2 or yte_b.nunique() < 2:
             continue
+        valid_folds += 1
 
         clf = _make_classifier()
         reg = _make_regressor()
@@ -303,6 +305,12 @@ def walk_forward_evaluation(
     acc = float(accuracy_score(yb_all, pred))
     cm = confusion_matrix(yb_all, pred, labels=[0, 1]).tolist()
 
+    pos_rate = float(np.mean(yb_all)) if yb_all else 0.0
+    p_mean = float(np.mean(p_all)) if p_all else None
+    p_std = float(np.std(p_all)) if p_all else None
+    p_min = float(np.min(p_all)) if p_all else None
+    p_max = float(np.max(p_all)) if p_all else None
+
     # Regression metrics
     mae = float(mean_absolute_error(y_all, yhat_all))
     # Some sklearn versions don't support squared=... in mean_squared_error.
@@ -319,6 +327,12 @@ def walk_forward_evaluation(
             "auc": auc,
             "auc_folds_mean": (float(np.mean(fold_aucs)) if fold_aucs else None),
             "auc_folds": fold_aucs,
+            "valid_folds": int(valid_folds),
+            "pos_rate": pos_rate,
+            "prob_mean": p_mean,
+            "prob_std": p_std,
+            "prob_min": p_min,
+            "prob_max": p_max,
             "logloss": ll,
             "brier": brier,
             "accuracy": acc,
