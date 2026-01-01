@@ -14,7 +14,7 @@ from ai_options_trader.liquidity.signals import build_liquidity_state
 from ai_options_trader.macro.regime import classify_macro_regime_from_state
 from ai_options_trader.macro.signals import build_macro_state
 from ai_options_trader.portfolio.dataset import build_portfolio_dataset
-from ai_options_trader.portfolio.model import build_forecasts, model_debug_report
+from ai_options_trader.portfolio.model import build_forecasts, model_debug_report, walk_forward_evaluation
 from ai_options_trader.portfolio.planner import plan_portfolio
 from ai_options_trader.portfolio.universe import DEFAULT_UNIVERSE
 from ai_options_trader.usd.signals import build_usd_state
@@ -164,5 +164,63 @@ def register(app: typer.Typer) -> None:
                     continue
                 submit_equity_order(trading=trading, symbol=o.symbol, qty=o.qty, side=o.side, limit_price=o.limit_price, tif=o.tif)
             console.print(Panel("Submitted selected orders (paper).", title="Done", expand=False))
+
+    @app.command("portfolio-eval")
+    def portfolio_eval(
+        start: str = typer.Option("2011-01-01", "--start", help="Start date YYYY-MM-DD for price + regime datasets"),
+        refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads (regimes)"),
+        splits: int = typer.Option(6, "--splits", help="TimeSeriesSplit folds for walk-forward eval"),
+        prob_threshold: float = typer.Option(0.50, "--prob-threshold", help="Classifier threshold for confusion matrix"),
+        dump_dataset_summary: bool = typer.Option(True, "--summary/--no-summary", help="Print dataset shape/missingness summary"),
+    ):
+        """
+        Offline evaluation of the portfolio ML models (walk-forward, time-series split).
+
+        Prints per-horizon metrics:
+        - Classification: AUC / logloss / brier / accuracy / confusion matrix
+        - Regression: MAE / RMSE / R2
+        """
+        settings = load_settings()
+        console = Console()
+
+        if not settings.alpaca_api_key:
+            console.print(Panel("[red]Missing Alpaca API keys[/red]", title="Error", expand=False))
+            raise typer.Exit(code=1)
+        if not settings.fred_api_key:
+            console.print(Panel("[red]Missing FRED_API_KEY[/red]", title="Error", expand=False))
+            raise typer.Exit(code=1)
+
+        symbols = sorted(set(DEFAULT_UNIVERSE.tradable))
+        px = fetch_equity_daily_closes(
+            api_key=settings.alpaca_data_key or settings.alpaca_api_key,
+            api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,
+            symbols=symbols,
+            start=start,
+        )
+        ds = build_portfolio_dataset(
+            settings=settings,
+            equity_prices=px,
+            basket_tickers=list(DEFAULT_UNIVERSE.basket_equity),
+            start_date=start,
+            refresh_fred=refresh,
+        )
+
+        if dump_dataset_summary:
+            summary = {
+                "X_rows": int(ds.X.shape[0]),
+                "X_cols": int(ds.X.shape[1]),
+                "y_rows": int(ds.y.shape[0]),
+                "y_cols": int(ds.y.shape[1]),
+                "date_start": str(ds.X.index.min().date()) if len(ds.X.index) else None,
+                "date_end": str(ds.X.index.max().date()) if len(ds.X.index) else None,
+            }
+            console.print(Panel(json.dumps(summary, indent=2), title="Dataset summary", expand=False))
+
+        out = {
+            "3m": walk_forward_evaluation(X=ds.X, y=ds.y["fwd_ret_3m"], splits=int(splits), prob_threshold=float(prob_threshold)),
+            "6m": walk_forward_evaluation(X=ds.X, y=ds.y["fwd_ret_6m"], splits=int(splits), prob_threshold=float(prob_threshold)),
+            "12m": walk_forward_evaluation(X=ds.X, y=ds.y["fwd_ret_12m"], splits=int(splits), prob_threshold=float(prob_threshold)),
+        }
+        console.print(Panel(json.dumps(out, indent=2, default=str), title="Portfolio model eval", expand=False))
 
 
