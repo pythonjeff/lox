@@ -49,5 +49,36 @@ def submit_option_order(
     return trading.submit_order(order_data=req)
 
 
+def submit_equity_order(
+    *,
+    trading: TradingClient,
+    symbol: str,
+    qty: int,
+    side: str,
+    limit_price: float | None = None,
+    tif: str = "day",
+):
+    """
+    Submit an equity/ETF order to Alpaca.
+
+    Note: For safety, call this only after explicit user confirmation.
+    """
+    side_enum = OrderSide.BUY if side.lower().startswith("b") else OrderSide.SELL
+    tif_enum = TimeInForce.DAY if tif.lower() == "day" else TimeInForce.GTC
+
+    if limit_price is None:
+        req = MarketOrderRequest(symbol=symbol, qty=qty, side=side_enum, time_in_force=tif_enum)
+    else:
+        req = LimitOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=side_enum,
+            time_in_force=tif_enum,
+            limit_price=round(float(limit_price), 2),
+        )
+
+    return trading.submit_order(order_data=req)
+
+
 
 

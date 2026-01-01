@@ -37,6 +37,7 @@ def _register_commands() -> None:
     from ai_options_trader.cli_commands.regimes_cmd import register as register_regimes
     from ai_options_trader.cli_commands.ideas_cmd import register as register_ideas
     from ai_options_trader.cli_commands.track_cmd import register as register_track
+    from ai_options_trader.cli_commands.portfolio_cmd import register as register_portfolio
 
     register_select(app)
     register_macro(macro_app)
@@ -45,6 +46,7 @@ def _register_commands() -> None:
     register_usd(usd_app)
     register_crypto(crypto_app)
     register_ticker(ticker_app)
+    register_portfolio(app)
     register_regimes(app)
     register_ideas(ideas_app)
     register_track(track_app)
