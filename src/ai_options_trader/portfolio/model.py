@@ -5,7 +5,6 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import (
@@ -120,19 +119,63 @@ def _safe_brier(y_true: list[int], p: list[float]) -> float | None:
         return None
 
 
-def _calibrate_prefit(
-    clf: Pipeline,
-    X_cal: pd.DataFrame,
-    y_cal: pd.Series,
+def _clip_probs(p: np.ndarray, eps: float = 1e-6) -> np.ndarray:
+    return np.clip(p.astype(float), eps, 1.0 - eps)
+
+
+class _SigmoidCalibrator:
+    """
+    Simple Platt scaling on probability outputs.
+
+    We fit a 1D logistic regression on the logit(p_raw) vs y.
+    This avoids sklearn.calibration API differences across versions.
+    """
+
+    def __init__(self) -> None:
+        self._lr = LogisticRegression(max_iter=1000, solver="lbfgs", random_state=42)
+        self._fit = False
+
+    @staticmethod
+    def _logit(p: np.ndarray) -> np.ndarray:
+        p = _clip_probs(p)
+        return np.log(p / (1.0 - p))
+
+    def fit(self, p_raw: np.ndarray, y: np.ndarray) -> "_SigmoidCalibrator":
+        x = self._logit(np.asarray(p_raw)).reshape(-1, 1)
+        yy = np.asarray(y).astype(int).reshape(-1)
+        # Need both classes
+        if len(np.unique(yy)) < 2:
+            self._fit = False
+            return self
+        self._lr.fit(x, yy)
+        self._fit = True
+        return self
+
+    def predict(self, p_raw: np.ndarray) -> np.ndarray:
+        if not self._fit:
+            return np.asarray(p_raw, dtype=float)
+        x = self._logit(np.asarray(p_raw)).reshape(-1, 1)
+        return self._lr.predict_proba(x)[:, 1]
+
+
+def _calibrate_probs(
+    *,
+    p_fit: np.ndarray,
+    y_fit: np.ndarray,
+    p_apply: np.ndarray,
     method: str = "sigmoid",
-) -> Pipeline:
+) -> np.ndarray:
     """
-    Calibrate a prefit classifier using a calibration set (time-series safe if caller purges properly).
-    Returns a CalibratedClassifierCV wrapper.
+    Calibrate probabilities using a calibration set.
+
+    Supported:
+    - sigmoid: Platt scaling (robust, monotonic)
     """
-    cal = CalibratedClassifierCV(estimator=clf, method=method, cv="prefit")
-    cal.fit(X_cal, y_cal)
-    return cal  # type: ignore[return-value]
+    m = (method or "sigmoid").lower().strip()
+    if m != "sigmoid":
+        m = "sigmoid"
+    calib = _SigmoidCalibrator().fit(p_fit, y_fit)
+    return calib.predict(p_apply)
 
 
 def _cv_auc_purged(
@@ -252,8 +295,8 @@ def fit_and_forecast_for_horizon(
     X_fit, y_fit = X2.iloc[:fit_end], yb.iloc[:fit_end]
     X_cal, y_cal = X2.iloc[fit_end:], yb.iloc[fit_end:]
 
-    clf = _make_classifier()
     reg = _make_regressor()
+    clf = _make_classifier()
     clf.fit(X2, yb)  # raw classifier fit on all labeled history
     reg.fit(X2, y2)
 
@@ -270,8 +313,15 @@ def fit_and_forecast_for_horizon(
         # Calibrate a classifier fit only on the fit split, to avoid calibrating a model on data it was trained on.
         clf_fit = _make_classifier()
         clf_fit.fit(X_fit, y_fit)
-        cal = _calibrate_prefit(clf_fit, X_cal, y_cal, method=calibration_method)
-        prob_cal = float(cal.predict_proba(x_last)[:, 1][0])
+        p_fit = clf_fit.predict_proba(X_cal)[:, 1]
+        # Fit calibrator on (p_fit, y_cal), then apply to p_raw for x_last.
+        p_cal_last = _calibrate_probs(
+            p_fit=np.asarray(p_fit),
+            y_fit=np.asarray(y_cal.values),
+            p_apply=np.asarray([prob_raw]),
+            method=calibration_method,
+        )
+        prob_cal = float(p_cal_last.reshape(-1)[0])
 
     return prob_cal, prob_raw, exp_ret, auc
 
@@ -489,8 +539,14 @@ def walk_forward_evaluation(
                 if y_fit.nunique() == 2 and y_cal.nunique() == 2:
                     clf_fit = _make_classifier()
                     clf_fit.fit(X_fit, y_fit)
-                    cal = _calibrate_prefit(clf_fit, X_cal, y_cal, method=calibration_method)
-                    p_cal = cal.predict_proba(Xte)[:, 1]
+                    p_fit = clf_fit.predict_proba(X_cal)[:, 1]
+                    p_apply = clf_fit.predict_proba(Xte)[:, 1]
+                    p_cal = _calibrate_probs(
+                        p_fit=np.asarray(p_fit),
+                        y_fit=np.asarray(y_cal.values),
+                        p_apply=np.asarray(p_apply),
+                        method=calibration_method,
+                    )
                     p_cal_all.extend([float(x) for x in p_cal])
                     try:
                         fold_aucs_cal.append(float(roc_auc_score(yte_b, p_cal)))
