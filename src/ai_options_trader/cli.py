@@ -9,6 +9,10 @@ tariff_app = typer.Typer(add_completion=False, help="Tariff / cost-push regime s
 app.add_typer(tariff_app, name="tariff")
 liquidity_app = typer.Typer(add_completion=False, help="Liquidity regime (credit + rates)")
 app.add_typer(liquidity_app, name="liquidity")
+usd_app = typer.Typer(add_completion=False, help="USD strength/weakness regime")
+app.add_typer(usd_app, name="usd")
+ticker_app = typer.Typer(add_completion=False, help="Ticker snapshots and LLM outlooks")
+app.add_typer(ticker_app, name="ticker")
 ideas_app = typer.Typer(add_completion=False, help="Trade idea generation from thesis + regimes")
 app.add_typer(ideas_app, name="ideas")
 track_app = typer.Typer(add_completion=False, help="Track recommendations, executions, and performance")
@@ -25,6 +29,8 @@ def _register_commands() -> None:
     from ai_options_trader.cli_commands.macro_cmd import register as register_macro
     from ai_options_trader.cli_commands.tariff_cmd import register as register_tariff
     from ai_options_trader.cli_commands.liquidity_cmd import register as register_liquidity
+    from ai_options_trader.cli_commands.usd_cmd import register as register_usd
+    from ai_options_trader.cli_commands.ticker_cmd import register as register_ticker
     from ai_options_trader.cli_commands.regimes_cmd import register as register_regimes
     from ai_options_trader.cli_commands.ideas_cmd import register as register_ideas
     from ai_options_trader.cli_commands.track_cmd import register as register_track
@@ -33,6 +39,8 @@ def _register_commands() -> None:
     register_macro(macro_app)
     register_tariff(tariff_app)
     register_liquidity(liquidity_app)
+    register_usd(usd_app)
+    register_ticker(ticker_app)
     register_regimes(app)
     register_ideas(ideas_app)
     register_track(track_app)

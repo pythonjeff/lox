@@ -159,6 +159,8 @@ def register(app: typer.Typer) -> None:
         from ai_options_trader.tariff.proxies import DEFAULT_COST_PROXY_SERIES
         from ai_options_trader.tariff.signals import build_tariff_regime_state
         from ai_options_trader.tariff.universe import BASKETS
+        from ai_options_trader.usd.features import usd_feature_vector
+        from ai_options_trader.usd.signals import build_usd_state
 
         settings = load_settings()
 
@@ -181,6 +183,10 @@ def register(app: typer.Typer) -> None:
         # Liquidity
         liq_state = build_liquidity_state(settings=settings, start_date=start, refresh=refresh)
         liq_vec = liquidity_feature_vector(liq_state)
+
+        # USD
+        usd_state = build_usd_state(settings=settings, start_date=start, refresh=refresh)
+        usd_vec = usd_feature_vector(usd_state)
 
         # Tariff basket selection
         if baskets.strip().lower() == "all":
@@ -228,7 +234,7 @@ def register(app: typer.Typer) -> None:
         tariff_vec = tariff_feature_vector(tariff_states, asof=tariff_states[-1].asof if tariff_states else macro_state.asof)
 
         # Merge into one flat mapping (floats only)
-        merged = merge_feature_dicts(macro_vec.features, liq_vec.features, tariff_vec.features)
+        merged = merge_feature_dicts(macro_vec.features, liq_vec.features, usd_vec.features, tariff_vec.features)
         out = {"asof": macro_state.asof, **{k: merged[k] for k in sorted(merged.keys())}}
 
         if pretty:

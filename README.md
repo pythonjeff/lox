@@ -52,6 +52,21 @@ Print one merged scalar feature vector (good for ML training/export):
 lox regime-features
 ```
 
+### USD regime + 2026 USD outlook (LLM)
+
+USD is treated as a first-class macro constraint (trade-weighted broad USD index) and is emitted as scalars for ML.
+
+```bash
+lox usd snapshot
+lox usd snapshot --features
+```
+
+Have an LLM produce a scenario-style USD outlook focused on the path into 2026:
+
+```bash
+lox usd outlook --year 2026
+```
+
 ### Macro
 
 Print macro state + regime label (supports historical “as-of”):
@@ -111,6 +126,24 @@ lox ideas ai-bubble --with-legs
 lox track recent
 lox track report
 lox track sync
+```
+
+### Ticker snapshot + 3/6/12-month outlook (LLM)
+
+Lox can generate a ticker-level outlook that is grounded in:
+- a quantitative ticker snapshot (returns/vol/drawdown/relative strength via Alpaca daily closes)
+- the current macro regimes (macro/liquidity/USD; more can be added as regimes expand)
+
+Quant snapshot:
+
+```bash
+lox ticker snapshot --ticker AAPL
+```
+
+LLM outlook (3/6/12 month horizons, scenario-based; ties back to regime context):
+
+```bash
+lox ticker outlook --ticker AAPL --year 2026
 ```
 
 ## Data baseline (default start date)
