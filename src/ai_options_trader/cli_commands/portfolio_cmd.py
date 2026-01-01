@@ -198,6 +198,7 @@ def register(app: typer.Typer) -> None:
         prob_threshold: float = typer.Option(0.50, "--prob-threshold", help="Classifier threshold for confusion matrix"),
         dump_dataset_summary: bool = typer.Option(True, "--summary/--no-summary", help="Print dataset shape/missingness summary"),
         json_out: bool = typer.Option(False, "--json", help="Print raw JSON output (otherwise print a readable report)"),
+        json_plain: bool = typer.Option(False, "--json-plain", help="Print JSON only (no Rich panels/tables; best for redirecting to a file)"),
         calibrate: bool = typer.Option(True, "--calibrate/--no-calibrate", help="Compute calibrated metrics (recommended)"),
     ):
         """
@@ -232,7 +233,7 @@ def register(app: typer.Typer) -> None:
             refresh_fred=refresh,
         )
 
-        if dump_dataset_summary:
+        if dump_dataset_summary and not json_plain:
             summary = {
                 "X_rows": int(ds.X.shape[0]),
                 "X_cols": int(ds.X.shape[1]),
@@ -269,6 +270,10 @@ def register(app: typer.Typer) -> None:
             purge_n=int(HORIZON_TO_DAYS["12m"]),
             calibrate=bool(calibrate),
         )
+
+        if json_plain:
+            print(json.dumps(out, indent=2, default=str))
+            return
 
         if json_out:
             console.print(Panel(json.dumps(out, indent=2, default=str), title="Portfolio model eval (JSON)", expand=False))
