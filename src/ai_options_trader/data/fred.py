@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
-import requests
-from requests.exceptions import RequestException
 
 
 @dataclass(frozen=True)
@@ -57,6 +55,11 @@ class FredClient:
             # This avoids unnecessary network calls (and common small "start_date" vs business-day gaps).
             if not df.empty:
                 return df[df["date"] >= start_ts].reset_index(drop=True)
+
+        # Lazy import so unit tests / restricted environments can import this module
+        # without triggering SSL/cert initialization.
+        import requests
+        from requests.exceptions import RequestException
 
         url = "https://api.stlouisfed.org/fred/series/observations"
         params = {

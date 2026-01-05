@@ -11,6 +11,10 @@ liquidity_app = typer.Typer(add_completion=False, help="Liquidity regime (credit
 app.add_typer(liquidity_app, name="liquidity")
 usd_app = typer.Typer(add_completion=False, help="USD strength/weakness regime")
 app.add_typer(usd_app, name="usd")
+monetary_app = typer.Typer(add_completion=False, help="Monetary regime (reserves, Fed balance sheet, RRP, policy rate)")
+app.add_typer(monetary_app, name="monetary")
+fiscal_app = typer.Typer(add_completion=False, help="US fiscal regime (deficits, issuance mix, auctions, TGA)")
+app.add_typer(fiscal_app, name="fiscal")
 crypto_app = typer.Typer(add_completion=False, help="Crypto snapshots and LLM outlooks")
 app.add_typer(crypto_app, name="crypto")
 ticker_app = typer.Typer(add_completion=False, help="Ticker snapshots and LLM outlooks")
@@ -32,6 +36,8 @@ def _register_commands() -> None:
     from ai_options_trader.cli_commands.tariff_cmd import register as register_tariff
     from ai_options_trader.cli_commands.liquidity_cmd import register as register_liquidity
     from ai_options_trader.cli_commands.usd_cmd import register as register_usd
+    from ai_options_trader.cli_commands.monetary_cmd import register as register_monetary
+    from ai_options_trader.cli_commands.fiscal_cmd import register as register_fiscal
     from ai_options_trader.cli_commands.crypto_cmd import register as register_crypto
     from ai_options_trader.cli_commands.ticker_cmd import register as register_ticker
     from ai_options_trader.cli_commands.regimes_cmd import register as register_regimes
@@ -44,6 +50,8 @@ def _register_commands() -> None:
     register_tariff(tariff_app)
     register_liquidity(liquidity_app)
     register_usd(usd_app)
+    register_monetary(monetary_app)
+    register_fiscal(fiscal_app)
     register_crypto(crypto_app)
     register_ticker(ticker_app)
     register_portfolio(app)

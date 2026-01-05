@@ -1,28 +1,55 @@
-## Lox — systematic macro + options research CLI (ML-ready regimes + LLM interface)
+## Lox — systematic macro → regimes → options research (CLI, reproducible data, ML-ready features)
 
-**Lox** is a research-grade CLI for building a **systematic macro trader**:
-- compute **macro / liquidity / tariff** regimes as **scalar feature vectors**
-- (next) train **ML forecasts** on those features
-- use an **LLM interface** to summarize regimes, scenario-plan, and draft trade structures
-- generate **execution-aware, risk-defined options ideas** (paper-first)
+Lox is a **research-first** command-line toolkit for building a **systematic, regime-aware options workflow**:
+- **Regime engines** (macro, liquidity, USD, tariff, fiscal, monetary) that emit **explainable labels + ML-friendly feature vectors**
+- **Reproducible data** with on-disk caching for fast iteration
+- **Execution-aware option selection** primitives (paper-first) and a lightweight tracking loop
+- **LLM “research assistant” hooks** that summarize snapshots and draft scenario-based trade expressions (grounded in the snapshot JSON)
 
-Guiding principles live in:
+Guiding principles:
 - `docs/PROJECT_CONSTITUTION.md`
+- `docs/OBJECTIVES.md`
+
+### Non-goals / guardrails
+- **Not investment advice.** This is research software; outputs are informational.
+- **No hidden data.** Snapshots are computed from explicit source series; LLM prompts are instructed to not invent facts.
+- **Regime-first.** We prefer stable, low-noise signals over fragile “alpha stories.”
+
+---
 
 ## Quickstart
 
-Install:
+### Install
 
 ```bash
 pip install -e .
 ```
 
-Set environment variables (copy a `.env` if you use one locally):
-- **Alpaca**: `ALPACA_API_KEY`, `ALPACA_API_SECRET` (and optionally `ALPACA_DATA_KEY`, `ALPACA_DATA_SECRET`)
-- **FRED**: `FRED_API_KEY` (for macro/liquidity/tariff time series)
-- **OpenAI**: `OPENAI_API_KEY` (for LLM summaries)
+### Configure credentials
 
-## Core commands (outputs)
+Set environment variables (or use a local `.env`):
+- **Alpaca** (market data / options chain): `ALPACA_API_KEY`, `ALPACA_API_SECRET` (optional: `ALPACA_DATA_KEY`, `ALPACA_DATA_SECRET`)
+- **FRED** (macro/fiscal/monetary series): `FRED_API_KEY`
+- **OpenAI** (LLM summaries/outlooks): `OPENAI_API_KEY` (optional: `OPENAI_MODEL`)
+
+---
+
+## Core design (what you’re actually getting)
+
+### Regimes as a production primitive
+Each regime module aims to provide:
+- **A snapshot**: latest readings with context markers (what’s “high/low” and what would be “stress watch”)
+- **A regime label**: a stable, explainable classification
+- **A feature vector**: scalars suitable for model training / export
+
+### Data provenance & reproducibility
+- **FRED** series are cached to `data/cache/fred/`.
+- **FiscalData** tables are cached to `data/cache/fiscaldata/`.
+- Local artifacts (caches, SQLite tracker) are excluded from git by `.gitignore`.
+
+---
+
+## Commands
 
 Show all commands:
 
@@ -30,7 +57,7 @@ Show all commands:
 lox --help
 ```
 
-### Regimes (dashboard + LLM summary)
+### Regime dashboard + LLM summary
 
 Print macro + liquidity + tariff regimes:
 
@@ -38,47 +65,51 @@ Print macro + liquidity + tariff regimes:
 lox regimes
 ```
 
-Have an LLM summarize regimes + risks + follow-ups:
+LLM summary (regimes + risks + follow-ups):
 
 ```bash
 lox regimes --llm
 ```
 
-### ML-friendly regime feature vector (JSON)
-
-Print one merged scalar feature vector (good for ML training/export):
+### ML-friendly merged feature vector
 
 ```bash
 lox regime-features
 ```
 
-### USD regime + 2026 USD outlook (LLM)
-
-USD is treated as a first-class macro constraint (trade-weighted broad USD index) and is emitted as scalars for ML.
+### Fiscal (MVP) + LLM outlook
 
 ```bash
-lox usd snapshot
-lox usd snapshot --features
+lox fiscal snapshot
+lox fiscal snapshot --refresh
+lox fiscal outlook
 ```
 
-Have an LLM produce a scenario-style USD outlook focused on the path into 2026:
+Fiscal snapshot is designed to make market-absorption and liquidity plumbing visible:
+- deficit level + impulse (% GDP)
+- issuance mix (MSPD Δ outstanding)
+- TGA behavior (level + change z-scores)
+- auction absorption (tail proxy + dealer take)
+
+### Monetary (MVP)
 
 ```bash
-lox usd outlook --year 2026
+lox monetary snapshot
+lox monetary snapshot --refresh
 ```
+
+Monetary MVP focuses on “plumbing” signals:
+- EFFR (DFF)
+- total reserves (TOTRESNS) + **reserves/GDP**
+- Fed balance sheet size (WALCL) + Δ
+- ON RRP usage (RRPONTSYD)
 
 ### Macro
-
-Print macro state + regime label (supports historical “as-of”):
 
 ```bash
 lox macro snapshot
 lox macro snapshot --asof 2022-06-30
 ```
-
-Macro “stage” logic (high level):
-- **inflation** if CPI YoY > target (default 3%)
-- **stagflation** only if CPI YoY > target *and* job growth is negative (PAYEMS 3m annualized < 0)
 
 ### Liquidity (credit + rates)
 
@@ -87,73 +118,67 @@ lox liquidity snapshot
 lox liquidity snapshot --features
 ```
 
-Liquidity uses corporate credit spreads + rates dynamics (tightness score).
+### USD + LLM outlook
+
+```bash
+lox usd snapshot
+lox usd snapshot --features
+lox usd outlook --year 2026
+```
 
 ### Tariff / cost-push
 
-List baskets:
-
 ```bash
 lox tariff baskets
-```
-
-Snapshot for one basket:
-
-```bash
 lox tariff snapshot --basket import_retail_apparel
 ```
 
-### Option leg selection (building block)
+### Ticker snapshot + LLM outlook (scenario-based)
 
-Pick a single “best” option leg (call/put) under liquidity + spread constraints:
+```bash
+lox ticker snapshot --ticker AAPL
+lox ticker outlook --ticker AAPL --year 2026
+```
+
+### Option leg selection (building block)
 
 ```bash
 lox select --ticker NVDA --sentiment positive --debug
 ```
 
-### Ideas (thesis-driven)
-
-Generate thesis-driven ideas (macro + tariff + tech sensitivity), optionally selecting option legs:
+### Ideas + tracking loop
 
 ```bash
 lox ideas ai-bubble
 lox ideas ai-bubble --with-legs
-```
 
-### Tracking
-
-```bash
 lox track recent
 lox track report
 lox track sync
 ```
 
-### Ticker snapshot + 3/6/12-month outlook (LLM)
+---
 
-Lox can generate a ticker-level outlook that is grounded in:
-- a quantitative ticker snapshot (returns/vol/drawdown/relative strength via Alpaca daily closes)
-- the current macro regimes (macro/liquidity/USD; more can be added as regimes expand)
+## Refreshing data
 
-Quant snapshot:
-
-```bash
-lox ticker snapshot --ticker AAPL
-```
-
-LLM outlook (3/6/12 month horizons, scenario-based; ties back to regime context):
-
-```bash
-lox ticker outlook --ticker AAPL --year 2026
-```
-
-## Data baseline (default start date)
-By default, regime datasets use a baseline start date of **2011-01-01**.
-
-If you need fresh data:
+Most snapshots support `--refresh` to force re-download. Example:
 
 ```bash
 lox regimes --refresh
 ```
 
-## Roadmap
-- `docs/OBJECTIVES.md`
+---
+
+## Testing
+
+```bash
+pytest -q
+```
+
+---
+
+## Roadmap (near-term)
+
+- **Funding regime (next)**: repo/secured funding dislocations + SOFR spreads (explicitly *not* part of monetary MVP)
+- Improve regime “handoffs”: fiscal ↔ monetary ↔ funding (plumbing-first)
+- Expand ML workflows: dataset export, backtests, and disciplined evaluation

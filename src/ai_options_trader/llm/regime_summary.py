@@ -24,16 +24,16 @@ def llm_regime_summary(
 
     Returns: markdown-ish text to print to terminal.
     """
-    if not settings.OPENAI_API_KEY:
+    if not settings.openai_api_key:
         raise RuntimeError("Missing OPENAI_API_KEY in environment / .env")
 
-    chosen_model = model or settings.OPENAI_MODEL
+    chosen_model = model or settings.openai_model
     try:
         from openai import OpenAI  # type: ignore
     except Exception as e:  # pragma: no cover
         raise RuntimeError("openai package is not installed. Try: pip install -e .") from e
 
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    client = OpenAI(api_key=settings.openai_api_key)
 
     # Pydantic models: model_dump(); dataclasses: asdict()
     macro_state_dict = macro_state.model_dump() if hasattr(macro_state, "model_dump") else macro_state
