@@ -51,10 +51,10 @@ def register(usd_app: typer.Typer) -> None:
         liquidity_state = None
         if with_context:
             from ai_options_trader.macro.signals import build_macro_state
-            from ai_options_trader.liquidity.signals import build_liquidity_state
+            from ai_options_trader.funding.signals import build_funding_state
 
             macro_state = build_macro_state(settings=settings, start_date=start, refresh=refresh)
-            liquidity_state = build_liquidity_state(settings=settings, start_date=start, refresh=refresh)
+            liquidity_state = build_funding_state(settings=settings, start_date=start, refresh=refresh)
 
         text = llm_usd_outlook(
             settings=settings,

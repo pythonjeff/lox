@@ -29,7 +29,7 @@ def register(app: typer.Typer) -> None:
         """
         from ai_options_trader.data.fred import FredClient
         from ai_options_trader.data.market import fetch_equity_daily_closes
-        from ai_options_trader.liquidity.signals import build_liquidity_state
+        from ai_options_trader.funding.signals import build_funding_state
         from ai_options_trader.tariff.universe import BASKETS
         from ai_options_trader.tariff.proxies import DEFAULT_COST_PROXY_SERIES
         from ai_options_trader.tariff.signals import build_tariff_regime_state
@@ -55,7 +55,7 @@ def register(app: typer.Typer) -> None:
         print(macro_regime)
 
         # --- Liquidity ---
-        liquidity_state = build_liquidity_state(settings=settings, start_date=start, refresh=refresh)
+        liquidity_state = build_funding_state(settings=settings, start_date=start, refresh=refresh)
         print("\nLIQUIDITY (CREDIT + RATES)")
         print(liquidity_state)
 
@@ -151,9 +151,12 @@ def register(app: typer.Typer) -> None:
 
         from ai_options_trader.data.fred import FredClient
         from ai_options_trader.data.market import fetch_equity_daily_closes
-        from ai_options_trader.liquidity.features import liquidity_feature_vector
-        from ai_options_trader.liquidity.signals import build_liquidity_state
+        from ai_options_trader.funding.features import funding_feature_vector
+        from ai_options_trader.funding.signals import build_funding_state
         from ai_options_trader.macro.features import macro_feature_vector
+        from ai_options_trader.rates.features import rates_feature_vector
+        from ai_options_trader.rates.regime import classify_rates_regime
+        from ai_options_trader.rates.signals import build_rates_state
         from ai_options_trader.regimes.schema import merge_feature_dicts
         from ai_options_trader.tariff.features import tariff_feature_vector
         from ai_options_trader.tariff.proxies import DEFAULT_COST_PROXY_SERIES
@@ -161,6 +164,12 @@ def register(app: typer.Typer) -> None:
         from ai_options_trader.tariff.universe import BASKETS
         from ai_options_trader.usd.features import usd_feature_vector
         from ai_options_trader.usd.signals import build_usd_state
+        from ai_options_trader.volatility.features import volatility_feature_vector
+        from ai_options_trader.volatility.regime import classify_volatility_regime
+        from ai_options_trader.volatility.signals import build_volatility_state
+        from ai_options_trader.commodities.features import commodities_feature_vector
+        from ai_options_trader.commodities.regime import classify_commodities_regime
+        from ai_options_trader.commodities.signals import build_commodities_state
 
         settings = load_settings()
 
@@ -181,12 +190,27 @@ def register(app: typer.Typer) -> None:
         macro_vec = macro_feature_vector(macro_state=macro_state, macro_regime=macro_regime)
 
         # Liquidity
-        liq_state = build_liquidity_state(settings=settings, start_date=start, refresh=refresh)
-        liq_vec = liquidity_feature_vector(liq_state)
+        liq_state = build_funding_state(settings=settings, start_date=start, refresh=refresh)
+        liq_vec = funding_feature_vector(liq_state)
 
         # USD
         usd_state = build_usd_state(settings=settings, start_date=start, refresh=refresh)
         usd_vec = usd_feature_vector(usd_state)
+
+        # Rates
+        rates_state = build_rates_state(settings=settings, start_date=start, refresh=refresh)
+        rates_regime = classify_rates_regime(rates_state.inputs)
+        rates_vec = rates_feature_vector(rates_state, rates_regime)
+
+        # Volatility
+        vol_state = build_volatility_state(settings=settings, start_date=start, refresh=refresh)
+        vol_regime = classify_volatility_regime(vol_state.inputs)
+        vol_vec = volatility_feature_vector(vol_state, vol_regime)
+
+        # Commodities
+        commod_state = build_commodities_state(settings=settings, start_date=start, refresh=refresh)
+        commod_regime = classify_commodities_regime(commod_state.inputs)
+        commod_vec = commodities_feature_vector(commod_state, commod_regime)
 
         # Tariff basket selection
         if baskets.strip().lower() == "all":
@@ -234,7 +258,15 @@ def register(app: typer.Typer) -> None:
         tariff_vec = tariff_feature_vector(tariff_states, asof=tariff_states[-1].asof if tariff_states else macro_state.asof)
 
         # Merge into one flat mapping (floats only)
-        merged = merge_feature_dicts(macro_vec.features, liq_vec.features, usd_vec.features, tariff_vec.features)
+        merged = merge_feature_dicts(
+            macro_vec.features,
+            liq_vec.features,
+            usd_vec.features,
+            rates_vec.features,
+            vol_vec.features,
+            commod_vec.features,
+            tariff_vec.features,
+        )
         out = {"asof": macro_state.asof, **{k: merged[k] for k in sorted(merged.keys())}}
 
         if pretty:

@@ -11,9 +11,13 @@ class Settings(BaseSettings):
     ALPACA_PAPER: bool = True
     ALPACA_DATA_KEY: str | None = None
     ALPACA_DATA_SECRET: str | None = None
+    # Options market data feed hint for Alpaca (commonly "opra" for US options).
+    # If unset, the SDK/defaults will be used.
+    ALPACA_OPTIONS_FEED: str | None = None
     OPENAI_API_KEY: str | None = None
     OPENAI_MODEL: str = "gpt-4o-mini"
     FRED_API_KEY: str | None = None
+    FMP_API_KEY: str | None = None
 
     # Backwards-compatible snake_case accessors used across the codebase.
     # Pydantic v2 uses field names as attribute names; these properties allow both styles.
@@ -38,6 +42,10 @@ class Settings(BaseSettings):
         return self.ALPACA_DATA_SECRET
 
     @property
+    def alpaca_options_feed(self) -> str | None:
+        return self.ALPACA_OPTIONS_FEED
+
+    @property
     def openai_api_key(self) -> str | None:
         return self.OPENAI_API_KEY
 
@@ -48,6 +56,10 @@ class Settings(BaseSettings):
     @property
     def fred_api_key(self) -> str | None:
         return self.FRED_API_KEY
+
+    @property
+    def fmp_api_key(self) -> str | None:
+        return self.FMP_API_KEY
 
 class StrategyConfig(BaseModel):
     target_dte_days: int = 30

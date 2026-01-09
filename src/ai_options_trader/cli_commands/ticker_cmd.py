@@ -45,7 +45,7 @@ def register(ticker_app: typer.Typer) -> None:
         # --- Regime context (keep it lightweight / non-leaky) ---
         from ai_options_trader.macro.signals import build_macro_state
         from ai_options_trader.macro.regime import classify_macro_regime_from_state
-        from ai_options_trader.liquidity.signals import build_liquidity_state
+        from ai_options_trader.funding.signals import build_funding_state
         from ai_options_trader.usd.signals import build_usd_state
 
         macro_state = build_macro_state(settings=settings, start_date=start, refresh=refresh)
@@ -61,7 +61,7 @@ def register(ticker_app: typer.Typer) -> None:
             infl_thresh=0.0,
             real_thresh=0.0,
         )
-        liq_state = build_liquidity_state(settings=settings, start_date=start, refresh=refresh)
+        liq_state = build_funding_state(settings=settings, start_date=start, refresh=refresh)
         usd_state = build_usd_state(settings=settings, start_date=start, refresh=refresh)
 
         regimes = {

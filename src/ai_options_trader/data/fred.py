@@ -76,6 +76,23 @@ class FredClient:
                 js = r.json()
                 break
             except RequestException as e:
+                # Some FRED series appear to intermittently reject `observation_start` with 400s.
+                # Fall back to requesting the full history and filtering client-side.
+                try:
+                    status = getattr(getattr(e, "response", None), "status_code", None)
+                except Exception:
+                    status = None
+                if status == 400 and "observation_start" in params:
+                    params2 = dict(params)
+                    params2.pop("observation_start", None)
+                    try:
+                        r2 = requests.get(url, params=params2, timeout=30)
+                        r2.raise_for_status()
+                        js = r2.json()
+                        break
+                    except RequestException as e2:
+                        last_err = e2
+                        continue
                 last_err = e
         else:
             # Network failed; fall back to cache if available.

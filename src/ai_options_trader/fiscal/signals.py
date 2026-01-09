@@ -715,7 +715,8 @@ def build_fiscal_dataset(settings: Settings, start_date: str = "2011-01-01", ref
     # Merge derived series with ffill
     for col, df in derived_frames.items():
         merged = merged.merge(df, on="date", how="left")
-        merged[col] = merged[col].ffill()
+        # Avoid pandas future downcasting warnings by coercing to numeric before ffill.
+        merged[col] = pd.to_numeric(merged[col], errors="coerce").ffill()
 
     # TGA dynamics
     if "TGA" in merged.columns:

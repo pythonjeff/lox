@@ -14,21 +14,16 @@ def register(liquidity_app: typer.Typer) -> None:
         features: bool = typer.Option(False, "--features", help="Print ML-friendly scalar feature vector too"),
     ):
         """
-        Compute liquidity regime snapshot (corporate credit + government bond market).
+        DEPRECATED: Use `lox funding snapshot`.
+
+        This command remains as a backwards-compatible alias.
         """
-        settings = load_settings()
-        from ai_options_trader.liquidity.signals import build_liquidity_state
+        from ai_options_trader.cli_commands.funding_cmd import register as register_funding
 
-        state = build_liquidity_state(settings=settings, start_date=start, refresh=refresh)
-        print(state)
-
-        if features:
-            from ai_options_trader.liquidity.features import liquidity_feature_vector
-            import json
-
-            vec = liquidity_feature_vector(state)
-            out = {"asof": vec.asof, **{k: vec.features[k] for k in sorted(vec.features.keys())}}
-            print("\nLIQUIDITY FEATURES (floats)")
-            print(json.dumps(out, indent=2))
+        # Mount funding snapshot under the legacy `liquidity` command group.
+        tmp = typer.Typer(add_completion=False)
+        register_funding(tmp)
+        # Call the funding snapshot command directly.
+        tmp.commands["snapshot"](start=start, refresh=refresh, features=features)  # type: ignore[misc]
 
 

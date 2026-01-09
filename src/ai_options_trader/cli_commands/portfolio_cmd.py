@@ -10,13 +10,13 @@ from ai_options_trader.config import load_settings
 from ai_options_trader.data.alpaca import make_clients
 from ai_options_trader.data.market import fetch_equity_daily_closes
 from ai_options_trader.execution.alpaca import submit_equity_order
-from ai_options_trader.liquidity.signals import build_liquidity_state
+from ai_options_trader.funding.signals import build_funding_state
 from ai_options_trader.macro.regime import classify_macro_regime_from_state
 from ai_options_trader.macro.signals import build_macro_state
 from ai_options_trader.portfolio.dataset import build_portfolio_dataset
 from ai_options_trader.portfolio.model import HORIZON_TO_DAYS, build_forecasts, model_debug_report, walk_forward_evaluation
 from ai_options_trader.portfolio.planner import plan_portfolio
-from ai_options_trader.portfolio.universe import DEFAULT_UNIVERSE
+from ai_options_trader.portfolio.universe import DEFAULT_UNIVERSE, STARTER_UNIVERSE
 from ai_options_trader.usd.signals import build_usd_state
 
 
@@ -25,6 +25,11 @@ def register(app: typer.Typer) -> None:
     def portfolio(
         start: str = typer.Option("2012-01-01", "--start", help="Start date YYYY-MM-DD for price + regime datasets"),
         refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads (regimes)"),
+        universe: str = typer.Option(
+            "default",
+            "--universe",
+            help="Which basket to forecast: default|starter",
+        ),
         max_risk_pct_cash: float = typer.Option(
             0.50, "--max-risk-pct-cash", help="Max fraction of Alpaca cash to deploy (0..1)"
         ),
@@ -46,6 +51,9 @@ def register(app: typer.Typer) -> None:
         """
         settings = load_settings()
         console = Console()
+
+        u = universe.strip().lower()
+        uni = STARTER_UNIVERSE if u.startswith("s") else DEFAULT_UNIVERSE
 
         if not settings.alpaca_api_key:
             console.print(Panel("[red]Missing Alpaca API keys[/red]", title="Error", expand=False))
@@ -72,11 +80,11 @@ def register(app: typer.Typer) -> None:
             infl_thresh=0.0,
             real_thresh=0.0,
         )
-        liq_state = build_liquidity_state(settings=settings, start_date=start, refresh=refresh)
+        liq_state = build_funding_state(settings=settings, start_date=start, refresh=refresh)
         usd_state = build_usd_state(settings=settings, start_date=start, refresh=refresh)
 
         # --- Prices for basket + tradables ---
-        symbols = sorted(set(DEFAULT_UNIVERSE.tradable))
+        symbols = sorted(set(uni.tradable))
         px = fetch_equity_daily_closes(
             api_key=settings.alpaca_data_key or settings.alpaca_api_key,
             api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,
@@ -90,7 +98,7 @@ def register(app: typer.Typer) -> None:
         ds = build_portfolio_dataset(
             settings=settings,
             equity_prices=px,
-            basket_tickers=list(DEFAULT_UNIVERSE.basket_equity),
+            basket_tickers=list(uni.basket_equity),
             start_date=start,
             refresh_fred=refresh,
         )
@@ -218,7 +226,8 @@ def register(app: typer.Typer) -> None:
             console.print(Panel("[red]Missing FRED_API_KEY[/red]", title="Error", expand=False))
             raise typer.Exit(code=1)
 
-        symbols = sorted(set(DEFAULT_UNIVERSE.tradable))
+        symbols = sorted(set(uni.tradable))
+        symbols = sorted(set(uni.tradable))
         px = fetch_equity_daily_closes(
             api_key=settings.alpaca_data_key or settings.alpaca_api_key,
             api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,

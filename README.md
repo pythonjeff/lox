@@ -1,19 +1,35 @@
-## Lox — systematic macro → regimes → options research (CLI, reproducible data, ML-ready features)
+## Lox Fund — ML + LLM macro trader (research system, execution-aware)
 
-Lox is a **research-first** command-line toolkit for building a **systematic, regime-aware options workflow**:
-- **Regime engines** (macro, liquidity, USD, tariff, fiscal, monetary) that emit **explainable labels + ML-friendly feature vectors**
-- **Reproducible data** with on-disk caching for fast iteration
-- **Execution-aware option selection** primitives (paper-first) and a lightweight tracking loop
-- **LLM “research assistant” hooks** that summarize snapshots and draft scenario-based trade expressions (grounded in the snapshot JSON)
+Lox is a **research-to-execution** macro trading system designed around a simple operating model:
 
-Guiding principles:
-- `docs/PROJECT_CONSTITUTION.md`
-- `docs/OBJECTIVES.md`
+- **Quant layer (ML)**: cross-sectional ranking of liquid, optionable instruments using a regime-aware feature panel.
+- **Discretion layer (LLM risk overlay)**: a “macro trader” review that consumes **trackers + calendar events + headlines** and can explicitly recommend **HOLD / NEEDS_REVIEW** before deploying risk.
+- **Execution layer (paper-first)**: budgeted, defined-risk options selection + robust order submission guards.
 
-### Non-goals / guardrails
-- **Not investment advice.** This is research software; outputs are informational.
-- **No hidden data.** Snapshots are computed from explicit source series; LLM prompts are instructed to not invent facts.
-- **Regime-first.** We prefer stable, low-noise signals over fragile “alpha stories.”
+This repo is the codebase behind a small live trading vehicle I call the **Lox Fund**, seeded with **$550** in initial capital. The emphasis is on **repeatability, risk-aware workflows, and operator-grade CLI ergonomics**.
+
+### Guardrails
+- **Not investment advice.** This is research software.
+- **Not a regulated or managed fund.** “Lox Fund” is a personal label for an experimental capital pool.
+- **Grounded LLM prompts.** LLM outputs are instructed to use only provided JSON (trackers/events/headlines) and avoid hallucinated facts.
+
+---
+
+## Mandate + macro thesis (research hypothesis)
+
+Lox Fund is built to express a specific macro research hypothesis:
+
+- **Persistent inflation risk**: inflation may remain structurally sticky versus the post‑2010 baseline.
+- **Rising macro volatility**: volatility may increase as the **Treasury issuance / term premium** and broader **fiscal trajectory** become more binding constraints on risk assets.
+- **Deteriorating fiscal/treasury dynamics**: deficits, issuance mix, and auction absorption can propagate into **rates volatility**, **liquidity**, and cross-asset risk premia.
+
+How the system attempts to express this (defined-risk where possible):
+
+- **Real asset / inflation hedges**: e.g., gold/commodities exposures when regimes support it.
+- **Rates / duration sensitivity**: explicit attention to the yield curve and rate momentum regimes.
+- **Volatility convexity**: selective long‑vol / convex options expression when the overlay indicates an elevated asymmetry.
+
+This thesis is not a claim of future performance; it is the organizing research frame for the toolchain.
 
 ---
 
@@ -25,147 +41,78 @@ Guiding principles:
 pip install -e .
 ```
 
-### Configure credentials
+### Configure `.env`
 
-Set environment variables (or use a local `.env`):
-- **Alpaca** (market data / options chain): `ALPACA_API_KEY`, `ALPACA_API_SECRET` (optional: `ALPACA_DATA_KEY`, `ALPACA_DATA_SECRET`)
-- **FRED** (macro/fiscal/monetary series): `FRED_API_KEY`
-- **OpenAI** (LLM summaries/outlooks): `OPENAI_API_KEY` (optional: `OPENAI_MODEL`)
-
----
-
-## Core design (what you’re actually getting)
-
-### Regimes as a production primitive
-Each regime module aims to provide:
-- **A snapshot**: latest readings with context markers (what’s “high/low” and what would be “stress watch”)
-- **A regime label**: a stable, explainable classification
-- **A feature vector**: scalars suitable for model training / export
-
-### Data provenance & reproducibility
-- **FRED** series are cached to `data/cache/fred/`.
-- **FiscalData** tables are cached to `data/cache/fiscaldata/`.
-- Local artifacts (caches, SQLite tracker) are excluded from git by `.gitignore`.
+- **Alpaca**: `ALPACA_API_KEY`, `ALPACA_API_SECRET` (optional: `ALPACA_DATA_KEY`, `ALPACA_DATA_SECRET`, `ALPACA_OPTIONS_FEED=opra`)
+- **FRED**: `FRED_API_KEY`
+- **FMP (news + econ calendar)**: `FMP_API_KEY`
+- **OpenAI**: `OPENAI_API_KEY` (optional: `OPENAI_MODEL`)
 
 ---
 
-## Commands
+## Operator workflow (the “daily run”)
 
-Show all commands:
+### 1) Account briefing (LLM, with events + links)
 
 ```bash
-lox --help
+lox account summary
 ```
 
-### Regime dashboard + LLM summary
+Outputs: **trades/exposures**, **market risk watch** (trackers + upcoming releases), and an **articles/reading list** (URLs from FMP).
 
-Print macro + liquidity + tariff regimes:
+### 2) Autopilot: generate budgeted trades + LLM oversight
+
+Paper-first, with LLM overlay and per-position outlook:
 
 ```bash
-lox regimes
+lox autopilot run-once --engine ml --basket extended --llm --llm-news
 ```
 
-LLM summary (regimes + risks + follow-ups):
+If you want the LLM to act as a gate (must say `DECISION: GO` before execution is allowed):
 
 ```bash
-lox regimes --llm
-```
-
-### ML-friendly merged feature vector
-
-```bash
-lox regime-features
-```
-
-### Fiscal (MVP) + LLM outlook
-
-```bash
-lox fiscal snapshot
-lox fiscal snapshot --refresh
-lox fiscal outlook
-```
-
-Fiscal snapshot is designed to make market-absorption and liquidity plumbing visible:
-- deficit level + impulse (% GDP)
-- issuance mix (MSPD Δ outstanding)
-- TGA behavior (level + change z-scores)
-- auction absorption (tail proxy + dealer take)
-
-### Monetary (MVP)
-
-```bash
-lox monetary snapshot
-lox monetary snapshot --refresh
-```
-
-Monetary MVP focuses on “plumbing” signals:
-- EFFR (DFF)
-- total reserves (TOTRESNS) + **reserves/GDP**
-- Fed balance sheet size (WALCL) + Δ
-- ON RRP usage (RRPONTSYD)
-
-### Macro
-
-```bash
-lox macro snapshot
-lox macro snapshot --asof 2022-06-30
-```
-
-### Liquidity (credit + rates)
-
-```bash
-lox liquidity snapshot
-lox liquidity snapshot --features
-```
-
-### USD + LLM outlook
-
-```bash
-lox usd snapshot
-lox usd snapshot --features
-lox usd outlook --year 2026
-```
-
-### Tariff / cost-push
-
-```bash
-lox tariff baskets
-lox tariff snapshot --basket import_retail_apparel
-```
-
-### Ticker snapshot + LLM outlook (scenario-based)
-
-```bash
-lox ticker snapshot --ticker AAPL
-lox ticker outlook --ticker AAPL --year 2026
-```
-
-### Option leg selection (building block)
-
-```bash
-lox select --ticker NVDA --sentiment positive --debug
-```
-
-### Ideas + tracking loop
-
-```bash
-lox ideas ai-bubble
-lox ideas ai-bubble --with-legs
-
-lox track recent
-lox track report
-lox track sync
+lox autopilot run-once --engine ml --basket extended --llm --llm-news --llm-gate --execute
 ```
 
 ---
 
-## Refreshing data
+## Moonshot scanner (high-variance, in-budget options)
 
-Most snapshots support `--refresh` to force re-download. Example:
+This is a research scanner designed to find **in-budget longshots** while focusing on **high realized-vol underlyings**:
 
 ```bash
-lox regimes --refresh
+lox options moonshot --basket extended
 ```
+
+Single name:
+
+```bash
+lox options moonshot --ticker SLV
+```
+
+It steps through candidates and prompts you per ticker; it will also generate a short, **grounded thesis** if OpenAI is configured.
+
+---
+
+## How it works (high level)
+
+### Quant engine (ML)
+- Builds a **macro panel dataset**: regime features + instrument features
+- Fits a cross-sectional model and produces ranked candidates (expected return + directional probability)
+
+### Risk overlay (LLM)
+- Consumes:
+  - **Regime feature row** and curated **tracker values**
+  - **Upcoming economic calendar events** (FMP; cached)
+  - **Recent headlines + URLs + sentiment** (FMP)
+- Produces:
+  - **Per-position outlook** (hold/reduce/hedge/exit/needs_review)
+  - A decision memo and (optionally) `DECISION: GO|HOLD|NEEDS_REVIEW`
+
+### Execution
+- Budgeted recommendations (cash-aware)
+- Options legs chosen under constraints (DTE, premium cap, spread, delta target)
+- Paper-first and live guarded with explicit confirmation
 
 ---
 
@@ -177,8 +124,6 @@ pytest -q
 
 ---
 
-## Roadmap (near-term)
-
-- **Funding regime (next)**: repo/secured funding dislocations + SOFR spreads (explicitly *not* part of monetary MVP)
-- Improve regime “handoffs”: fiscal ↔ monetary ↔ funding (plumbing-first)
-- Expand ML workflows: dataset export, backtests, and disciplined evaluation
+## Project constitution
+- `docs/PROJECT_CONSTITUTION.md`
+- `docs/OBJECTIVES.md`

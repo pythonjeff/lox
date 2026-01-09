@@ -7,7 +7,7 @@ from rich.panel import Panel
 
 from ai_options_trader.config import load_settings
 from ai_options_trader.data.market import fetch_crypto_daily_closes
-from ai_options_trader.liquidity.signals import build_liquidity_state
+from ai_options_trader.funding.signals import build_funding_state
 from ai_options_trader.macro.regime import classify_macro_regime_from_state
 from ai_options_trader.macro.signals import build_macro_state
 from ai_options_trader.usd.signals import build_usd_state
@@ -113,7 +113,7 @@ def register(crypto_app: typer.Typer) -> None:
             infl_thresh=infl_thresh,
             real_thresh=real_thresh,
         )
-        liquidity_state = build_liquidity_state(settings=settings, start_date="2011-01-01", refresh=refresh)
+        liquidity_state = build_funding_state(settings=settings, start_date="2011-01-01", refresh=refresh)
         usd_state = build_usd_state(settings=settings, start_date="2011-01-01", refresh=refresh)
 
         header = (

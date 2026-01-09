@@ -6,8 +6,9 @@ import numpy as np
 import pandas as pd
 
 from ai_options_trader.config import Settings
-from ai_options_trader.liquidity.signals import build_liquidity_dataset
+from ai_options_trader.funding.signals import build_funding_dataset
 from ai_options_trader.macro.signals import build_macro_dataset
+from ai_options_trader.rates.signals import build_rates_dataset
 from ai_options_trader.usd.signals import build_usd_dataset
 
 
@@ -52,8 +53,9 @@ def build_portfolio_dataset(
     """
     # --- Features (daily, with 'date' column) ---
     macro_df = build_macro_dataset(settings=settings, start_date=start_date, refresh=refresh_fred)
-    liq_df = build_liquidity_dataset(settings=settings, start_date=start_date, refresh=refresh_fred)
+    liq_df = build_funding_dataset(settings=settings, start_date=start_date, refresh=refresh_fred)
     usd_df = build_usd_dataset(settings=settings, start_date=start_date, refresh=refresh_fred)
+    rates_df = build_rates_dataset(settings=settings, start_date=start_date, refresh=refresh_fred)
 
     # Select stable feature columns (avoid raw levels where possible)
     f = pd.DataFrame({"date": pd.to_datetime(macro_df["date"])})
@@ -62,9 +64,8 @@ def build_portfolio_dataset(
     f["macro_z_real_yield_proxy_10y"] = macro_df.get("Z_REAL_YIELD_PROXY_10Y")
     f["macro_cpi_yoy"] = macro_df.get("CPI_YOY")
     f["macro_payrolls_3m_ann"] = macro_df.get("PAYROLLS_3M_ANN")
-    f = f.merge(
-        liq_df[
-            [
+    # Funding dataset schema is evolving; merge only the columns that exist.
+    liq_want = [
                 "date",
                 "LIQ_TIGHTNESS_SCORE",
                 "Z_HY_OAS",
@@ -75,11 +76,15 @@ def build_portfolio_dataset(
                 "Z_REAL_POLICY_RATE",
                 "Z_TGA_CHG_28D",
                 "Z_RRP_CHG_20D",
-            ]
-        ].copy(),
-        on="date",
-        how="left",
-    )
+        "CORRIDOR_SPREAD_BPS",
+        "SPIKE_5D_BPS",
+        "PERSIST_20D",
+        "VOL_20D_BPS",
+    ]
+    liq_cols = [c for c in liq_want if c in liq_df.columns]
+    if "date" not in liq_cols:
+        liq_cols = ["date"]
+    f = f.merge(liq_df[liq_cols].copy(), on="date", how="left")
     # USD dataset schema has evolved; support both:
     # - newer: Z_DTWEXBGS_MOM_60D / Z_DTWEXBGS_VOL_60D_ANN
     # - current repo: Z_USD_LEVEL / Z_USD_CHG_60D
@@ -90,6 +95,23 @@ def build_portfolio_dataset(
         usd_cols += ["Z_USD_LEVEL", "Z_USD_CHG_60D"]
 
     f = f.merge(usd_df[usd_cols].copy(), on="date", how="left")
+
+    # Rates / curve (new regime module)
+    rates_cols = [
+        "date",
+        "UST_2Y",
+        "UST_10Y",
+        "CURVE_2S10S",
+        "UST_10Y_CHG_20D",
+        "Z_UST_10Y",
+        "Z_UST_10Y_CHG_20D",
+        "Z_CURVE_2S10S",
+        "Z_CURVE_2S10S_CHG_20D",
+    ]
+    rates_cols = [c for c in rates_cols if c in rates_df.columns]
+    if "date" not in rates_cols:
+        rates_cols = ["date"]
+    f = f.merge(rates_df[rates_cols].copy(), on="date", how="left")
 
     f = f.sort_values("date").set_index("date")
     f = f.rename(
@@ -104,12 +126,26 @@ def build_portfolio_dataset(
             "Z_TGA_CHG_28D": "liq_z_tga_chg_28d",
             "Z_RRP_CHG_20D": "liq_z_rrp_chg_20d",
             "USD_STRENGTH_SCORE": "usd_strength_score",
+            # Funding (new schema; optional)
+            "CORRIDOR_SPREAD_BPS": "funding_corridor_spread_bps",
+            "SPIKE_5D_BPS": "funding_spike_5d_bps",
+            "PERSIST_20D": "funding_persist_20d",
+            "VOL_20D_BPS": "funding_vol_20d_bps",
             # Newer schema
             "Z_DTWEXBGS_MOM_60D": "usd_z_mom_60d",
             "Z_DTWEXBGS_VOL_60D_ANN": "usd_z_vol_60d",
             # Current repo schema
             "Z_USD_LEVEL": "usd_z_level",
             "Z_USD_CHG_60D": "usd_z_chg_60d",
+            # Rates (new module)
+            "UST_2Y": "rates_ust_2y",
+            "UST_10Y": "rates_ust_10y",
+            "CURVE_2S10S": "rates_curve_2s10s",
+            "UST_10Y_CHG_20D": "rates_ust_10y_chg_20d",
+            "Z_UST_10Y": "rates_z_ust_10y",
+            "Z_UST_10Y_CHG_20D": "rates_z_ust_10y_chg_20d",
+            "Z_CURVE_2S10S": "rates_z_curve_2s10s",
+            "Z_CURVE_2S10S_CHG_20D": "rates_z_curve_2s10s_chg_20d",
         }
     )
 
