@@ -571,12 +571,7 @@ def register(options_app: typer.Typer) -> None:
 
         # Regimes + prices
         X = build_regime_feature_matrix(settings=settings, start_date=str(start_date), refresh_fred=False)
-        px = fetch_equity_daily_closes(
-            api_key=settings.alpaca_data_key or settings.alpaca_api_key,
-            api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,
-            symbols=symbols,
-            start=str(start_date),
-        ).sort_index().ffill()
+        px = fetch_equity_daily_closes(settings=settings, symbols=symbols, start=str(start_date), refresh=False).sort_index().ffill()
 
         asof = min(pd.to_datetime(X.index.max()), pd.to_datetime(px.index.max()))
         asof_str = str(pd.to_datetime(asof).date())

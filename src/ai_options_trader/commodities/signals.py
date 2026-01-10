@@ -56,9 +56,7 @@ def build_commodities_dataset(settings: Settings, start_date: str = "2011-01-01"
         try:
             from ai_options_trader.data.market import fetch_equity_daily_closes
 
-            api_key = settings.alpaca_data_key or settings.alpaca_api_key
-            api_secret = settings.alpaca_data_secret or settings.alpaca_api_secret
-            px = fetch_equity_daily_closes(api_key=api_key, api_secret=api_secret, symbols=list(GOLD_PROXY_TICKERS), start=start_date)
+            px = fetch_equity_daily_closes(settings=settings, symbols=list(GOLD_PROXY_TICKERS), start=start_date, refresh=refresh)
             # Prefer GLDM; otherwise GLD.
             chosen = None
             for t in GOLD_PROXY_TICKERS:
@@ -78,14 +76,7 @@ def build_commodities_dataset(settings: Settings, start_date: str = "2011-01-01"
         try:
             from ai_options_trader.data.market import fetch_equity_daily_closes
 
-            api_key = settings.alpaca_data_key or settings.alpaca_api_key
-            api_secret = settings.alpaca_data_secret or settings.alpaca_api_secret
-            px = fetch_equity_daily_closes(
-                api_key=api_key,
-                api_secret=api_secret,
-                symbols=list(COPPER_PROXY_TICKERS + BROAD_PROXY_TICKERS),
-                start=start_date,
-            )
+            px = fetch_equity_daily_closes(settings=settings, symbols=list(COPPER_PROXY_TICKERS + BROAD_PROXY_TICKERS), start=start_date, refresh=refresh)
             px = px.sort_index().ffill()
             if "CPER" in px.columns and px["CPER"].dropna().shape[0] > 30:
                 s = pd.to_numeric(px["CPER"], errors="coerce").dropna()

@@ -238,16 +238,71 @@ def register(autopilot_app: typer.Typer) -> None:
         # Report
         tbl = Table(title="Lox Fund: open positions")
         tbl.add_column("symbol", style="bold")
+        tbl.add_column("und vs K", justify="right")
         tbl.add_column("qty", justify="right")
         tbl.add_column("avg_entry", justify="right")
         tbl.add_column("current", justify="right")
         tbl.add_column("uPL", justify="right")
         tbl.add_column("uPL%", justify="right")
+
+        # Best-effort: show option underlyings vs strikes (quick visual moneyness).
+        und_px_map: dict[str, float] = {}
+        try:
+            from ai_options_trader.data.market import fetch_equity_daily_closes
+
+            option_unds: set[str] = set()
+            for p0 in positions:
+                sym0 = str(p0.get("symbol") or "").strip().upper()
+                und0 = _extract_underlying_from_symbol(sym0)
+                if not und0:
+                    continue
+                # Heuristic: option symbols include digits after the underlying prefix.
+                if sym0 != und0 and any(ch.isdigit() for ch in sym0):
+                    option_unds.add(und0)
+            if option_unds:
+                start_px = (datetime.now(timezone.utc) - timedelta(days=400)).date().isoformat()
+                px_u = fetch_equity_daily_closes(settings=settings, symbols=sorted(option_unds), start=start_px, refresh=False).sort_index().ffill()
+                if not px_u.empty:
+                    last = px_u.iloc[-1].to_dict()
+                    for k, v in (last or {}).items():
+                        try:
+                            if v is None:
+                                continue
+                            und_px_map[str(k).strip().upper()] = float(v)
+                        except Exception:
+                            continue
+        except Exception:
+            und_px_map = {}
+
         for p in positions:
             uplpc = p.get("unrealized_plpc")
             style = "red" if p in stop else ""
+            # Und vs strike (options only)
+            und_vs_k = "—"
+            try:
+                sym = str(p.get("symbol") or "").strip().upper()
+                und = _extract_underlying_from_symbol(sym) or ""
+                if und and sym != und and any(ch.isdigit() for ch in sym):
+                    from ai_options_trader.utils.occ import parse_occ_option_symbol
+
+                    _exp, opt_type, strike = parse_occ_option_symbol(sym, und)
+                    und_px = und_px_map.get(und)
+                    if und_px is not None and strike is not None and float(strike) > 0:
+                        k = float(strike)
+                        if str(opt_type) == "put":
+                            diff = k - float(und_px)
+                            itm = float(und_px) < k
+                        else:
+                            diff = float(und_px) - k
+                            itm = float(und_px) > k
+                        pct = (diff / k) * 100.0
+                        m = "ITM" if itm else "OTM"
+                        und_vs_k = f"${float(und_px):.2f} vs ${k:.2f} ({pct:+.0f}% {m})"
+            except Exception:
+                und_vs_k = "—"
             tbl.add_row(
                 str(p.get("symbol") or ""),
+                und_vs_k,
                 f"{p.get('qty'):.2f}" if isinstance(p.get("qty"), (int, float)) else "—",
                 f"{p.get('avg_entry_price'):.2f}" if isinstance(p.get("avg_entry_price"), (int, float)) else "—",
                 f"{p.get('current_price'):.2f}" if isinstance(p.get("current_price"), (int, float)) else "—",
@@ -643,12 +698,7 @@ def register(autopilot_app: typer.Typer) -> None:
                 console.print(Panel(f"Skipping {len(skipped)} non-tradable/unavailable symbol(s): {', '.join(skipped[:20])}", title="Universe filter", expand=False))
             symbols = tradable_ok
 
-        px = fetch_equity_daily_closes(
-            api_key=settings.alpaca_data_key or settings.alpaca_api_key,
-            api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,
-            symbols=symbols,
-            start=start,
-        ).sort_index().ffill()
+        px = fetch_equity_daily_closes(settings=settings, symbols=symbols, start=start, refresh=bool(refresh)).sort_index().ffill()
 
         cache_dir = Path("data/cache/playbook")
         cache_dir.mkdir(parents=True, exist_ok=True)

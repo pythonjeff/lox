@@ -96,12 +96,7 @@ def build_ai_bubble_ideas(
 
     # Equity closes for tickers + benchmark
     syms = sorted(set(tech + [macro_benchmark.strip().upper()]))
-    px = fetch_equity_daily_closes(
-        api_key=settings.ALPACA_DATA_KEY or settings.ALPACA_API_KEY,
-        api_secret=settings.ALPACA_DATA_SECRET or settings.ALPACA_API_SECRET,
-        symbols=syms,
-        start=start_date,
-    )
+    px = fetch_equity_daily_closes(settings=settings, symbols=syms, start=start_date, refresh=bool(refresh))
     rets = price_returns(px)
     sens = latest_sensitivity_table(
         rets=rets,
@@ -129,12 +124,17 @@ def build_ai_bubble_ideas(
     cost_df = pd.concat(frames, axis=1).sort_index().resample("D").ffill()
 
     all_tariff_syms = sorted({sym for b in baskets for sym in BASKETS[b].tickers})
-    px_tariff = fetch_equity_daily_closes(
-        api_key=settings.ALPACA_DATA_KEY or settings.ALPACA_API_KEY,
-        api_secret=settings.ALPACA_DATA_SECRET or settings.ALPACA_API_SECRET,
-        symbols=sorted(set(all_tariff_syms + [tariff_benchmark.strip().upper()])),
-        start=start_date,
-    ).sort_index().ffill().dropna(how="all")
+    px_tariff = (
+        fetch_equity_daily_closes(
+            settings=settings,
+            symbols=sorted(set(all_tariff_syms + [tariff_benchmark.strip().upper()])),
+            start=start_date,
+            refresh=bool(refresh),
+        )
+        .sort_index()
+        .ffill()
+        .dropna(how="all")
+    )
 
     tariff_states: Dict[str, Any] = {}
     for b in baskets:

@@ -36,9 +36,7 @@ def register(commod_app: typer.Typer) -> None:
 
         trend_lines: list[str] = []
         try:
-            api_key = settings.alpaca_data_key or settings.alpaca_api_key
-            api_secret = settings.alpaca_data_secret or settings.alpaca_api_secret
-            px = fetch_equity_daily_closes(api_key=api_key, api_secret=api_secret, symbols=list(proxy.values()), start=start)
+            px = fetch_equity_daily_closes(settings=settings, symbols=list(proxy.values()), start=start, refresh=bool(refresh))
             px = px.sort_index().ffill()
 
             def _ret(s: pd.Series, d: int) -> float | None:

@@ -85,12 +85,7 @@ def register(app: typer.Typer) -> None:
 
         # --- Prices for basket + tradables ---
         symbols = sorted(set(uni.tradable))
-        px = fetch_equity_daily_closes(
-            api_key=settings.alpaca_data_key or settings.alpaca_api_key,
-            api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,
-            symbols=symbols,
-            start=start,
-        )
+        px = fetch_equity_daily_closes(settings=settings, symbols=symbols, start=start, refresh=bool(refresh))
         latest = px.dropna(how="all").iloc[-1].to_dict()
         latest_prices = {k: float(v) for k, v in latest.items() if v is not None}
 
@@ -228,12 +223,7 @@ def register(app: typer.Typer) -> None:
 
         symbols = sorted(set(uni.tradable))
         symbols = sorted(set(uni.tradable))
-        px = fetch_equity_daily_closes(
-            api_key=settings.alpaca_data_key or settings.alpaca_api_key,
-            api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,
-            symbols=symbols,
-            start=start,
-        )
+        px = fetch_equity_daily_closes(settings=settings, symbols=symbols, start=start, refresh=bool(refresh))
         ds = build_portfolio_dataset(
             settings=settings,
             equity_prices=px,

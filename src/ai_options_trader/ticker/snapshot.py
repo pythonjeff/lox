@@ -54,15 +54,12 @@ def build_ticker_snapshot(
     """
     Build a simple quantitative snapshot for a single ticker.
 
-    Uses Alpaca daily closes.
+    Uses the configured historical price source (default: FMP) for daily closes.
     """
     sym = ticker.strip().upper()
     bench = benchmark.strip().upper() if benchmark else "SPY"
 
-    api_key = settings.ALPACA_DATA_KEY or settings.ALPACA_API_KEY
-    api_secret = settings.ALPACA_DATA_SECRET or settings.ALPACA_API_SECRET
-
-    px = fetch_equity_daily_closes(api_key=api_key, api_secret=api_secret, symbols=[sym, bench], start=start)
+    px = fetch_equity_daily_closes(settings=settings, symbols=[sym, bench], start=start)
     px = px.sort_index().ffill().dropna(how="all")
 
     if sym not in px.columns:

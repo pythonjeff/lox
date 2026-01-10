@@ -53,14 +53,9 @@ def register(tariff_app: typer.Typer) -> None:
         # Align to daily for merging with equities
         cost_df = cost_df.resample("D").ffill()
 
-        # --- Equities (Alpaca) ---
+        # --- Equities (historical closes; default: FMP) ---
         symbols = sorted(set(universe + [benchmark]))
-        px = fetch_equity_daily_closes(
-            api_key=settings.ALPACA_DATA_KEY or settings.ALPACA_API_KEY,
-            api_secret=settings.ALPACA_DATA_SECRET or settings.ALPACA_API_SECRET,
-            symbols=symbols,
-            start=start,
-        )
+        px = fetch_equity_daily_closes(settings=settings, symbols=symbols, start=start, refresh=bool(refresh))
         px = px.sort_index().ffill().dropna(how="all")
 
         state = build_tariff_regime_state(

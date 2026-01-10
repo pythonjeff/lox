@@ -75,12 +75,7 @@ def register(macro_app: typer.Typer) -> None:
         syms = [s.strip().upper() for s in tickers.split(",") if s.strip()]
         syms_all = sorted(set(syms + [benchmark.strip().upper()]))
 
-        px = fetch_equity_daily_closes(
-            api_key=settings.alpaca_data_key or settings.alpaca_api_key,
-            api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,
-            symbols=syms_all,
-            start=start,
-        )
+        px = fetch_equity_daily_closes(settings=settings, symbols=syms_all, start=start, refresh=bool(refresh))
         r = returns(px)
 
         # Build table
@@ -142,12 +137,7 @@ def register(macro_app: typer.Typer) -> None:
         syms = [s.strip().upper() for s in tickers.split(",")]
         syms_all = sorted(set(syms + [benchmark]))
 
-        px = fetch_equity_daily_closes(
-            api_key=settings.ALPACA_API_KEY,
-            api_secret=settings.ALPACA_API_SECRET,
-            symbols=syms_all,
-            start=start,
-        )
+        px = fetch_equity_daily_closes(settings=settings, symbols=syms_all, start=start, refresh=bool(refresh))
 
         r = returns(px)
 

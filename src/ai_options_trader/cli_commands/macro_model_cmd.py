@@ -96,12 +96,7 @@ def register(ideas_app: typer.Typer) -> None:
 
         uni = get_universe(basket)
         tickers = list(uni.basket_equity)
-        px = fetch_equity_daily_closes(
-            api_key=settings.alpaca_data_key or settings.alpaca_api_key,
-            api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,
-            symbols=sorted(set(uni.tradable)),
-            start=start,
-        ).sort_index().ffill()
+        px = fetch_equity_daily_closes(settings=settings, symbols=sorted(set(uni.tradable)), start=start, refresh=bool(refresh)).sort_index().ffill()
 
         Xr_full = build_regime_feature_matrix(settings=settings, start_date=start, refresh_fred=refresh)
         fs = (feature_set or "full").strip().lower()
@@ -342,6 +337,8 @@ def register(ideas_app: typer.Typer) -> None:
         - Hit-rate of sign(pred) vs sign(realized)
         - Top-bottom spread in realized returns
         """
+        import pandas as pd
+
         from ai_options_trader.config import load_settings
         from ai_options_trader.data.market import fetch_equity_daily_closes
         try:
@@ -364,12 +361,7 @@ def register(ideas_app: typer.Typer) -> None:
 
         uni = get_universe(basket)
         tickers = list(uni.basket_equity)
-        px = fetch_equity_daily_closes(
-            api_key=settings.alpaca_data_key or settings.alpaca_api_key,
-            api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,
-            symbols=sorted(set(uni.tradable)),
-            start=start,
-        ).sort_index().ffill()
+        px = fetch_equity_daily_closes(settings=settings, symbols=sorted(set(uni.tradable)), start=start, refresh=bool(refresh)).sort_index().ffill()
 
         Xr_full = build_regime_feature_matrix(settings=settings, start_date=start, refresh_fred=refresh)
         fs = (feature_set or "full").strip().lower()
@@ -383,6 +375,19 @@ def register(ideas_app: typer.Typer) -> None:
             interaction_mode=interaction_mode,
             whitelist_extra=whitelist_extra,
         )
+
+        # Dataset coverage (helps diagnose "why doesn't --start change anything?")
+        ds_date_start = None
+        ds_date_end = None
+        ds_unique_dates = 0
+        ds_unique_tickers = 0
+        if not ds.X.empty:
+            dates = ds.X.index.get_level_values(0)
+            syms = ds.X.index.get_level_values(1)
+            ds_unique_dates = int(len(set(dates)))
+            ds_unique_tickers = int(len(set(syms)))
+            ds_date_start = str(pd.to_datetime(dates.min()).date()) if len(dates) else None
+            ds_date_end = str(pd.to_datetime(dates.max()).date()) if len(dates) else None
 
         res = walk_forward_panel_eval(X=ds.X, y=ds.y, horizon_days=int(purge_days), step_days=int(step_days), top_k=int(top_k))
         port = walk_forward_panel_portfolio(
@@ -408,6 +413,10 @@ def register(ideas_app: typer.Typer) -> None:
                 f"spearman_mean={res.spearman_mean}\n"
                 f"hit_rate_mean={res.hit_rate_mean}\n"
                 f"top_bottom_spread_mean={res.top_bottom_spread_mean}\n"
+                f"dataset_date_start={ds_date_start}\n"
+                f"dataset_date_end={ds_date_end}\n"
+                f"dataset_unique_dates={ds_unique_dates}\n"
+                f"dataset_unique_tickers={ds_unique_tickers}\n"
                 f"book={book_s}\n"
                 f"book_ret_net_mean={float(port[ret_col].mean()) if not port.empty else None}\n"
                 f"turnover_mean={float(port[turn_col].mean()) if not port.empty else None}\n"
@@ -462,12 +471,7 @@ def register(ideas_app: typer.Typer) -> None:
 
         uni = get_universe(basket)
         tickers = list(uni.basket_equity)
-        px = fetch_equity_daily_closes(
-            api_key=settings.alpaca_data_key or settings.alpaca_api_key,
-            api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,
-            symbols=sorted(set(uni.tradable)),
-            start=start,
-        ).sort_index().ffill()
+        px = fetch_equity_daily_closes(settings=settings, symbols=sorted(set(uni.tradable)), start=start, refresh=bool(refresh)).sort_index().ffill()
 
         Xr_full = build_regime_feature_matrix(settings=settings, start_date=start, refresh_fred=refresh)
         Xbase = build_fci_feature_matrix(Xr_full) if fs == "fci" else Xr_full
@@ -569,12 +573,7 @@ def register(ideas_app: typer.Typer) -> None:
 
         uni = get_universe(basket)
         tickers = list(uni.basket_equity)
-        px = fetch_equity_daily_closes(
-            api_key=settings.alpaca_data_key or settings.alpaca_api_key,
-            api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,
-            symbols=sorted(set(uni.tradable)),
-            start=start,
-        ).sort_index().ffill()
+        px = fetch_equity_daily_closes(settings=settings, symbols=sorted(set(uni.tradable)), start=start, refresh=bool(refresh)).sort_index().ffill()
 
         Xr_full = build_regime_feature_matrix(settings=settings, start_date=start, refresh_fred=refresh)
         fs = (feature_set or "full").strip().lower()
