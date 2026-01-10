@@ -182,9 +182,7 @@ def register(ideas_app: typer.Typer) -> None:
             # Underlying "current" price (best-effort: latest daily close).
             und_px = None
             try:
-                api_key = settings.alpaca_data_key or settings.alpaca_api_key
-                api_secret = settings.alpaca_data_secret or settings.alpaca_api_secret
-                px = fetch_equity_daily_closes(api_key=api_key, api_secret=api_secret, symbols=[underlying], start="2025-01-01")
+                px = fetch_equity_daily_closes(settings=settings, symbols=[underlying], start="2025-01-01")
                 if underlying in px.columns and not px[underlying].dropna().empty:
                     und_px = float(px[underlying].dropna().iloc[-1])
             except Exception:
@@ -297,12 +295,7 @@ def register(ideas_app: typer.Typer) -> None:
 
         # --- Prices for starter basket only (keep it lean) ---
         symbols = sorted(set(STARTER_UNIVERSE.basket_equity))
-        px = fetch_equity_daily_closes(
-            api_key=settings.alpaca_data_key or settings.alpaca_api_key,
-            api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,
-            symbols=symbols,
-            start=start,
-        ).sort_index().ffill()
+        px = fetch_equity_daily_closes(settings=settings, symbols=symbols, start=start, refresh=bool(refresh)).sort_index().ffill()
 
         # --- Regime feature matrix (cacheable, no labels) ---
         cache_dir = Path("data/cache/playbook")

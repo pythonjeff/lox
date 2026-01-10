@@ -43,8 +43,9 @@ pip install -e .
 
 - **Alpaca**: `ALPACA_API_KEY`, `ALPACA_API_SECRET` (optional: `ALPACA_DATA_KEY`, `ALPACA_DATA_SECRET`, `ALPACA_OPTIONS_FEED=opra`)
 - **FRED**: `FRED_API_KEY`
-- **FMP (news + econ calendar)**: `FMP_API_KEY`
+- **FMP (news + econ calendar + optional price history)**: `FMP_API_KEY`
 - **OpenAI**: `OPENAI_API_KEY` (optional: `OPENAI_MODEL`)
+- **Price source**: `AOT_PRICE_SOURCE=fmp|alpaca` (default: `fmp`; Alpaca remains execution + live market data)
 
 ---
 

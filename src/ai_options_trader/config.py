@@ -6,6 +6,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    # Historical price source used by research panels/backtests.
+    # Alpaca remains the execution + options chain provider.
+    AOT_PRICE_SOURCE: str = "fmp"  # fmp|alpaca
+
     ALPACA_API_KEY: str
     ALPACA_API_SECRET: str
     ALPACA_PAPER: bool = True
@@ -60,6 +64,10 @@ class Settings(BaseSettings):
     @property
     def fmp_api_key(self) -> str | None:
         return self.FMP_API_KEY
+
+    @property
+    def price_source(self) -> str:
+        return (self.AOT_PRICE_SOURCE or "fmp").strip().lower()
 
 class StrategyConfig(BaseModel):
     target_dte_days: int = 30

@@ -81,15 +81,10 @@ def register(app: typer.Typer) -> None:
             frames.append(df[[col]])
         cost_df = pd.concat(frames, axis=1).sort_index().resample("D").ffill()
 
-        # --- Equities (Alpaca) fetched once ---
+        # --- Equities (historical closes; default: FMP) fetched once ---
         all_universe = sorted({sym for b in basket_names for sym in BASKETS[b].tickers})
         symbols = sorted(set(all_universe + [benchmark.strip().upper()]))
-        px = fetch_equity_daily_closes(
-            api_key=settings.ALPACA_DATA_KEY or settings.ALPACA_API_KEY,
-            api_secret=settings.ALPACA_DATA_SECRET or settings.ALPACA_API_SECRET,
-            symbols=symbols,
-            start=start,
-        )
+        px = fetch_equity_daily_closes(settings=settings, symbols=symbols, start=start, refresh=bool(refresh))
         px = px.sort_index().ffill().dropna(how="all")
 
         print("\nTARIFF / COST-PUSH REGIMES")
@@ -232,15 +227,10 @@ def register(app: typer.Typer) -> None:
             frames.append(df[[col]])
         cost_df = pd.concat(frames, axis=1).sort_index().resample("D").ffill()
 
-        # Equities (Alpaca) fetched once
+        # Equities (historical closes; default: FMP) fetched once
         all_universe = sorted({sym for b in basket_names for sym in BASKETS[b].tickers})
         symbols = sorted(set(all_universe + [benchmark.strip().upper()]))
-        px = fetch_equity_daily_closes(
-            api_key=settings.ALPACA_DATA_KEY or settings.ALPACA_API_KEY,
-            api_secret=settings.ALPACA_DATA_SECRET or settings.ALPACA_API_SECRET,
-            symbols=symbols,
-            start=start,
-        )
+        px = fetch_equity_daily_closes(settings=settings, symbols=symbols, start=start, refresh=bool(refresh))
         px = px.sort_index().ffill().dropna(how="all")
 
         tariff_states = []
