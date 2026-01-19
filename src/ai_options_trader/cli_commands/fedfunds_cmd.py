@@ -14,6 +14,7 @@ from ai_options_trader.cli_commands.fedfunds_display import (
     build_portfolio_relevance_table,
     add_growth_inflation_section,
     add_policy_conditions_section,
+    add_fed_policy_expectations_section,
     add_overnight_funding_section,
     add_system_liquidity_section,
 )
@@ -120,6 +121,13 @@ def register(monetary_app: typer.Typer) -> None:
         add_housing_section(data_table, macro_state)
         
         c.print(Panel(data_table, title="Market Data", border_style="blue"))
+        
+        # === FED POLICY EXPECTATIONS (from futures) ===
+        
+        # Get current EFFR from funding state
+        # Use IORB (Interest on Reserve Balances) as the Fed's target ceiling
+        current_effr = (liq_state.inputs.iorb or 5.50)  # IORB is the ceiling of Fed Funds corridor
+        add_fed_policy_expectations_section(c, settings, current_effr)
 
         # === LLM OUTLOOK ===
         

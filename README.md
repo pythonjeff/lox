@@ -203,29 +203,32 @@ lox autopilot run-once --predictions --top-predictions 5
 ### Morning: Market Context
 ```bash
 # 1. Macro/regime snapshot
-lox labs fedfunds-outlook
+lox monetary fedfunds-outlook
 
 # 2. Account briefing
 lox account summary
 ```
 
-### Midday: Trade Generation
+### Midday: Trade Ideas
 ```bash
-# 3. ML-driven trade ideas (with LLM oversight)
-lox autopilot run-once --engine ml --basket extended --llm --llm-news
+# 3. Get defensive ideas (hedges, protection)
+lox labs hedge
 
-# 4. Execute approved trades (paper-first)
-lox autopilot run-once --engine ml --basket extended --llm --llm-gate --execute
+# 4. Get offensive ideas (growth, momentum)
+lox labs grow
+
+# 5. Full ML-driven analysis (if needed)
+lox autopilot run-once --engine ml --basket extended
 ```
 
 ### EOD: Risk Review
 ```bash
-# 5. Portfolio risk analysis (multiple regimes)
+# 6. Portfolio risk analysis (multiple regimes)
 lox labs mc-v01 --regime RISK_OFF --real      # Crash scenario
 lox labs mc-v01 --regime VOL_CRUSH --real     # Worst case for hedges
 lox labs mc-v01 --regime SLOW_BLEED --real    # Theta vs direction
 
-# 6. Weekly performance report (Fridays)
+# 7. Weekly performance report (Fridays)
 lox weekly report
 ```
 
@@ -406,10 +409,12 @@ Proprietary - Lox Fund Research © 2026
 | Command | Purpose |
 |---------|---------|
 | `lox account summary` | Portfolio snapshot with macro context |
-| `lox autopilot run-once` | ML trade generation + execution |
+| `lox labs hedge` | Defensive trade ideas (hedges, protection) |
+| `lox labs grow` | Offensive trade ideas (growth, momentum) |
 | `lox labs mc-v01 --real` | Position-level Monte Carlo with real prices |
-| `lox labs fedfunds-outlook` | Macro/policy/liquidity dashboard |
+| `lox monetary fedfunds-outlook` | Macro/policy/liquidity dashboard |
 | `lox weekly report` | Weekly performance summary |
+| `lox autopilot run-once` | Full ML trade generation (verbose) |
 | `lox options moonshot` | High-variance options scanner |
 
 ### Regime Commands

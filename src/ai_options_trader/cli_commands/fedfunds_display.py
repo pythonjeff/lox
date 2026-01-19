@@ -239,3 +239,75 @@ def add_system_liquidity_section(t: Table, liq_state: FundingState) -> None:
     
     t.add_row("", "")
     t.add_row("  Trigger:", "If TGA rises (drain) while RRP depleted + reserves fall, watch SOFR-IORB > +10 bps or repeated spikes")
+
+
+def add_fed_policy_expectations_section(c, settings, current_effr: float) -> None:
+    """
+    Add section showing market-implied Fed policy expectations.
+    
+    Shows forward rates from SOFR/Fed Funds futures and divergence from Fed guidance.
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from ai_options_trader.funding.futures import fetch_fed_policy_expectations
+    
+    c.print("\n[bold cyan]═══ Fed Policy Expectations (Market-Implied) ═══[/bold cyan]")
+    
+    # Fetch expectations
+    expectations = fetch_fed_policy_expectations(
+        settings=settings,
+        current_effr=current_effr,
+        fed_dot_plot=4.50,  # Update this with actual SEP projection
+    )
+    
+    t = Table(show_header=False, box=None, padding=(0, 1))
+    t.add_column("Metric", style="dim", no_wrap=True, width=28)
+    t.add_column("Value", justify="right")
+    
+    # Current rate (IORB is the ceiling of the Fed Funds target range)
+    t.add_row("Fed Funds Target (ceiling)", f"{expectations.current_effr:.2f}%")
+    t.add_row("", "")
+    
+    # Forward expectations
+    if expectations.implied_3m is not None:
+        chg_3m = expectations.change_3m_bps
+        direction_3m = "cut" if chg_3m and chg_3m < -5 else "hike" if chg_3m and chg_3m > 5 else "hold"
+        t.add_row("Market expects (in 3M)", f"{expectations.implied_3m:.2f}%  ({chg_3m:+.0f}bps {direction_3m})")
+    
+    if expectations.implied_6m is not None:
+        chg_6m = expectations.change_6m_bps
+        direction_6m = "cuts" if chg_6m and chg_6m < -25 else "hikes" if chg_6m and chg_6m > 25 else "hold"
+        t.add_row("Market expects (in 6M)", f"{expectations.implied_6m:.2f}%  ({chg_6m:+.0f}bps {direction_6m})")
+    
+    if expectations.implied_12m is not None:
+        chg_12m = expectations.change_12m_bps
+        direction_12m = "cuts" if chg_12m and chg_12m < -50 else "hikes" if chg_12m and chg_12m > 50 else "stable"
+        t.add_row("Market expects (in 12M)", f"{expectations.implied_12m:.2f}%  ({chg_12m:+.0f}bps {direction_12m})")
+    
+    t.add_row("", "")
+    
+    # Comparison to Fed guidance
+    if expectations.fed_dot_plot_eoy is not None:
+        t.add_row("Fed's Dot Plot (EOY 2026)", f"{expectations.fed_dot_plot_eoy:.2f}%")
+        
+        if expectations.divergence_from_fed_bps is not None:
+            div = expectations.divergence_from_fed_bps
+            if abs(div) < 10:
+                div_text = "aligned"
+            elif div < 0:
+                div_text = f"market MORE dovish ({div:+.0f}bps)"
+            else:
+                div_text = f"market MORE hawkish ({div:+.0f}bps)"
+            t.add_row("Divergence", div_text)
+    
+    t.add_row("", "")
+    
+    # Curve signal
+    t.add_row("Curve Signal", expectations.curve_signal)
+    t.add_row("Policy Bias", expectations.policy_bias)
+    
+    # Add note about data source
+    t.add_row("", "")
+    t.add_row("[dim]Note:[/dim]", "[dim]v0: Placeholder values. Will integrate actual SOFR/ZQ futures data.[/dim]")
+    
+    c.print(t)
