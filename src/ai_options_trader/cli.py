@@ -95,6 +95,7 @@ def _register_commands() -> None:
     from ai_options_trader.cli_commands.account_cmd import register as register_account
     from ai_options_trader.cli_commands.weekly_report_cmd import register as register_weekly_report
     from ai_options_trader.cli_commands.fedfunds_cmd import register as register_fedfunds
+    from ai_options_trader.cli_commands.hedges_cmd import register as register_hedges
 
     # Clean surface
     register_options(options_app)
@@ -116,6 +117,7 @@ def _register_commands() -> None:
     register_regimes(labs_app)
     register_scenarios(labs_app)
     register_scenarios_ml(labs_app)  # ML-enhanced scenarios
+    register_hedges(labs_app)  # Simplified hedge recommendations
     register_macro(macro_app)
     register_tariff(tariff_app)
     register_funding(funding_app)
