@@ -28,6 +28,104 @@ from ai_options_trader.strategies.sleeves import resolve_sleeves
 
 
 def register(options_app: typer.Typer) -> None:
+    @options_app.command("scan")
+    def options_scan(
+        ticker: str = typer.Option(..., "--ticker", "-t", help="Underlying ticker, e.g. VIX"),
+        want: str = typer.Option("call", "--want", help="call|put"),
+        show_top: int = typer.Option(20, "--show-top", "-n", help="Number of options to show"),
+    ):
+        """
+        Simple options scanner - shows available call/put contracts from Alpaca.
+        """
+        from rich.console import Console
+        from rich.table import Table
+        from ai_options_trader.utils.settings import load_settings
+        from ai_options_trader.data.alpaca import make_clients, fetch_option_chain
+        
+        settings = load_settings()
+        trading, data = make_clients(settings)
+        
+        w = (want or "call").strip().lower()
+        if w not in {"call", "put"}:
+            w = "call"
+        
+        console = Console()
+        console.print(f"\n[bold cyan]{ticker.upper()} {w.upper()}s[/bold cyan]\n")
+        
+        # Fetch option chain from Alpaca
+        chain = fetch_option_chain(data, ticker, feed=settings.alpaca_options_feed)
+        
+        if not chain:
+            console.print("[yellow]No options data returned from Alpaca[/yellow]")
+            return
+        
+        console.print(f"[dim]Total contracts: {len(chain)}[/dim]\n")
+        
+        # Use existing OCC parser
+        from ai_options_trader.utils.occ import parse_occ_option_symbol
+        
+        # Chain is a dict[str, OptionsSnapshot] - iterate over values
+        filtered = []
+        
+        for opt in chain.values():
+            symbol = str(getattr(opt, "symbol", ""))
+            if not symbol:
+                continue
+            
+            # Parse using working OCC parser
+            try:
+                expiry, opt_type, strike = parse_occ_option_symbol(symbol, ticker)
+                
+                # Filter by call/put
+                if opt_type == w:
+                    filtered.append({
+                        "symbol": symbol,
+                        "strike": strike,
+                        "expiry": expiry,
+                        "opt": opt,
+                    })
+            except:
+                continue
+        
+        if not filtered:
+            console.print(f"[yellow]No {w}s found[/yellow]")
+            return
+        
+        console.print(f"[dim]Found {len(filtered)} {w}s[/dim]\n")
+        
+        # Sort by strike
+        filtered.sort(key=lambda x: x["strike"])
+        
+        # Limit display
+        filtered = filtered[:show_top]
+        
+        # Display
+        table = Table(show_header=True)
+        table.add_column("Symbol", style="cyan")
+        table.add_column("Strike", justify="right")
+        table.add_column("Expiry", justify="center")
+        table.add_column("Ask", justify="right", style="yellow")
+        table.add_column("Bid", justify="right")
+        table.add_column("Last", justify="right")
+        
+        for item in filtered:
+            opt = item["opt"]
+            ask = getattr(opt, "ask_price", None) or getattr(opt, "ask", None)
+            bid = getattr(opt, "bid_price", None) or getattr(opt, "bid", None)
+            last = getattr(opt, "last_price", None) or getattr(opt, "last", None)
+            
+            table.add_row(
+                item["symbol"][:20],
+                f"${item['strike']:.2f}",
+                str(item["expiry"]),
+                f"${ask:.2f}" if ask else "—",
+                f"${bid:.2f}" if bid else "—",
+                f"${last:.2f}" if last else "—",
+            )
+        
+        console.print(table)
+        console.print(f"\n[dim]Showing {len(filtered)} of {len(filtered)} {w}s[/dim]\n")
+    
     def _fmt_int(x: int | None) -> str:
         return f"{int(x):,}" if isinstance(x, int) else "n/a"
 

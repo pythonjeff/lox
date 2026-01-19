@@ -96,9 +96,18 @@ def _register_commands() -> None:
     from ai_options_trader.cli_commands.weekly_report_cmd import register as register_weekly_report
     from ai_options_trader.cli_commands.fedfunds_cmd import register as register_fedfunds
     from ai_options_trader.cli_commands.hedges_cmd import register as register_hedges
+    from ai_options_trader.cli_commands.options_scan_cmd import register_scan_commands
+    from ai_options_trader.cli_commands.core_cmd import register_core
+    from ai_options_trader.cli_commands.dashboard_cmd import register as register_dashboard
+    from ai_options_trader.cli_commands.dashboard_cmd import register_pillar_commands
 
+    # Core commands (top-level for quick access)
+    register_core(app)
+    register_dashboard(app)  # Main dashboard command
+    
     # Clean surface
     register_options(options_app)
+    register_scan_commands(options_app)  # New modular scan commands
     register_ideas(ideas_app)
     # Keep back-compat: model commands remain under `lox ideas ...`
     register_macro_model(ideas_app)
@@ -133,6 +142,9 @@ def _register_commands() -> None:
     register_ticker(ticker_app)
     register_housing(housing_app)
     register_solar(solar_app)
+    
+    # Quick pillar access under labs
+    register_pillar_commands(labs_app)
     _COMMANDS_REGISTERED = True
 
 
