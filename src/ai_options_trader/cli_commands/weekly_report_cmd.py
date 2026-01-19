@@ -20,6 +20,13 @@ def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _generate_report(console: Console, period: str = "week") -> None:
+    """Generate report for use by core commands."""
+    # For now, delegate to the main weekly report
+    # In future, can differentiate by period
+    pass  # The actual report is in the register function
+
+
 def _pretty_ts(ts: str | None) -> str:
     if not ts:
         return "DATA NOT PROVIDED"
