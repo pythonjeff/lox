@@ -246,12 +246,70 @@ function fetchRegimeAnalysis() {
         });
 }
 
+// Fetch and display closed trades
+function fetchClosedTrades() {
+    fetch('/api/closed-trades')
+        .then(response => response.json())
+        .then(data => {
+            // Update win rate badge
+            const winRateValue = document.getElementById('win-rate-value');
+            const winRateBadge = document.getElementById('win-rate-badge');
+            if (data.win_rate !== undefined) {
+                winRateValue.textContent = `${data.win_rate.toFixed(0)}%`;
+                winRateBadge.classList.add(data.win_rate >= 50 ? 'positive' : 'negative');
+            }
+            
+            // Update stats
+            const realizedPnl = document.getElementById('realized-pnl');
+            realizedPnl.textContent = formatCurrency(data.total_pnl || 0);
+            realizedPnl.className = 'stat-value ' + ((data.total_pnl || 0) >= 0 ? 'positive' : 'negative');
+            
+            document.getElementById('total-wins').textContent = data.wins || 0;
+            document.getElementById('total-losses').textContent = data.losses || 0;
+            
+            // Update closed trades table
+            const tbody = document.getElementById('closed-trades-body');
+            
+            if (!data.trades || data.trades.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="loading">No closed trades yet</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = data.trades.map(trade => {
+                const pnlClass = trade.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+                const statusIcon = trade.pnl >= 0 ? '✓' : '✗';
+                const statusClass = trade.pnl >= 0 ? 'win-icon' : 'loss-icon';
+                
+                return `
+                    <tr>
+                        <td>
+                            <span class="${statusClass}">${statusIcon}</span>
+                            <span class="closed-symbol">${trade.symbol}</span>
+                        </td>
+                        <td>${formatCurrency(trade.cost)}</td>
+                        <td>${formatCurrency(trade.proceeds)}</td>
+                        <td class="${pnlClass}">${formatCurrency(trade.pnl)}</td>
+                    </tr>
+                `;
+            }).join('');
+        })
+        .catch(error => {
+            console.error('Closed trades fetch error:', error);
+            document.getElementById('closed-trades-body').innerHTML = 
+                '<tr><td colspan="4" class="loading">Error loading closed trades</td></tr>';
+        });
+}
+
 // Initial load
 updateDashboard();
+fetchClosedTrades();
 fetchRegimeAnalysis();
 
 // Auto-refresh positions every 5 minutes
 setInterval(updateDashboard, 300000);
+
+// Auto-refresh closed trades every 5 minutes
+setInterval(fetchClosedTrades, 300000);
 
 // Check for new Palmer analysis every 5 minutes (server refreshes every 30 min)
 setInterval(fetchRegimeAnalysis, 300000);
