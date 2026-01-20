@@ -247,16 +247,35 @@ body {
 /* Responsive performance card */
 @media (max-width: 600px) {
     .performance-metrics {
-        flex-wrap: wrap;
-        gap: 16px;
+        flex-direction: column;
+        gap: 0;
+    }
+    
+    .perf-vs {
+        display: none;
     }
     
     .perf-divider {
         display: none;
     }
     
+    .perf-metric {
+        width: 100%;
+        padding: 16px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .perf-metric:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+    }
+    
+    .fund-return {
+        padding-top: 0;
+    }
+    
     .perf-metric .perf-value {
-        font-size: 22px;
+        font-size: 28px;
     }
 }
 
