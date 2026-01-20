@@ -141,6 +141,125 @@ body {
     color: var(--red);
 }
 
+/* Performance Comparison Card */
+.performance-card {
+    margin-top: 24px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-radius: 16px;
+    padding: 24px 32px;
+    color: white;
+}
+
+.performance-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.performance-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 0;
+}
+
+.inception-date {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.performance-metrics {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+}
+
+.perf-metric {
+    text-align: center;
+}
+
+.perf-metric .perf-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+
+.perf-metric .perf-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: white;
+    letter-spacing: -0.5px;
+}
+
+.perf-metric .perf-value.positive {
+    color: #4ade80;
+}
+
+.perf-metric .perf-value.negative {
+    color: #f87171;
+}
+
+.perf-vs {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.4);
+    font-weight: 500;
+}
+
+.perf-divider {
+    width: 1px;
+    height: 50px;
+    background-color: rgba(255, 255, 255, 0.2);
+    margin: 0 12px;
+}
+
+.alpha-metric .perf-label {
+    color: #fbbf24;
+}
+
+.alpha-metric .perf-value.alpha {
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.alpha-metric .perf-value.alpha.positive {
+    background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.alpha-metric .perf-value.alpha.negative {
+    background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Responsive performance card */
+@media (max-width: 600px) {
+    .performance-metrics {
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+    
+    .perf-divider {
+        display: none;
+    }
+    
+    .perf-metric .perf-value {
+        font-size: 22px;
+    }
+}
+
 /* Macro Indicators Section */
 .macro-section {
     margin-top: 40px;
