@@ -327,6 +327,8 @@ function fetchClosedTrades() {
                 const pnlClass = trade.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
                 const statusIcon = trade.pnl >= 0 ? '✓' : '✗';
                 const statusClass = trade.pnl >= 0 ? 'win-icon' : 'loss-icon';
+                const pnlPct = trade.pnl_pct !== undefined ? trade.pnl_pct : (trade.cost > 0 ? (trade.pnl / trade.cost * 100) : 0);
+                const pnlPctStr = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%`;
                 
                 return `
                     <tr>
@@ -336,7 +338,10 @@ function fetchClosedTrades() {
                         </td>
                         <td>${formatCurrency(trade.cost)}</td>
                         <td>${formatCurrency(trade.proceeds)}</td>
-                        <td class="${pnlClass}">${formatCurrency(trade.pnl)}</td>
+                        <td class="${pnlClass}">
+                            ${formatCurrency(trade.pnl)}
+                            <span class="pnl-pct">${pnlPctStr}</span>
+                        </td>
                     </tr>
                 `;
             }).join('');
