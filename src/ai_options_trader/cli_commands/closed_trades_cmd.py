@@ -153,6 +153,8 @@ def register(app: typer.Typer) -> None:
                 remaining_buy_qty = sum(b[0] for b in buy_queue)
                 fully_closed = remaining_buy_qty < 0.001  # Floating point tolerance
                 
+                pnl_pct = (realized_pnl / total_cost * 100) if total_cost > 0 else 0
+                
                 closed_trades.append({
                     'symbol': display_sym,
                     'raw_sym': sym,
@@ -162,6 +164,7 @@ def register(app: typer.Typer) -> None:
                     'cost': total_cost,
                     'proceeds': total_proceeds,
                     'pnl': realized_pnl,
+                    'pnl_pct': pnl_pct,
                     'buys': matched_buys,
                     'sells': matched_sells,
                     'fully_closed': fully_closed
@@ -191,7 +194,7 @@ def register(app: typer.Typer) -> None:
         for t in closed_trades:
             status = "CLOSED" if t['fully_closed'] else "PARTIAL"
             pnl_style = "green" if t['pnl'] >= 0 else "red"
-            pnl_str = f"${t['pnl']:+,.2f}"
+            pnl_str = f"${t['pnl']:+,.2f} ({t['pnl_pct']:+.1f}%)"
             
             table.add_row(
                 t['symbol'],

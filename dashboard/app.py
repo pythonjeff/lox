@@ -604,6 +604,7 @@ def get_closed_trades_data():
         # Only include if we matched something
         if closed_qty > 0:
             realized_pnl = total_proceeds - total_cost
+            pnl_pct = (realized_pnl / total_cost * 100) if total_cost > 0 else 0
             # Check if any buys remain unmatched
             remaining_buy_qty = sum(b[0] for b in buy_queue)
             fully_closed = remaining_buy_qty < 0.001  # Floating point tolerance
@@ -613,6 +614,7 @@ def get_closed_trades_data():
                 'cost': total_cost,
                 'proceeds': total_proceeds,
                 'pnl': realized_pnl,
+                'pnl_pct': pnl_pct,
                 'fully_closed': fully_closed
             })
     

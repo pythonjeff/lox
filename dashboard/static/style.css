@@ -463,6 +463,14 @@ tbody tr:hover {
     font-weight: 600;
 }
 
+.pnl-pct {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    opacity: 0.8;
+    margin-top: 2px;
+}
+
 .symbol {
     font-weight: 700;
     color: var(--text-primary);
