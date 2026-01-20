@@ -552,8 +552,8 @@ def _generate_palmer_analysis():
     vix = get_vix()
     yield_10y = get_10y_yield()
     
-    # Get economic calendar - look further ahead for upcoming events
-    recent_releases, upcoming_events = fetch_economic_calendar(days_back=5, days_ahead=14)
+    # Get economic calendar - 3 business days back, 5 trading days ahead
+    recent_releases, upcoming_events = fetch_economic_calendar(days_back=3, days_ahead=5)
     
     # Get positions
     positions_data = get_positions_data()
@@ -596,180 +596,100 @@ def _generate_palmer_analysis():
             "BASE_CASE": {"prob": 10, "condition": "Muddle through, no clear trend", "portfolio_impact": "neutral - time decay"},
         }
         
-        # Format recent releases for prompt
-        releases_text = ""
-        has_recent_releases = bool(recent_releases)
+        # Build consolidated ECONOMIC CALENDAR section
+        # Format: Recent (with results) + Upcoming
+        calendar_lines = []
+        
+        # Recent releases (last 3 business days)
         if recent_releases:
-            releases_lines = []
-            for r in recent_releases[:6]:
+            calendar_lines.append("RECENT (Last 3 Days):")
+            for r in recent_releases[:5]:
                 surprise_str = ""
-                if r.get("surprise") is not None:
-                    surprise = r["surprise"]
-                    if abs(surprise) > 0.01:
-                        surprise_str = f" [SURPRISE: {'+' if surprise > 0 else ''}{surprise:.2f}]"
-                releases_lines.append(f"  • {r['date']}: {r['event']} = {r['actual']} (est: {r.get('estimate', 'n/a')}, prev: {r.get('previous', 'n/a')}){surprise_str}")
-            releases_text = "\n".join(releases_lines)
+                if r.get("surprise") is not None and abs(r["surprise"]) > 0.01:
+                    s = r["surprise"]
+                    surprise_str = f" [{'+' if s > 0 else ''}{s:.2f} vs est]"
+                calendar_lines.append(f"  {r['date']} | {r['event']}: {r['actual']}{surprise_str}")
         else:
-            releases_text = "  [No releases in last 5 days - data lull period]"
+            calendar_lines.append("RECENT: No releases in last 3 days")
         
-        # Format upcoming events for prompt - get more events
-        upcoming_text = ""
+        calendar_lines.append("")
+        
+        # Upcoming events (next 5 trading days)
         if upcoming_events:
-            upcoming_lines = []
-            for u in upcoming_events[:8]:
-                upcoming_lines.append(f"  • {u['date']}: {u['event']} (est: {u.get('estimate', 'n/a')}, prev: {u.get('previous', 'n/a')})")
-            upcoming_text = "\n".join(upcoming_lines)
+            calendar_lines.append("UPCOMING (Next 5 Days):")
+            for u in upcoming_events[:6]:
+                est_str = f"est: {u.get('estimate')}" if u.get('estimate') else f"prev: {u.get('previous', 'n/a')}"
+                calendar_lines.append(f"  {u['date'].split(' ')[0]} | {u['event']} ({est_str})")
         else:
-            upcoming_text = "  No upcoming events in next 14 days"
+            calendar_lines.append("UPCOMING: No events in next 5 days")
         
-        # Identify key economic events
-        key_events = ["CPI", "PPI", "NFP", "Nonfarm", "FOMC", "Fed", "GDP", "PCE", "Retail Sales", "Jobless", "ISM", "Employment", "Payroll"]
+        calendar_text = "\n".join(calendar_lines)
         
-        # Find the PREVIOUS key catalyst (most recent release that was important)
-        prev_catalyst = None
-        for r in recent_releases:
-            event_name = r.get("event", "")
-            if any(key in event_name for key in key_events):
-                prev_catalyst = r
-                break
-        
-        prev_catalyst_text = ""
-        if prev_catalyst:
-            surprise_str = ""
-            if prev_catalyst.get("surprise") is not None:
-                s = prev_catalyst["surprise"]
-                if abs(s) > 0.01:
-                    surprise_str = f" | SURPRISE: {'+' if s > 0 else ''}{s:.2f}"
-            prev_catalyst_text = f"\n\nPREVIOUS KEY CATALYST: {prev_catalyst['date']} - {prev_catalyst['event']}\n  Result: {prev_catalyst['actual']} (est: {prev_catalyst.get('estimate', 'n/a')}, prev: {prev_catalyst.get('previous', 'n/a')}){surprise_str}"
-        else:
-            prev_catalyst_text = "\n\nPREVIOUS KEY CATALYST: None in last 5 days"
-        
-        # Find the NEXT key catalyst
-        next_catalyst = None
-        for u in upcoming_events:
-            event_name = u.get("event", "")
-            if any(key in event_name for key in key_events):
-                next_catalyst = u
-                break
-        
-        next_catalyst_text = ""
-        if next_catalyst:
-            next_catalyst_text = f"\n\nNEXT KEY CATALYST: {next_catalyst['date']} - {next_catalyst['event']} (est: {next_catalyst.get('estimate', 'n/a')}, prev: {next_catalyst.get('previous', 'n/a')})"
-        
-        # Format earnings for our holdings
-        earnings_text = ""
+        # Format earnings for our holdings (next 2 weeks)
+        earnings_lines = []
         if upcoming_earnings:
-            earnings_lines = []
-            for e in upcoming_earnings[:6]:
-                time_str = "pre-market" if e.get("time") == "bmo" else "after-close" if e.get("time") == "amc" else ""
-                eps_str = f"EPS est: {e.get('eps_estimate', 'n/a')}" if e.get('eps_estimate') else ""
-                earnings_lines.append(f"  • {e['date']} {time_str}: {e['symbol']} earnings {eps_str}")
-            earnings_text = "\n".join(earnings_lines)
-        else:
-            earnings_text = "  No earnings for holdings in next 14 days"
+            for e in upcoming_earnings[:4]:
+                time_str = "BMO" if e.get("time") == "bmo" else "AMC" if e.get("time") == "amc" else ""
+                eps_str = f"EPS est: {e.get('eps_estimate')}" if e.get('eps_estimate') else ""
+                earnings_lines.append(f"  {e['date']} {time_str} | {e['symbol']} {eps_str}")
+        earnings_text = "\n".join(earnings_lines) if earnings_lines else "  None in next 14 days"
         
         try:
             from openai import OpenAI
         except ImportError:
-            return jsonify({"error": "OpenAI package not installed", "analysis": None})
+            return {"error": "OpenAI package not installed", "analysis": None}
         
         client = OpenAI(api_key=settings.openai_api_key)
         
-        # Build dynamic data section instruction based on whether we have releases
-        data_instruction = ""
-        if has_recent_releases:
-            data_instruction = """**DATA RELEASE ANALYSIS** (critical)
-Review recent releases. Flag anything unusual:
-- Surprises vs consensus (actual vs estimate)
-- Trends vs previous readings
-- Anything that shifts regime probabilities
-- Market didn't react as expected? That's edge."""
-        else:
-            data_instruction = """**PRE-EVENT POSITIONING** (critical)
-No recent releases - we're in a data lull. This is important:
-- Analyze how to position BEFORE the next key catalyst
-- What could go wrong? What's the market not pricing?
-- How should we adjust exposure ahead of the event?
-- What's the risk/reward of adding to hedges now vs waiting?"""
-        
-        prompt = f"""You are "Palmer", a senior macro strategist at a top hedge fund. You're reviewing a tail-risk portfolio and economic calendar. Be concise, actionable, and hunt for edge.
+        prompt = f"""You are Palmer, senior macro strategist. Provide a concise, professional assessment.
 
-CURRENT REGIME DATA:
-- HY OAS (credit spreads): {regime_snapshot['hy_oas_bps']} bps (target: >325bp for stress)
-- VIX: {regime_snapshot['vix']} (target: >20 for elevated)
-- 10Y Yield: {regime_snapshot['yield_10y']}% (>4.5% = main thesis, <4.0% = TLT hedge)
-- Portfolio NAV: ${regime_snapshot['portfolio_nav']:,.0f}
-- Portfolio P&L: ${regime_snapshot['portfolio_pnl']:+,.0f}
+═══════════════════════════════════════════════════════════════
+MARKET CONDITIONS
+═══════════════════════════════════════════════════════════════
+HY OAS: {regime_snapshot['hy_oas_bps']:.0f}bp | VIX: {regime_snapshot['vix']:.1f} | 10Y: {regime_snapshot['yield_10y']:.2f}%
+NAV: ${regime_snapshot['portfolio_nav']:,.0f} | P&L: ${regime_snapshot['portfolio_pnl']:+,.0f}
 
-RECENT ECONOMIC RELEASES (last 5 days):
-{releases_text}
+═══════════════════════════════════════════════════════════════
+ECONOMIC CALENDAR
+═══════════════════════════════════════════════════════════════
+{calendar_text}
 
-UPCOMING EVENTS (next 14 days):
-{upcoming_text}{prev_catalyst_text}{next_catalyst_text}
-
-UPCOMING EARNINGS FOR OUR HOLDINGS (next 14 days):
+═══════════════════════════════════════════════════════════════
+EARNINGS CALENDAR (Holdings)
+═══════════════════════════════════════════════════════════════
 {earnings_text}
-Note: For ETFs (TAN, HYG, etc.), this includes key underlying holdings.
 
-POSITIONS:
-{chr(10).join(f"  • {p}" for p in regime_snapshot['positions'])}
+═══════════════════════════════════════════════════════════════
+POSITIONS
+═══════════════════════════════════════════════════════════════
+{chr(10).join(f"  {p}" for p in regime_snapshot['positions'])}
 
-PORTFOLIO THESIS & POSITION DIRECTION:
-- Main bet: Persistent inflation, credit stress, AI de-rating
-- PUTS (we are SHORT these - we WANT them to DROP, earnings MISSES help us):
-  • HYG puts → we want credit stress, defaults, HY spreads widening
-  • NVDA puts → we want AI de-rating, earnings miss, guidance cut
-  • TAN puts → we want solar weakness, ENPH/SEDG/FSLR to MISS earnings
-- CALLS (we are LONG these - we WANT them to RISE):
-  • TLT calls → we want yields to fall (flight to safety)
-- Diversifiers: VIXM (long vol), GLDM (long gold), BTCUSD (long crypto)
+Position Direction:
+• PUTS (short bias): HYG, NVDA, TAN — we profit on declines/misses
+• CALLS (long bias): TLT — we profit on bond rally
+• DIVERSIFIERS: VIXM, GLDM, BTC
 
-MONTE CARLO SCENARIOS:
-{chr(10).join(f"  {k}: {v['prob']}% base - {v['condition']} → {v['portfolio_impact']}" for k, v in scenarios.items())}
+═══════════════════════════════════════════════════════════════
 
-TASK: Provide your assessment with these sections:
+Provide analysis in this exact format:
 
-**REGIME STATUS** (2-3 lines)
-Current regime classification and confidence level.
+REGIME STATUS
+[2-3 sentences on current macro regime and confidence level]
 
-**PREVIOUS CATALYST & RESULTS**
-Analyze the most recent key economic release:
-- What was the result vs expectations?
-- How did markets react? Was it priced in?
-- Did it shift regime probabilities?
-- Any implications for our positions?
-If no recent catalyst, say "No major releases recently" and note what we're waiting for.
+CATALYST REVIEW
+Recent: [Analyze any releases from last 3 days - results, surprises, market reaction]
+Upcoming: [Key events in next 5 days and positioning implications]
 
-{data_instruction}
+EARNINGS RISK
+[Flag any holdings with earnings soon. For PUTS we want MISSES, for CALLS we want strength]
 
-**EARNINGS WATCH** (if any upcoming)
-Flag any upcoming earnings that could move our positions. REMEMBER OUR POSITION DIRECTION:
-- For PUTS (TAN, NVDA, HYG): we WANT earnings MISSES → stock drops → puts pay
-- For CALLS (TLT): we want bond rally
-Analyze:
-- Which holdings have earnings soon?
-- What outcome HELPS our position? (e.g., ENPH miss = good for TAN puts)
-- What outcome HURTS our position? (e.g., ENPH beat = bad for TAN puts)
-- Risk/reward of holding through earnings vs taking profit before
+SCENARIO WATCH
+[Top 3 scenarios by probability, adjusted for recent data]
 
-**SCENARIO PROBABILITIES**
-Your top 3 scenarios with probability estimates. Adjust from base if warranted by data.
+EDGE ALERT
+[Most actionable insight - what's the market missing?]
 
-**EDGE ALERT** (most important)
-Subtle shifts or early signals. Be specific:
-- Credit: spread momentum
-- Volatility: term structure, skew
-- Rates: curve shape, Fed expectations  
-- Data: upcoming releases that could move markets
-
-**NEXT CATALYST**
-The most important upcoming event (economic OR earnings). Be specific:
-- Date and event name
-- What consensus expects
-- What outcome would help/hurt our portfolio
-- How to position ahead of it
-
-Be direct, opinionated. Sign off as "— Palmer"."""
+— Palmer"""
 
     response = client.chat.completions.create(
         model=settings.openai_model or "gpt-4o-mini",
