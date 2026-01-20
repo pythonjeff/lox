@@ -219,29 +219,29 @@ body {
     margin: 0 12px;
 }
 
-.alpha-metric .perf-label {
-    color: #fbbf24;
+/* Benchmark metrics with alpha underneath */
+.benchmark-metric {
+    min-width: 90px;
 }
 
-.alpha-metric .perf-value.alpha {
-    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+.perf-alpha {
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: 4px;
+    color: rgba(255, 255, 255, 0.5);
 }
 
-.alpha-metric .perf-value.alpha.positive {
-    background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+.perf-alpha.positive {
+    color: #4ade80;
 }
 
-.alpha-metric .perf-value.alpha.negative {
-    background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+.perf-alpha.negative {
+    color: #f87171;
+}
+
+/* BTC specific styling */
+.btc-metric .perf-label {
+    color: #f7931a;
 }
 
 /* Responsive performance card */

@@ -80,22 +80,42 @@ function updateDashboard() {
                 fundReturnEl.className = 'perf-value ' + (returnVal >= 0 ? 'positive' : 'negative');
             }
             
+            // S&P 500
             const sp500ReturnEl = document.getElementById('sp500-return');
+            const alphaSp500El = document.getElementById('alpha-sp500');
             if (data.sp500_return !== undefined && data.sp500_return !== null) {
                 const sp500Val = data.sp500_return;
                 sp500ReturnEl.textContent = `${sp500Val >= 0 ? '+' : ''}${sp500Val.toFixed(2)}%`;
                 sp500ReturnEl.className = 'perf-value ' + (sp500Val >= 0 ? 'positive' : 'negative');
+                
+                // Alpha vs S&P
+                if (data.alpha_sp500 !== undefined && data.alpha_sp500 !== null) {
+                    const alpha = data.alpha_sp500;
+                    alphaSp500El.textContent = `α: ${alpha >= 0 ? '+' : ''}${alpha.toFixed(1)}%`;
+                    alphaSp500El.className = 'perf-alpha ' + (alpha >= 0 ? 'positive' : 'negative');
+                }
             } else {
                 sp500ReturnEl.textContent = '—';
+                alphaSp500El.textContent = '';
             }
             
-            const alphaEl = document.getElementById('alpha-value');
-            if (data.alpha !== undefined && data.alpha !== null) {
-                const alphaVal = data.alpha;
-                alphaEl.textContent = `${alphaVal >= 0 ? '+' : ''}${alphaVal.toFixed(2)}%`;
-                alphaEl.className = 'perf-value alpha ' + (alphaVal >= 0 ? 'positive' : 'negative');
+            // BTC/USD
+            const btcReturnEl = document.getElementById('btc-return');
+            const alphaBtcEl = document.getElementById('alpha-btc');
+            if (data.btc_return !== undefined && data.btc_return !== null) {
+                const btcVal = data.btc_return;
+                btcReturnEl.textContent = `${btcVal >= 0 ? '+' : ''}${btcVal.toFixed(2)}%`;
+                btcReturnEl.className = 'perf-value ' + (btcVal >= 0 ? 'positive' : 'negative');
+                
+                // Alpha vs BTC
+                if (data.alpha_btc !== undefined && data.alpha_btc !== null) {
+                    const alpha = data.alpha_btc;
+                    alphaBtcEl.textContent = `α: ${alpha >= 0 ? '+' : ''}${alpha.toFixed(1)}%`;
+                    alphaBtcEl.className = 'perf-alpha ' + (alpha >= 0 ? 'positive' : 'negative');
+                }
             } else {
-                alphaEl.textContent = '—';
+                btcReturnEl.textContent = '—';
+                alphaBtcEl.textContent = '';
             }
 
             // Update macro indicators
