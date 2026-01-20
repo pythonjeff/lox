@@ -664,10 +664,12 @@ POSITIONS
 ═══════════════════════════════════════════════════════════════
 {chr(10).join(f"  {p}" for p in regime_snapshot['positions'])}
 
-Position Direction:
-• PUTS (short bias): HYG, NVDA, TAN — we profit on declines/misses
-• CALLS (long bias): TLT — we profit on bond rally
-• DIVERSIFIERS: VIXM, GLDM, BTC
+CRITICAL - POSITION DIRECTION (DO NOT GET THIS WRONG):
+• TAN PUTS = We are BEARISH on solar. ENPH/solar MISS = GOOD for us. ENPH/solar BEAT = BAD for us.
+• NVDA PUTS = We are BEARISH on NVDA. NVDA MISS = GOOD for us. NVDA BEAT = BAD for us.
+• HYG PUTS = We are BEARISH on HY credit. Credit stress = GOOD for us.
+• TLT CALLS = We are BULLISH on bonds. Yields falling = GOOD for us.
+• DIVERSIFIERS: VIXM (long vol), GLDM (long gold), BTC (long crypto)
 
 ═══════════════════════════════════════════════════════════════
 
@@ -681,7 +683,7 @@ Recent: [Analyze any releases from last 3 days - results, surprises, market reac
 Upcoming: [Key events in next 5 days and positioning implications]
 
 EARNINGS RISK
-[Flag any holdings with earnings soon. For PUTS we want MISSES, for CALLS we want strength]
+[IMPORTANT: We own PUTS on TAN/NVDA/HYG so we WANT those stocks to DROP. Earnings MISS = good for our puts. Earnings BEAT = bad for our puts. Get this right!]
 
 SCENARIO WATCH
 [Top 3 scenarios by probability, adjusted for recent data]
