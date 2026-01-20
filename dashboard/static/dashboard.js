@@ -1,11 +1,13 @@
 // LOX FUND Dashboard - Auto-refresh functionality
 
-function formatCurrency(value) {
+function formatCurrency(value, showCents = false) {
+    // Show cents for smaller values or when explicitly requested
+    const decimals = (showCents || Math.abs(value) < 100) ? 2 : 0;
     return new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: 'USD',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
     }).format(value);
 }
 
