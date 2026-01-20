@@ -148,25 +148,44 @@ function updateDashboard() {
         });
 }
 
-// Format markdown-style text to HTML
+// Format Palmer's analysis text to clean HTML
 function formatAnalysis(text) {
     if (!text) return '';
     
-    // Convert markdown-style formatting to HTML
-    let html = text
-        // Bold text with **
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        // Headings with ** at start
-        .replace(/^(\*\*[^*]+\*\*)$/gm, '<h3>$1</h3>')
-        // Lists
-        .replace(/^- (.+)$/gm, '<li>$1</li>')
-        .replace(/^• (.+)$/gm, '<li>$1</li>')
-        // Wrap consecutive li in ul
-        .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-        // Paragraphs
-        .replace(/\n\n/g, '</p><p>')
-        // Line breaks
-        .replace(/\n/g, '<br>');
+    // Clean up the text first
+    let html = text.trim();
+    
+    // Convert section headers (ALL CAPS words at start of line) to styled headers
+    html = html.replace(/^(REGIME STATUS|CATALYST REVIEW|EARNINGS RISK|SCENARIO WATCH|EDGE ALERT|DATA RELEASE ANALYSIS|PRE-EVENT POSITIONING|EARNINGS WATCH|SCENARIO PROBABILITIES|NEXT CATALYST|PREVIOUS CATALYST)/gm, 
+        '<div class="palmer-section-header">$1</div>');
+    
+    // Handle "Recent:" and "Upcoming:" labels
+    html = html.replace(/^(Recent:|Upcoming:)/gm, '<span class="palmer-label">$1</span>');
+    
+    // Bold text with **
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    
+    // Lists
+    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/^• (.+)$/gm, '<li>$1</li>');
+    
+    // Wrap consecutive li in ul
+    html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+    
+    // Handle Palmer signature
+    html = html.replace(/—\s*Palmer/g, '<div class="palmer-signature">— Palmer</div>');
+    
+    // Convert double newlines to paragraph breaks
+    html = html.replace(/\n\n+/g, '</p><p>');
+    
+    // Convert single newlines to line breaks (but not inside headers)
+    html = html.replace(/\n/g, '<br>');
+    
+    // Clean up empty paragraphs and extra br tags
+    html = html.replace(/<p><br>/g, '<p>');
+    html = html.replace(/<br><\/p>/g, '</p>');
+    html = html.replace(/<p>\s*<\/p>/g, '');
+    html = html.replace(/<br>\s*<div/g, '<div');
     
     // Wrap in paragraph if not already
     if (!html.startsWith('<')) {
