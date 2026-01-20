@@ -47,7 +47,7 @@ def register(options_app: typer.Typer) -> None:
         min_days: int = typer.Option(30, "--min-days", help="Min DTE"),
         max_days: int = typer.Option(120, "--max-days", help="Max DTE"),
     ):
-        """Options scanner - sorted by best delta (closest to target)."""
+        """Options scanner - sorted by best delta. Auto-expands range if needed."""
         from datetime import date
         
         settings = load_settings()
@@ -68,7 +68,8 @@ def register(options_app: typer.Typer) -> None:
         console.print(f"[dim]Total contracts: {len(chain)}[/dim]")
         today = date.today()
 
-        filtered = []
+        # Parse ALL options of the right type first
+        all_opts = []
         for opt in chain.values():
             symbol = str(getattr(opt, "symbol", ""))
             if not symbol:
@@ -78,16 +79,15 @@ def register(options_app: typer.Typer) -> None:
                 if opt_type != w:
                     continue
                 
-                # Filter by DTE
                 dte = (expiry - today).days
-                if dte < min_days or dte > max_days:
+                if dte < 1:  # Skip expired
                     continue
                 
-                # Get greeks from nested object
+                # Get greeks
                 greeks = getattr(opt, "greeks", None)
                 delta = getattr(greeks, "delta", None) if greeks else None
                 
-                # Get bid/ask from latest_quote (Alpaca structure)
+                # Get bid/ask from latest_quote
                 quote = getattr(opt, "latest_quote", None)
                 bid = getattr(quote, "bid_price", None) if quote else None
                 ask = getattr(quote, "ask_price", None) if quote else None
@@ -96,7 +96,7 @@ def register(options_app: typer.Typer) -> None:
                 trade = getattr(opt, "latest_trade", None)
                 last = getattr(trade, "price", None) if trade else None
                 
-                filtered.append({
+                all_opts.append({
                     "symbol": symbol,
                     "strike": strike,
                     "expiry": expiry,
@@ -109,11 +109,34 @@ def register(options_app: typer.Typer) -> None:
             except Exception:
                 continue
 
-        if not filtered:
-            console.print(f"[yellow]No {w}s found in {min_days}-{max_days} DTE range[/yellow]")
+        if not all_opts:
+            console.print(f"[yellow]No {w}s available for {ticker.upper()}[/yellow]")
             return
 
-        console.print(f"[dim]Found {len(filtered)} {w}s in range[/dim]\n")
+        # Try requested range first, then expand if empty
+        filtered = [o for o in all_opts if min_days <= o["dte"] <= max_days]
+        range_note = f"{min_days}-{max_days} DTE"
+        
+        # Fallback: expand to nearest available expiries
+        if not filtered:
+            # Find the closest expiry to requested range
+            min_dte_available = min(o["dte"] for o in all_opts)
+            max_dte_available = max(o["dte"] for o in all_opts)
+            
+            # Expand to include nearest 60-day window
+            fallback_min = max(1, min(min_days, min_dte_available))
+            fallback_max = min(max(max_days, min_dte_available + 60), max_dte_available)
+            
+            filtered = [o for o in all_opts if fallback_min <= o["dte"] <= fallback_max]
+            range_note = f"{fallback_min}-{fallback_max} DTE [auto-expanded]"
+            
+            # If still empty, just take nearest expiries
+            if not filtered:
+                unique_dtes = sorted(set(o["dte"] for o in all_opts))[:3]  # Nearest 3 expiries
+                filtered = [o for o in all_opts if o["dte"] in unique_dtes]
+                range_note = f"nearest expiries: {', '.join(str(d) for d in unique_dtes)} DTE"
+
+        console.print(f"[dim]Found {len(filtered)} {w}s in {range_note}[/dim]\n")
         
         # Sort by: 1) has delta, 2) closest to target delta
         abs_target = abs(target_delta)

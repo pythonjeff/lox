@@ -6,39 +6,80 @@ from rich.panel import Panel
 from rich.table import Table
 
 
+def _run_volatility_snapshot(start: str = "2011-01-01", refresh: bool = False, llm: bool = False):
+    """Shared implementation for volatility snapshot."""
+    from ai_options_trader.config import load_settings
+    from ai_options_trader.volatility.signals import build_volatility_state
+    from ai_options_trader.volatility.regime import classify_volatility_regime
+
+    settings = load_settings()
+    state = build_volatility_state(settings=settings, start_date=start, refresh=refresh)
+    regime = classify_volatility_regime(state.inputs)
+
+    print(
+        Panel(
+            f"[b]Regime:[/b] {regime.label}\n"
+            f"[b]VIX:[/b] {state.inputs.vix}\n"
+            f"[b]5d chg%:[/b] {state.inputs.vix_chg_5d_pct}\n"
+            f"[b]Term (VIX-3m proxy):[/b] {state.inputs.vix_term_spread}\n"
+            f"[b]Term source:[/b] {state.inputs.vix_term_source}\n"
+            f"[b]Z VIX:[/b] {state.inputs.z_vix}\n"
+            f"[b]Z 5d chg:[/b] {state.inputs.z_vix_chg_5d}\n"
+            f"[b]Persist 20d:[/b] {state.inputs.persist_20d}\n"
+            f"[b]Pressure score:[/b] {state.inputs.vol_pressure_score}\n\n"
+            f"[dim]{regime.description}[/dim]",
+            title="Volatility (Full)",
+            expand=False,
+        )
+    )
+
+    if llm:
+        from ai_options_trader.llm.analyst import llm_analyze_regime
+        
+        print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
+        
+        snapshot_data = {
+            "vix": state.inputs.vix,
+            "vix_chg_5d_pct": state.inputs.vix_chg_5d_pct,
+            "vix_term_spread": state.inputs.vix_term_spread,
+            "vix_term_source": state.inputs.vix_term_source,
+            "z_vix": state.inputs.z_vix,
+            "z_vix_chg_5d": state.inputs.z_vix_chg_5d,
+            "persist_20d": state.inputs.persist_20d,
+            "vol_pressure_score": state.inputs.vol_pressure_score,
+        }
+        
+        analysis = llm_analyze_regime(
+            settings=settings,
+            domain="volatility",
+            snapshot=snapshot_data,
+            regime_label=regime.label,
+            regime_description=regime.description,
+        )
+        
+        from rich.markdown import Markdown
+        print(Panel(Markdown(analysis), title="[bold magenta]PhD Macro Analyst[/bold magenta]", expand=False))
+
+
 def register(vol_app: typer.Typer) -> None:
+    # Default callback so `lox labs volatility --llm` works without `snapshot`
+    @vol_app.callback(invoke_without_command=True)
+    def volatility_default(
+        ctx: typer.Context,
+        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+    ):
+        """Volatility regime (VIX: level/momentum/term structure)"""
+        if ctx.invoked_subcommand is None:
+            _run_volatility_snapshot(llm=llm)
+
     @vol_app.command("snapshot")
     def snapshot(
         start: str = typer.Option("2011-01-01", "--start"),
         refresh: bool = typer.Option(False, "--refresh"),
+        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
     ):
-        """
-        Volatility snapshot (VIX-based): level, momentum, term structure, and spike/persistence indicators.
-        """
-        from ai_options_trader.config import load_settings
-        from ai_options_trader.volatility.signals import build_volatility_state
-        from ai_options_trader.volatility.regime import classify_volatility_regime
-
-        settings = load_settings()
-        state = build_volatility_state(settings=settings, start_date=start, refresh=refresh)
-        regime = classify_volatility_regime(state.inputs)
-
-        print(
-            Panel(
-                f"[b]Regime:[/b] {regime.label}\n"
-                f"[b]VIX:[/b] {state.inputs.vix}\n"
-                f"[b]5d chg%:[/b] {state.inputs.vix_chg_5d_pct}\n"
-                f"[b]Term (VIX-3m proxy):[/b] {state.inputs.vix_term_spread}\n"
-                f"[b]Term source:[/b] {state.inputs.vix_term_source}\n"
-                f"[b]Z VIX:[/b] {state.inputs.z_vix}\n"
-                f"[b]Z 5d chg:[/b] {state.inputs.z_vix_chg_5d}\n"
-                f"[b]Persist 20d:[/b] {state.inputs.persist_20d}\n"
-                f"[b]Pressure score:[/b] {state.inputs.vol_pressure_score}\n\n"
-                f"[dim]{regime.description}[/dim]",
-                title="Volatility snapshot",
-                expand=False,
-            )
-        )
+        """Volatility snapshot (VIX-based): level, momentum, term structure."""
+        _run_volatility_snapshot(start=start, refresh=refresh, llm=llm)
 
     @vol_app.command("term-structure")
     def term_structure(
