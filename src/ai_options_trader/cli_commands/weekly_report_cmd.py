@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 import pandas as pd
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.columns import Columns
+from rich.text import Text
+from rich import box
 
 from ai_options_trader.config import load_settings
 from ai_options_trader.data.alpaca import fetch_option_chain, to_candidates
@@ -412,6 +415,141 @@ THEMES = [
 ]
 
 
+def _fetch_upcoming_events(days: int = 7, max_items: int = 15) -> list[dict]:
+    """Fetch upcoming economic events from FMP calendar."""
+    settings = safe_load_settings()
+    if not settings or not settings.FMP_API_KEY:
+        return []
+    
+    import requests
+    
+    try:
+        url = "https://financialmodelingprep.com/api/v3/economic_calendar"
+        resp = requests.get(url, params={"apikey": settings.FMP_API_KEY}, timeout=15)
+        resp.raise_for_status()
+        events = resp.json()
+        
+        if not isinstance(events, list):
+            return []
+        
+        now = datetime.now(timezone.utc)
+        cutoff = now + timedelta(days=days)
+        
+        # High-impact keywords for portfolio
+        high_impact = ["FOMC", "CPI", "PCE", "GDP", "NFP", "Jobless", "Fed", "Auction", "Employment", "Payroll"]
+        
+        relevant = []
+        for e in events:
+            if not isinstance(e, dict):
+                continue
+            
+            event_date_str = e.get("date", "")
+            try:
+                event_date = datetime.fromisoformat(event_date_str.replace(" ", "T").replace("Z", "+00:00"))
+                if event_date.tzinfo is None:
+                    event_date = event_date.replace(tzinfo=timezone.utc)
+            except:
+                continue
+            
+            if event_date < now or event_date > cutoff:
+                continue
+            
+            country = e.get("country", "").upper()
+            if country and country != "US":
+                continue
+            
+            event_name = e.get("event", "")
+            is_high_impact = any(kw.lower() in event_name.lower() for kw in high_impact)
+            
+            relevant.append({
+                "date": event_date,
+                "event": event_name,
+                "estimate": e.get("estimate"),
+                "previous": e.get("previous"),
+                "high_impact": is_high_impact,
+            })
+        
+        # Sort by date, prioritize high impact
+        relevant.sort(key=lambda x: (x["date"], not x["high_impact"]))
+        return relevant[:max_items]
+        
+    except Exception:
+        return []
+
+
+def _get_regime_snapshot() -> dict:
+    """Get current regime readings from pillars."""
+    regimes = {}
+    settings = safe_load_settings()
+    if not settings:
+        return regimes
+    
+    try:
+        from ai_options_trader.regimes.pillars import VolatilityPillar
+        pillar = VolatilityPillar()
+        pillar.compute(settings)
+        vix = next((m.value for m in pillar.metrics if m.name == "VIX"), None)
+        regimes["volatility"] = {
+            "regime": pillar.regime,
+            "vix": vix,
+            "term_structure": pillar.term_structure_status(),
+        }
+    except:
+        pass
+    
+    try:
+        from ai_options_trader.rates.signals import build_rates_state
+        from ai_options_trader.rates.regime import classify_rates_regime
+        state = build_rates_state(settings=settings)
+        regime = classify_rates_regime(state.inputs)
+        regimes["rates"] = {
+            "regime": regime.label or regime.name,
+            "ust_10y": state.inputs.ust_10y,
+            "curve_2s10s": state.inputs.curve_2s10s,
+        }
+    except:
+        pass
+    
+    try:
+        from ai_options_trader.funding.signals import build_funding_state
+        from ai_options_trader.funding.regime import classify_funding_regime
+        from ai_options_trader.funding.models import FundingInputs
+        state = build_funding_state(settings=settings)
+        fi = state.inputs
+        regime = classify_funding_regime(FundingInputs(
+            spread_corridor_bps=fi.spread_corridor_bps,
+            spike_5d_bps=fi.spike_5d_bps,
+            persistence_20d=fi.persistence_20d,
+            vol_20d_bps=fi.vol_20d_bps,
+            tight_threshold_bps=fi.tight_threshold_bps,
+            stress_threshold_bps=fi.stress_threshold_bps,
+            persistence_tight=fi.persistence_tight,
+            persistence_stress=fi.persistence_stress,
+            vol_tight_bps=fi.vol_tight_bps,
+            vol_stress_bps=fi.vol_stress_bps,
+        ))
+        regimes["funding"] = {
+            "regime": regime.label or regime.name,
+            "sofr": fi.sofr,
+            "spread_bps": fi.spread_corridor_bps,
+        }
+    except:
+        pass
+    
+    return regimes
+
+
+def _format_event_time(dt: datetime) -> str:
+    """Format event datetime for display."""
+    now = datetime.now(timezone.utc)
+    if dt.date() == now.date():
+        return f"TODAY {dt.strftime('%H:%M')}"
+    elif dt.date() == (now + timedelta(days=1)).date():
+        return f"Tomorrow {dt.strftime('%H:%M')}"
+    else:
+        return dt.strftime("%a %b %d %H:%M")
+
+
 def _intent_for_symbol(symbol: str) -> str:
     sym = (symbol or "").upper()
     if sym.startswith("HYG"):
@@ -444,37 +582,143 @@ def register(weekly_app: typer.Typer) -> None:
     @weekly_app.command("report")
     def weekly_report():
         """
-        Basic weekly report: NAV, current trades + short thesis, and 10Y weekly performance.
+        Institutional-grade weekly report with regime context and forward calendar.
         """
         c = Console()
-        c.print("# Weekly Report — Lox")
-        c.print("")
-        c.print(f"asof: {_pretty_ts(_now_utc_iso())}")
-        c.print("")
-
-        # NAV
+        now = datetime.now(timezone.utc)
+        
+        # ════════════════════════════════════════════════════════════════════════
+        # HEADER
+        # ════════════════════════════════════════════════════════════════════════
+        c.print()
+        c.print(Panel(
+            f"[bold white]WEEKLY PORTFOLIO REVIEW[/bold white]\n"
+            f"[dim]{now.strftime('%A, %B %d, %Y')} • {now.strftime('%H:%M')} UTC[/dim]",
+            style="cyan",
+            expand=False,
+        ))
+        c.print()
+        
+        # ════════════════════════════════════════════════════════════════════════
+        # NAV & PERFORMANCE (Side by side)
+        # ════════════════════════════════════════════════════════════════════════
         nav = _get_latest_nav()
+        
         if nav:
             orig = float(nav.get("original_capital") or 0.0)
             eq = float(nav.get("equity") or 0.0)
+            cash = float(nav.get("cash") or 0.0)
             net_ret = eq - orig
-            net_color = "green" if net_ret >= 0 else "red"
-            nav_txt = (
-                f"[b]As of:[/b] {_pretty_ts(str(nav.get('ts') or ''))}\n"
-                f"[b]Original capital:[/b] ${orig:,.2f}\n"
-                f"[b]Net return:[/b] [{net_color}]${net_ret:,.2f}[/{net_color}]\n"
-                f"[b]Equity:[/b] ${eq:,.2f}\n"
-                f"[b]Cash:[/b] ${float(nav.get('cash') or 0.0):,.2f}\n"
-                f"[b]Buying power:[/b] ${float(nav.get('buying_power') or 0.0):,.2f}"
-            )
-            c.print("## NAV Snapshot")
-            c.print(Panel(nav_txt, title="NAV", expand=False))
+            weekly_ret = _safe_float(nav.get("twr_since_prev"))
+            since_ret = _safe_float(nav.get("twr_cum"))
+            
+            ret_color = "green" if net_ret >= 0 else "red"
+            wk_color = "green" if (weekly_ret or 0) >= 0 else "red"
+            
+            nav_lines = [
+                f"[bold]Equity:[/bold] ${eq:,.2f}",
+                f"[bold]Cash:[/bold] ${cash:,.2f} ({cash/eq*100:.1f}%)" if eq > 0 else f"Cash: ${cash:,.2f}",
+                f"[bold]Cost Basis:[/bold] ${orig:,.2f}",
+                f"[bold]P&L:[/bold] [{ret_color}]${net_ret:+,.2f}[/{ret_color}]",
+            ]
+            
+            perf_lines = [
+                f"[bold]Week:[/bold] [{wk_color}]{_fmt_pct(weekly_ret)}[/{wk_color}]" if weekly_ret is not None else "Week: —",
+                f"[bold]Inception:[/bold] {_fmt_pct(since_ret)}" if since_ret is not None else "Inception: —",
+                f"[dim]As of {_pretty_ts(str(nav.get('ts') or ''))}[/dim]",
+            ]
+            
+            nav_panel = Panel("\n".join(nav_lines), title="[bold]Portfolio[/bold]", border_style="green", expand=True)
+            perf_panel = Panel("\n".join(perf_lines), title="[bold]Returns[/bold]", border_style="blue", expand=True)
+            c.print(Columns([nav_panel, perf_panel], equal=True))
         else:
-            c.print("## NAV Snapshot")
-            c.print("DATA NOT PROVIDED (no NAV snapshots found)")
-        c.print("")
+            c.print("[yellow]NAV data not available[/yellow]")
+        
+        c.print()
 
-        # Load positions once for summary + tables
+        # ════════════════════════════════════════════════════════════════════════
+        # REGIME CONTEXT (Market Environment)
+        # ════════════════════════════════════════════════════════════════════════
+        regimes = _get_regime_snapshot()
+        if regimes:
+            regime_lines = []
+            
+            if "volatility" in regimes:
+                vol = regimes["volatility"]
+                vix_val = vol.get("vix")
+                vix_str = f"VIX {vix_val:.1f}" if vix_val else "VIX —"
+                regime_lines.append(f"[bold]Vol:[/bold] {vol.get('regime', '—')} ({vix_str}, {vol.get('term_structure', '—')})")
+            
+            if "rates" in regimes:
+                r = regimes["rates"]
+                y10 = r.get("ust_10y")
+                curve = r.get("curve_2s10s")
+                y10_str = f"10Y {y10:.2f}%" if y10 else "10Y —"
+                curve_str = f"2s10s {curve*100:+.0f}bp" if curve else ""
+                regime_lines.append(f"[bold]Rates:[/bold] {r.get('regime', '—')} ({y10_str}{', ' + curve_str if curve_str else ''})")
+            
+            if "funding" in regimes:
+                f = regimes["funding"]
+                sofr = f.get("sofr")
+                spread = f.get("spread_bps")
+                sofr_str = f"SOFR {sofr:.2f}%" if sofr else ""
+                regime_lines.append(f"[bold]Funding:[/bold] {f.get('regime', '—')}" + (f" ({sofr_str})" if sofr_str else ""))
+            
+            if regime_lines:
+                c.print(Panel("\n".join(regime_lines), title="[bold]Market Regime[/bold]", border_style="magenta", expand=False))
+                c.print()
+        
+        # ════════════════════════════════════════════════════════════════════════
+        # DAY & WEEK AHEAD (Economic Calendar)
+        # ════════════════════════════════════════════════════════════════════════
+        events = _fetch_upcoming_events(days=7, max_items=12)
+        if events:
+            # Split into today vs rest of week
+            today_events = [e for e in events if e["date"].date() == now.date()]
+            week_events = [e for e in events if e["date"].date() != now.date()][:8]
+            
+            cal_table = Table(title="Economic Calendar", box=box.ROUNDED, expand=False, show_edge=True)
+            cal_table.add_column("When", style="cyan", width=18)
+            cal_table.add_column("Event", style="bold", width=35)
+            cal_table.add_column("Est", justify="right", width=8)
+            cal_table.add_column("Prev", justify="right", style="dim", width=8)
+            
+            for e in today_events:
+                est = str(e["estimate"]) if e["estimate"] is not None else "—"
+                prev = str(e["previous"]) if e["previous"] is not None else "—"
+                style = "bold yellow" if e["high_impact"] else ""
+                cal_table.add_row(
+                    _format_event_time(e["date"]),
+                    e["event"][:35],
+                    est,
+                    prev,
+                    style=style,
+                )
+            
+            if today_events and week_events:
+                cal_table.add_row("─" * 15, "─" * 30, "─" * 6, "─" * 6, style="dim")
+            
+            for e in week_events:
+                est = str(e["estimate"]) if e["estimate"] is not None else "—"
+                prev = str(e["previous"]) if e["previous"] is not None else "—"
+                style = "bold" if e["high_impact"] else "dim"
+                cal_table.add_row(
+                    _format_event_time(e["date"]),
+                    e["event"][:35],
+                    est,
+                    prev,
+                    style=style,
+                )
+            
+            c.print(cal_table)
+            c.print()
+        else:
+            c.print("[dim]No economic events loaded[/dim]")
+            c.print()
+        
+        # ════════════════════════════════════════════════════════════════════════
+        # POSITIONS
+        # ════════════════════════════════════════════════════════════════════════
         try:
             trading, data_client = make_clients(load_settings())
             positions = trading.get_all_positions()
@@ -482,317 +726,165 @@ def register(weekly_app: typer.Typer) -> None:
             positions = []
             data_client = None
 
-        # Weekly investor update (compact)
-        c.print("\n## Weekly Investor Update")
-        # Cash / exposure summary
-        cash_pct = "DATA NOT PROVIDED"
-        gross = "DATA NOT PROVIDED"
-        net = "DATA NOT PROVIDED"
-        opt_mv = "DATA NOT PROVIDED"
+        # Build position table
+        total_prem = 0.0
+        nearest_exp: tuple[str, int, str] | None = None
+        largest_prem: tuple[str, float] | None = None
+        
         if positions:
-            try:
-                mvs = [float(getattr(p, "market_value", 0.0) or 0.0) for p in positions]
-                gross_v = sum(abs(v) for v in mvs)
-                net_v = sum(mvs)
-                gross = f"${gross_v:,.2f}"
-                net = f"${net_v:,.2f}"
-                opt_mv_v = 0.0
-                # Use bid/ask mid if available for options; fallback to position market_value.
-                mid_by_symbol: dict[str, float] = {}
-                if data_client is not None:
-                    try:
-                        settings = safe_load_settings()
-                        underlyings = sorted(
-                            {
-                                opt["underlying"]
-                                for p in positions
-                                if (opt := _parse_occ_auto(str(getattr(p, "symbol", "") or "")))
-                            }
-                        )
-                        for und in underlyings:
-                            chain = fetch_option_chain(
-                                data_client,
-                                und,
-                                feed=getattr(settings, "alpaca_options_feed", None) if settings else None,
-                            )
-                            for cand in to_candidates(chain, und):
-                                mid = cand.mid
-                                if mid is not None:
-                                    mid_by_symbol[str(cand.symbol)] = float(mid)
-                    except Exception:
-                        mid_by_symbol = {}
-                for p in positions:
-                    sym = str(getattr(p, "symbol", "") or "")
-                    opt = _parse_occ_auto(sym)
-                    if opt:
-                        qty = float(getattr(p, "qty", 0.0) or 0.0)
-                        mid = mid_by_symbol.get(sym)
-                        if mid is None:
-                            bid = getattr(p, "bid_price", None) or getattr(p, "bid", None)
-                            ask = getattr(p, "ask_price", None) or getattr(p, "ask", None)
-                            if bid is not None and ask is not None and float(bid) > 0 and float(ask) > 0:
-                                mid = (float(bid) + float(ask)) / 2.0
-                        if mid is None:
-                            cur = getattr(p, "current_price", None)
-                            if cur is not None and float(cur) > 0:
-                                mid = float(cur)
-                        if mid is not None:
-                            opt_mv_v += abs(qty) * float(mid) * 100.0
-                        else:
-                            opt_mv_v += float(getattr(p, "market_value", 0.0) or 0.0)
-                opt_mv = f"${opt_mv_v:,.2f}"
-            except Exception:
-                pass
-        if nav:
-            try:
-                eqv = float(nav.get("equity") or 0.0)
-                cashv = float(nav.get("cash") or 0.0)
-                if eqv > 0:
-                    cash_pct = f"{(cashv / eqv) * 100.0:.1f}%"
-            except Exception:
-                pass
-
-        c.print(f"- Cash % of equity: {cash_pct}")
-        c.print(f"- Gross / net exposure: {gross} / {net}")
-        c.print(f"- Options market value: {opt_mv}")
-
-        # Performance (investor-facing)
-        c.print("\n## Performance")
-        if nav:
-            weekly_ret = _safe_float(nav.get("twr_since_prev"))
-            since_ret = _safe_float(nav.get("twr_cum"))
-            c.print(f"- Equity: ${eq:,.2f}")
-            if weekly_ret is not None:
-                c.print(f"- Weekly return (last NAV interval): {_fmt_pct(weekly_ret)}")
-            if since_ret is not None:
-                c.print(f"- Since inception return: {_fmt_pct(since_ret)}")
-        else:
-            c.print("- DATA NOT PROVIDED")
-
-        # Portfolio purpose (one line)
-        c.print("\n## Portfolio Purpose")
-        c.print("Small-premium risk hedges across credit/AI/solar plus duration convexity.")
-
-        # Performance drivers (plain English)
-        c.print("\n## Performance Drivers (this week)")
-        c.print("• Credit hedges detracted (HYG puts down) as spreads remained tight.")
-        c.print("• Solar downside hedge detracted (TAN puts down) despite SLV/TAN improving; timing/vol mattered.")
-        c.print("• NVDA put roughly flat; volatility and time decay offset small underlying moves.")
-        c.print("• Defensive diversifiers (GLDM) helped modestly.")
-
-        # Key risks + management (compact)
-        c.print("\n## Key Risks & Management")
-        c.print("• Credit spreads stay tight → HYG downside takes longer; size kept small vs equity.")
-        c.print("• AI remains bid / rates fall → NVDA put decay risk; manage via time and premium limits.")
-        c.print("• Silver rolls over while solar stabilizes → TAN put edge fades; monitored vs SLV/TAN.")
-
-        # Current positioning (simplified)
-        c.print("\n## Current Positioning")
-        if positions:
-            t = Table(title="Current positioning")
-            t.add_column("instrument", style="bold")
-            t.add_column("intent")
-            t.add_column("max loss")
-            t.add_column("time horizon", justify="right")
-
-            total_prem = 0.0
-            nearest_exp: tuple[str, int, str] | None = None
-            largest_prem: tuple[str, float] | None = None
-            short_option_present = False
-
+            pos_table = Table(title="Holdings", box=box.ROUNDED, expand=False)
+            pos_table.add_column("Position", style="bold", width=22)
+            pos_table.add_column("Type", width=12)
+            pos_table.add_column("Size", justify="right", width=10)
+            pos_table.add_column("Value", justify="right", width=10)
+            pos_table.add_column("Expiry", justify="right", style="dim", width=12)
+            
             for p in positions:
                 sym = str(getattr(p, "symbol", "") or "")
                 qty = _safe_float(getattr(p, "qty", None)) or 0.0
                 mv = _safe_float(getattr(p, "market_value", None))
                 opt = _parse_occ_auto(sym)
-                intent = _intent_for_symbol(sym if not opt else opt["underlying"])
-                max_loss = "DATA NOT PROVIDED"
-                horizon = "DATA NOT PROVIDED"
-
+                
                 if opt:
+                    pos_type = _intent_for_symbol(opt["underlying"])
                     exp = opt["expiry"]
                     dte = max(0, (exp - datetime.utcnow().date()).days)
-                    horizon = f"{exp} ({dte} DTE)"
+                    expiry_str = f"{dte} DTE"
                     prem = _safe_float(getattr(p, "avg_entry_price", None))
                     if prem is None or prem <= 0:
                         prem = _safe_float(getattr(p, "current_price", None))
                     if prem is not None:
                         prem_usd = abs(qty) * float(prem) * 100.0
-                        max_loss = f"${prem_usd:,.2f}"
-                        if qty < 0:
-                            short_option_present = True
                         total_prem += prem_usd
                         if largest_prem is None or prem_usd > largest_prem[1]:
                             largest_prem = (sym, prem_usd)
                         if nearest_exp is None or dte < nearest_exp[1]:
                             nearest_exp = (sym, dte, str(exp))
                 else:
-                    if qty < 0:
-                        max_loss = "Short (unbounded)"
-                    elif mv is not None:
-                        max_loss = f"${abs(mv):,.2f}"
-                    horizon = "Open-ended"
-
-                t.add_row(sym, intent, max_loss, horizon)
-
-            c.print(t)
-
-            # Risk & runway block
-            c.print("\n## Risk & Runway")
+                    pos_type = _intent_for_symbol(sym)
+                    expiry_str = "—"
+                
+                mv_str = f"${abs(mv):,.0f}" if mv is not None else "—"
+                qty_str = f"{qty:+.0f}" if qty != int(qty) == qty else f"{int(qty):+d}"
+                
+                pos_table.add_row(sym[:22], pos_type[:12], qty_str, mv_str, expiry_str)
+            
+            c.print(pos_table)
+            
+            # Risk summary
             if total_prem > 0 and nav:
                 eqv = _safe_float(nav.get("equity")) or 0.0
-                prem_pct = (total_prem / eqv * 100.0) if eqv > 0 else None
-                c.print(
-                    f"- Total option premium at risk: ${total_prem:,.2f}"
-                    + (f" ({prem_pct:.1f}% of equity)" if prem_pct is not None else "")
-                )
-            else:
-                c.print("- Total option premium at risk: DATA NOT PROVIDED")
-            if nearest_exp:
-                c.print(f"- Nearest expiry: {nearest_exp[0]} ({nearest_exp[1]} DTE)")
-            else:
-                c.print("- Nearest expiry: DATA NOT PROVIDED")
-            if largest_prem:
-                c.print(f"- Largest option position by premium: {largest_prem[0]} (${largest_prem[1]:,.2f})")
-            else:
-                c.print("- Largest option position by premium: DATA NOT PROVIDED")
-            if short_option_present:
-                c.print("- Note: Short option positions detected; max loss is not bounded.")
+                prem_pct = (total_prem / eqv * 100.0) if eqv > 0 else 0
+                risk_lines = [
+                    f"[bold]Premium at Risk:[/bold] ${total_prem:,.0f} ({prem_pct:.0f}% of equity)",
+                ]
+                if nearest_exp:
+                    risk_lines.append(f"[bold]Nearest Expiry:[/bold] {nearest_exp[0][:15]} ({nearest_exp[1]} DTE)")
+                if largest_prem:
+                    risk_lines.append(f"[bold]Largest Position:[/bold] {largest_prem[0][:15]} (${largest_prem[1]:,.0f})")
+                
+                c.print(Panel("\n".join(risk_lines), title="[bold]Risk Summary[/bold]", border_style="red", expand=False))
         else:
-            c.print("DATA NOT PROVIDED (no open positions)")
-
-        # Market thesis (macro conditions required to win)
-        c.print("\n## Market Thesis (What must happen to win)")
-        thesis_t = Table(show_header=False, box=None, pad_edge=False)
-        thesis_t.add_column("thesis")
-        for tline in THEMES:
-            thesis_t.add_row(f"• {tline}")
-        c.print(thesis_t)
-
-        # Leading indicators (top 3)
-        c.print("\n## Leading Indicators (with triggers)")
+            c.print("[dim]No positions loaded[/dim]")
+        
+        c.print()
+        
+        # ════════════════════════════════════════════════════════════════════════
+        # KEY INDICATORS & TRIGGERS
+        # ════════════════════════════════════════════════════════════════════════
         hy_asof, hy_level, hy_chg, hy_note, hy_chg_num = _hy_oas_metrics()
         nvda_asof, nvda_rel, nvda_note, nvda_rel_num = _rel_return_vs("NVDA", "SPY")
         ratio_asof, ratio_level, ratio_chg, ratio_note, ratio_chg_num = _ratio_change("SLV", "TAN")
         rates_asof, rates_1m, rates_3m, rates_note = _ust10y_change_1m_3m()
-
-        if hy_note:
-            hy_level = f"{hy_level} ({hy_note})"
-        if nvda_note:
-            nvda_rel = f"{nvda_rel} ({nvda_note})"
-        if ratio_note:
-            ratio_level = f"{ratio_level} ({ratio_note})"
-        if rates_note:
-            rates_1m = f"{rates_1m} ({rates_note})"
-
-        ind_t = Table(title="Leading Indicators", show_header=True)
-        ind_t.add_column("Indicator", style="bold")
-        ind_t.add_column("Latest (asof)", overflow="fold")
-        ind_t.add_column("Watch / trigger", overflow="fold")
-
-        ind_t.add_row(
-            "Credit stress (HY OAS)",
-            f"latest={hy_level}; 3m change={hy_chg}; asof={hy_asof}",
-            "watch: >325 bps or +25 bps in 1m = confirmation",
+        
+        ind_table = Table(title="Triggers & Watchlist", box=box.ROUNDED, expand=False)
+        ind_table.add_column("Signal", style="bold", width=18)
+        ind_table.add_column("Current", width=20)
+        ind_table.add_column("Trigger Level", width=22, style="yellow")
+        ind_table.add_column("Implication", width=25, style="dim")
+        
+        # Credit stress
+        hy_status = "⚠️" if hy_chg_num and hy_chg_num > 15 else "✓"
+        ind_table.add_row(
+            f"{hy_status} HY OAS",
+            f"{hy_level} (Δ3m: {hy_chg})",
+            ">325bp or +25bp/1m",
+            "Credit stress → HYG puts pay",
         )
-        ind_t.add_row(
-            "AI de-rating (NVDA vs SPY)",
-            f"rel return (3m)={nvda_rel}; asof={nvda_asof}",
-            "watch: continued underperformance + breadth deterioration",
+        
+        # NVDA relative
+        nvda_status = "⚠️" if nvda_rel_num and nvda_rel_num < -5 else "✓"
+        ind_table.add_row(
+            f"{nvda_status} NVDA vs SPY",
+            f"{nvda_rel} (3m)",
+            "Underperf + weak breadth",
+            "AI de-rating → NVDA puts pay",
         )
-        ind_t.add_row(
-            "Solar relative (SLV/TAN)",
-            f"ratio={ratio_level}; 3m change={ratio_chg}; asof={ratio_asof}",
-            "watch: persistence + solar earnings revisions",
+        
+        # SLV/TAN ratio
+        ratio_status = "⚠️" if ratio_chg_num and ratio_chg_num > 20 else "✓"
+        ind_table.add_row(
+            f"{ratio_status} SLV/TAN Ratio",
+            f"{ratio_level} (Δ3m: {ratio_chg})",
+            "Persistence >30d",
+            "Solar stress → TAN puts pay",
         )
-        ind_t.add_row(
-            "Rates leg (TLT call)",
-            f"10Y yield change 1m={rates_1m}; 3m={rates_3m}; asof={rates_asof}",
-            "watch: yields lower / curve bull-flattening",
+        
+        # Rates
+        ind_table.add_row(
+            "✓ 10Y Yield",
+            f"Δ1m: {rates_1m}, Δ3m: {rates_3m}",
+            "Bull flatten / <4.0%",
+            "Rates rally → TLT calls pay",
         )
-        c.print(ind_t)
-
-        # Weekly 10Y
+        
+        c.print(ind_table)
+        c.print()
+        
+        # ════════════════════════════════════════════════════════════════════════
+        # MACRO CONTEXT
+        # ════════════════════════════════════════════════════════════════════════
         level, chg = _weekly_ust10y_change()
-        live_level, live_asof, live_note = _ust10y_live_yield()
-        if live_note:
-            live_level = f"{live_level} ({live_note})"
-
-        # Inflation + liquidity metrics (best-effort)
-        cpi_u, cpi_u_3m, cpi_u_asof, cpi_u_note, cpi_u_3m_num, cpi_u_num = _fred_yoy_and_change_days(
-            "CPIAUCSL", 90
-        )
-        _, cpi_u_6m, _cpi_u_asof2, _cpi_u_note2, cpi_u_6m_num, _cpi_u_num2 = _fred_yoy_and_change_days(
-            "CPIAUCSL", 180
-        )
-        if cpi_u_note:
-            cpi_u = f"{cpi_u} ({cpi_u_note})"
-
-        med_cpi, med_cpi_3m, med_cpi_asof, med_cpi_note, med_cpi_3m_num, med_cpi_num = _fred_latest_and_change_days(
-            "MEDCPIM158SFRBCLE", 90
-        )
-        _, med_cpi_6m, _asof2, _note2, _num2, _num3 = _fred_latest_and_change_days("MEDCPIM158SFRBCLE", 180)
-        if med_cpi_note:
-            med_cpi = f"{med_cpi} ({med_cpi_note})"
-
-        fivey5y, fivey5y_asof, fivey5y_note = _fred_latest("T5YIFR")
-        if fivey5y_note:
-            fivey5y = f"{fivey5y} ({fivey5y_note})"
-        _sofr, _sofr_chg, _sofr_asof, sofr_note, _sofr_chg_num, sofr_num = _fred_latest_and_change_days(
-            "SOFR", 30
-        )
-        _iorb, _iorb_chg, _iorb_asof, iorb_note, _iorb_chg_num, iorb_num = _fred_latest_and_change_days(
-            "IORB", 30
-        )
-        if sofr_note:
-            sofr_num = None
-        if iorb_note:
-            iorb_num = None
-
-        infl_vs_be = "DATA NOT PROVIDED"
-        try:
-            if med_cpi_num is not None and fivey5y_note == "":
-                infl_vs_be = f"{(med_cpi_num - float(fivey5y)):+.2f}pp"
-        except Exception:
-            infl_vs_be = "DATA NOT PROVIDED"
-
-        spread_bps = "DATA NOT PROVIDED"
-        try:
-            if sofr_num is not None and iorb_num is not None:
-                spread_bps = f"{(sofr_num - iorb_num) * 100.0:+.0f} bps"
-        except Exception:
-            spread_bps = "DATA NOT PROVIDED"
-
-        liq_line = "Liquidity/funding: Overnight funding conditions remain orderly."
-        if spread_bps != "DATA NOT PROVIDED":
-            liq_line = f"Liquidity/funding: Overnight funding conditions remain orderly; SOFR–IORB ~ {spread_bps}."
-        regime_read = "Policy easing in progress; inflation signals mixed; funding conditions orderly."
-
-        c.print(
-            Panel(
-                "Rates:\n"
-                f"  10Y: {level} (wk {chg}); Live {live_level} (asof {live_asof})\n"
-                "\nInflation:\n"
-                f"  Headline CPI YoY: {cpi_u} (3m {cpi_u_3m}, 6m {cpi_u_6m}; asof {cpi_u_asof})\n"
-                f"  Median CPI YoY: {med_cpi} (3m {med_cpi_3m}, 6m {med_cpi_6m}; asof {med_cpi_asof})\n"
-                f"  5y5y breakeven: {fivey5y} (asof {fivey5y_asof})\n"
-                f"  Dislocation (Median CPI − 5y5y): {infl_vs_be}\n"
-                "\nLiquidity:\n"
-                f"  {liq_line}\n"
-                f"\nRegime read: {regime_read}",
-                title="Macro Weekly Performance",
-                expand=False,
-            )
-        )
-
-        # Positioning changes / next actions
-        c.print("\n## Positioning Changes / Next Actions")
-        c.print("• Trades / changes this week: DATA NOT PROVIDED.")
-        c.print("• Planned actions (conditional): If HY OAS widens materially, we may take partial profits on HYG puts; "
-                "if vol spikes, we may reduce VIX exposure.")
-
-        # Next-week watchlist
-        c.print("\n## Next Week Watchlist")
-        c.print("• HY OAS +25 bps in 1m would validate credit stress.")
-        c.print("• Median CPI YoY re-accelerates > +0.3pp in 3m.")
-        c.print("• NVDA underperforms SPY further on weaker breadth.")
+        live_level, live_asof, _ = _ust10y_live_yield()
+        cpi_u, cpi_u_3m, cpi_u_asof, _, _, _ = _fred_yoy_and_change_days("CPIAUCSL", 90)
+        fivey5y, fivey5y_asof, _ = _fred_latest("T5YIFR")
+        _, _, _, sofr_note, _, sofr_num = _fred_latest_and_change_days("SOFR", 30)
+        _, _, _, iorb_note, _, iorb_num = _fred_latest_and_change_days("IORB", 30)
+        
+        spread_str = "—"
+        if sofr_num and iorb_num and not sofr_note and not iorb_note:
+            spread_str = f"{(sofr_num - iorb_num) * 100.0:+.0f}bp"
+        
+        macro_lines = [
+            f"[bold]10Y Yield:[/bold] {live_level} (wk {chg})",
+            f"[bold]CPI YoY:[/bold] {cpi_u}% (Δ3m: {cpi_u_3m})",
+            f"[bold]5y5y Breakeven:[/bold] {fivey5y}%",
+            f"[bold]SOFR-IORB:[/bold] {spread_str}",
+        ]
+        c.print(Panel("\n".join(macro_lines), title="[bold]Macro Snapshot[/bold]", border_style="cyan", expand=False))
+        c.print()
+        
+        # ════════════════════════════════════════════════════════════════════════
+        # THESIS & ACTION ITEMS
+        # ════════════════════════════════════════════════════════════════════════
+        thesis_lines = [
+            "[bold]Thesis:[/bold] Tail-risk hedges across credit/AI/solar + duration convexity",
+            "[bold]Win Condition:[/bold] Risk-off regime (credit widening, AI de-rating, or rates rally)",
+            "",
+            "[bold cyan]This Week's Focus:[/bold cyan]",
+            "  • Monitor HY OAS for signs of credit stress (>325bp)",
+            "  • Watch NVDA relative strength vs SPY for AI weakness",
+            "  • Track PCE release for inflation trajectory",
+        ]
+        
+        if events:
+            # Highlight today's key events
+            today_high_impact = [e for e in events if e["date"].date() == now.date() and e["high_impact"]]
+            if today_high_impact:
+                thesis_lines.append("")
+                thesis_lines.append("[bold yellow]Today's Key Events:[/bold yellow]")
+                for e in today_high_impact[:3]:
+                    thesis_lines.append(f"  • {e['date'].strftime('%H:%M')} — {e['event']}")
+        
+        c.print(Panel("\n".join(thesis_lines), title="[bold]Investment Thesis[/bold]", border_style="green", expand=False))
+        c.print()

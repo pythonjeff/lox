@@ -96,9 +96,41 @@ def register(app: typer.Typer) -> None:
 def register_pillar_commands(app: typer.Typer) -> None:
     """Register individual pillar commands for quick access."""
     
+    def _run_llm_analysis(settings, domain: str, snapshot: dict, regime_label: str, regime_description: str, console: Console):
+        """Shared LLM analysis runner."""
+        from ai_options_trader.llm.analyst import llm_analyze_regime
+        from rich.markdown import Markdown
+        from rich.panel import Panel
+        
+        console.print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
+        
+        analysis = llm_analyze_regime(
+            settings=settings,
+            domain=domain,
+            snapshot=snapshot,
+            regime_label=regime_label,
+            regime_description=regime_description,
+        )
+        
+        console.print(Panel(Markdown(analysis), title="[bold magenta]PhD Macro Analyst[/bold magenta]", expand=False))
+    
     @app.command("inflation")
-    def inflation_cmd():
+    def inflation_cmd(
+        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
+        json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+        delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
+        alert: bool = typer.Option(False, "--alert", help="Only output if regime is extreme (for cron/monitoring)"),
+        calendar: bool = typer.Option(False, "--calendar", help="Show upcoming events that could shift this regime"),
+        trades: bool = typer.Option(False, "--trades", help="Show quick trade expressions for current regime"),
+    ):
         """Quick inflation regime view."""
+        from rich.panel import Panel
+        from ai_options_trader.cli_commands.labs_utils import (
+            handle_output_flags, parse_delta_period, show_delta_summary,
+            show_alert_output, show_calendar_output, show_trades_output,
+        )
+        
         console = Console()
         settings = load_settings()
         
@@ -107,18 +139,94 @@ def register_pillar_commands(app: typer.Typer) -> None:
         pillar = InflationPillar()
         pillar.compute(settings)
         
-        console.print(f"\n[bold cyan]Inflation Regime: {pillar.regime}[/bold cyan]")
-        console.print(f"Score: {pillar.composite_score:.0f}/100\n" if pillar.composite_score else "")
+        # Build snapshot and features
+        snapshot = {m.name: m.value for m in pillar.metrics}
+        snapshot["composite_score"] = pillar.composite_score
+        snapshot["regime"] = pillar.regime
         
+        feature_dict = {m.name.lower().replace(" ", "_"): m.value for m in pillar.metrics}
+        feature_dict["composite_score"] = pillar.composite_score
+        
+        # Handle --features and --json flags
+        if handle_output_flags(
+            domain="inflation",
+            snapshot=snapshot,
+            features=feature_dict,
+            regime=pillar.regime or "unknown",
+            regime_description=pillar._interpret(),
+            output_json=json_out,
+            output_features=features,
+        ):
+            return
+        
+        # Handle --alert flag (silent unless extreme)
+        if alert:
+            show_alert_output("inflation", pillar.regime or "unknown", snapshot, pillar._interpret())
+            return
+        
+        # Handle --calendar flag
+        if calendar:
+            console.print(Panel(f"[b]Regime:[/b] {pillar.regime}", title="Inflation", expand=False))
+            show_calendar_output("inflation")
+            return
+        
+        # Handle --trades flag
+        if trades:
+            console.print(Panel(f"[b]Regime:[/b] {pillar.regime}", title="Inflation", expand=False))
+            show_trades_output("inflation", pillar.regime or "unknown")
+            return
+        
+        # Handle --delta flag
+        if delta:
+            from ai_options_trader.cli_commands.labs_utils import get_delta_metrics
+            
+            delta_days = parse_delta_period(delta)
+            # Build metric keys from pillar metrics
+            metric_keys = [f"{m.name}:{m.name.lower().replace(' ', '_')}:{m.unit}" for m in pillar.metrics]
+            metric_keys.append("Score:composite_score:")
+            metrics_for_delta, prev_regime = get_delta_metrics("inflation", snapshot, metric_keys, delta_days)
+            show_delta_summary("inflation", pillar.regime or "unknown", prev_regime, metrics_for_delta, delta_days)
+            
+            if prev_regime is None:
+                console.print(f"\n[dim]No cached data from {delta_days}d ago. Run `lox labs inflation` daily to build history.[/dim]")
+            return
+        
+        # Standard panel output
+        metrics_lines = []
         for m in pillar.metrics:
-            delta = f" ({m.format_delta('3m')} 3m)" if m.delta_3m else ""
-            console.print(f"  {m.name}: {m.format_value()}{delta}")
+            delta_str = f" ({m.format_delta('3m')} 3m)" if m.delta_3m else ""
+            metrics_lines.append(f"  {m.name}: [bold]{m.format_value()}[/bold]{delta_str}")
         
-        console.print(f"\n[dim]{pillar._interpret()}[/dim]")
+        body = "\n".join([
+            f"[b]Regime:[/b] {pillar.regime}",
+            f"[b]Score:[/b] {pillar.composite_score:.0f}/100" if pillar.composite_score else "",
+            "",
+            *metrics_lines,
+            "",
+            f"[dim]{pillar._interpret()}[/dim]",
+        ])
+        console.print(Panel(body, title="Inflation", expand=False))
+        
+        if llm:
+            _run_llm_analysis(settings, "inflation", snapshot, pillar.regime or "unknown", pillar._interpret(), console)
     
     @app.command("growth")
-    def growth_cmd():
+    def growth_cmd(
+        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
+        json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+        delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
+        alert: bool = typer.Option(False, "--alert", help="Only output if regime is extreme (for cron/monitoring)"),
+        calendar: bool = typer.Option(False, "--calendar", help="Show upcoming events that could shift this regime"),
+        trades: bool = typer.Option(False, "--trades", help="Show quick trade expressions for current regime"),
+    ):
         """Quick growth regime view."""
+        from rich.panel import Panel
+        from ai_options_trader.cli_commands.labs_utils import (
+            handle_output_flags, parse_delta_period, show_delta_summary,
+            show_alert_output, show_calendar_output, show_trades_output,
+        )
+        
         console = Console()
         settings = load_settings()
         
@@ -127,17 +235,90 @@ def register_pillar_commands(app: typer.Typer) -> None:
         pillar = GrowthPillar()
         pillar.compute(settings)
         
-        console.print(f"\n[bold cyan]Growth Regime: {pillar.regime}[/bold cyan]")
-        console.print(f"Score: {pillar.composite_score:.0f}/100\n" if pillar.composite_score else "")
+        # Build snapshot and features
+        snapshot = {m.name: m.value for m in pillar.metrics}
+        snapshot["composite_score"] = pillar.composite_score
+        snapshot["regime"] = pillar.regime
         
-        for m in pillar.metrics:
-            console.print(f"  {m.name}: {m.format_value()}")
+        feature_dict = {m.name.lower().replace(" ", "_"): m.value for m in pillar.metrics}
+        feature_dict["composite_score"] = pillar.composite_score
         
-        console.print(f"\n[dim]{pillar._interpret()}[/dim]")
+        # Handle --features and --json flags
+        if handle_output_flags(
+            domain="growth",
+            snapshot=snapshot,
+            features=feature_dict,
+            regime=pillar.regime or "unknown",
+            regime_description=pillar._interpret(),
+            output_json=json_out,
+            output_features=features,
+        ):
+            return
+        
+        # Handle --alert flag (silent unless extreme)
+        if alert:
+            show_alert_output("growth", pillar.regime or "unknown", snapshot, pillar._interpret())
+            return
+        
+        # Handle --calendar flag
+        if calendar:
+            console.print(Panel(f"[b]Regime:[/b] {pillar.regime}", title="Growth", expand=False))
+            show_calendar_output("growth")
+            return
+        
+        # Handle --trades flag
+        if trades:
+            console.print(Panel(f"[b]Regime:[/b] {pillar.regime}", title="Growth", expand=False))
+            show_trades_output("growth", pillar.regime or "unknown")
+            return
+        
+        # Handle --delta flag
+        if delta:
+            from ai_options_trader.cli_commands.labs_utils import get_delta_metrics
+            
+            delta_days = parse_delta_period(delta)
+            metric_keys = [f"{m.name}:{m.name.lower().replace(' ', '_')}:{m.unit}" for m in pillar.metrics]
+            metric_keys.append("Score:composite_score:")
+            metrics_for_delta, prev_regime = get_delta_metrics("growth", snapshot, metric_keys, delta_days)
+            show_delta_summary("growth", pillar.regime or "unknown", prev_regime, metrics_for_delta, delta_days)
+            
+            if prev_regime is None:
+                console.print(f"\n[dim]No cached data from {delta_days}d ago. Run `lox labs growth` daily to build history.[/dim]")
+            return
+        
+        # Standard panel output
+        metrics_lines = [f"  {m.name}: [bold]{m.format_value()}[/bold]" for m in pillar.metrics]
+        
+        body = "\n".join([
+            f"[b]Regime:[/b] {pillar.regime}",
+            f"[b]Score:[/b] {pillar.composite_score:.0f}/100" if pillar.composite_score else "",
+            "",
+            *metrics_lines,
+            "",
+            f"[dim]{pillar._interpret()}[/dim]",
+        ])
+        console.print(Panel(body, title="Growth", expand=False))
+        
+        if llm:
+            _run_llm_analysis(settings, "growth", snapshot, pillar.regime or "unknown", pillar._interpret(), console)
     
     @app.command("liquidity")
-    def liquidity_cmd():
+    def liquidity_cmd(
+        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
+        json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+        delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
+        alert: bool = typer.Option(False, "--alert", help="Only output if regime is extreme (for cron/monitoring)"),
+        calendar: bool = typer.Option(False, "--calendar", help="Show upcoming events that could shift this regime"),
+        trades: bool = typer.Option(False, "--trades", help="Show quick trade expressions for current regime"),
+    ):
         """Quick liquidity regime view."""
+        from rich.panel import Panel
+        from ai_options_trader.cli_commands.labs_utils import (
+            handle_output_flags, parse_delta_period, show_delta_summary,
+            show_alert_output, show_calendar_output, show_trades_output,
+        )
+        
         console = Console()
         settings = load_settings()
         
@@ -146,23 +327,99 @@ def register_pillar_commands(app: typer.Typer) -> None:
         pillar = LiquidityPillar()
         pillar.compute(settings)
         
-        console.print(f"\n[bold cyan]Liquidity Regime: {pillar.regime}[/bold cyan]")
-        console.print(f"Score: {pillar.composite_score:.0f}/100\n" if pillar.composite_score else "")
-        console.print(f"Buffer: {pillar.buffer_status()}\n")
+        # Build snapshot and features
+        snapshot = {m.name: m.value for m in pillar.metrics}
+        snapshot["composite_score"] = pillar.composite_score
+        snapshot["buffer_status"] = pillar.buffer_status()
+        snapshot["regime"] = pillar.regime
         
+        feature_dict = {m.name.lower().replace(" ", "_"): m.value for m in pillar.metrics}
+        feature_dict["composite_score"] = pillar.composite_score
+        
+        # Handle --features and --json flags
+        if handle_output_flags(
+            domain="liquidity",
+            snapshot=snapshot,
+            features=feature_dict,
+            regime=pillar.regime or "unknown",
+            regime_description=pillar._interpret(),
+            output_json=json_out,
+            output_features=features,
+        ):
+            return
+        
+        # Handle --alert flag (silent unless extreme)
+        if alert:
+            show_alert_output("liquidity", pillar.regime or "unknown", snapshot, pillar._interpret())
+            return
+        
+        # Handle --calendar flag
+        if calendar:
+            console.print(Panel(f"[b]Regime:[/b] {pillar.regime}", title="Liquidity", expand=False))
+            show_calendar_output("liquidity")
+            return
+        
+        # Handle --trades flag
+        if trades:
+            console.print(Panel(f"[b]Regime:[/b] {pillar.regime}", title="Liquidity", expand=False))
+            show_trades_output("liquidity", pillar.regime or "unknown")
+            return
+        
+        # Handle --delta flag
+        if delta:
+            from ai_options_trader.cli_commands.labs_utils import get_delta_metrics
+            
+            delta_days = parse_delta_period(delta)
+            metric_keys = [f"{m.name}:{m.name.lower().replace(' ', '_')}:{m.unit}" for m in pillar.metrics]
+            metric_keys.append("Score:composite_score:")
+            metrics_for_delta, prev_regime = get_delta_metrics("liquidity", snapshot, metric_keys, delta_days)
+            show_delta_summary("liquidity", pillar.regime or "unknown", prev_regime, metrics_for_delta, delta_days)
+            
+            if prev_regime is None:
+                console.print(f"\n[dim]No cached data from {delta_days}d ago. Run `lox labs liquidity` daily to build history.[/dim]")
+            return
+        
+        # Standard panel output
+        metrics_lines = []
         for m in pillar.metrics:
-            delta = f" ({m.format_delta('1m')} 1m)" if m.delta_1m else ""
-            console.print(f"  {m.name}: {m.format_value()}{delta}")
+            delta_str = f" ({m.format_delta('1m')} 1m)" if m.delta_1m else ""
+            metrics_lines.append(f"  {m.name}: [bold]{m.format_value()}[/bold]{delta_str}")
         
         triggers = pillar._triggers() if hasattr(pillar, "_triggers") else []
-        if triggers:
-            console.print(f"\n[yellow]Triggers: {', '.join(triggers)}[/yellow]")
+        trigger_line = f"\n[yellow]Triggers: {', '.join(triggers)}[/yellow]" if triggers else ""
         
-        console.print(f"\n[dim]{pillar._interpret()}[/dim]")
+        body = "\n".join([
+            f"[b]Regime:[/b] {pillar.regime}",
+            f"[b]Score:[/b] {pillar.composite_score:.0f}/100" if pillar.composite_score else "",
+            f"[b]Buffer:[/b] {pillar.buffer_status()}",
+            "",
+            *metrics_lines,
+            trigger_line,
+            "",
+            f"[dim]{pillar._interpret()}[/dim]",
+        ])
+        console.print(Panel(body, title="Liquidity", expand=False))
+        
+        if llm:
+            _run_llm_analysis(settings, "liquidity", snapshot, pillar.regime or "unknown", pillar._interpret(), console)
     
     @app.command("vol")
-    def vol_cmd():
-        """Quick volatility regime view."""
+    def vol_cmd(
+        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
+        json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+        delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
+        alert: bool = typer.Option(False, "--alert", help="Only output if regime is extreme (for cron/monitoring)"),
+        calendar: bool = typer.Option(False, "--calendar", help="Show upcoming events that could shift this regime"),
+        trades: bool = typer.Option(False, "--trades", help="Show quick trade expressions for current regime"),
+    ):
+        """Quick volatility regime view (VIX level, term structure, percentile)."""
+        from rich.panel import Panel
+        from ai_options_trader.cli_commands.labs_utils import (
+            handle_output_flags, parse_delta_period, show_delta_summary,
+            show_alert_output, show_calendar_output, show_trades_output,
+        )
+        
         console = Console()
         settings = load_settings()
         
@@ -171,18 +428,90 @@ def register_pillar_commands(app: typer.Typer) -> None:
         pillar = VolatilityPillar()
         pillar.compute(settings)
         
-        console.print(f"\n[bold cyan]Volatility Regime: {pillar.regime}[/bold cyan]")
-        console.print(f"Score: {pillar.composite_score:.0f}/100\n" if pillar.composite_score else "")
-        console.print(f"Term Structure: {pillar.term_structure_status()}\n")
+        # Build snapshot and features
+        snapshot = {m.name: m.value for m in pillar.metrics}
+        snapshot["composite_score"] = pillar.composite_score
+        snapshot["term_structure"] = pillar.term_structure_status()
+        snapshot["regime"] = pillar.regime
+        # Add VIX to snapshot with standard key for alert thresholds
+        snapshot["VIX"] = next((m.value for m in pillar.metrics if m.name == "VIX"), None)
         
+        feature_dict = {m.name.lower().replace(" ", "_"): m.value for m in pillar.metrics}
+        feature_dict["composite_score"] = pillar.composite_score
+        feature_dict["vix_percentile"] = next((m.percentile for m in pillar.metrics if m.name == "VIX"), None)
+        
+        # Handle --features and --json flags
+        if handle_output_flags(
+            domain="volatility",
+            snapshot=snapshot,
+            features=feature_dict,
+            regime=pillar.regime or "unknown",
+            regime_description=pillar._interpret(),
+            output_json=json_out,
+            output_features=features,
+        ):
+            return
+        
+        # Handle --alert flag (silent unless extreme)
+        if alert:
+            show_alert_output("volatility", pillar.regime or "unknown", snapshot, pillar._interpret())
+            return
+        
+        # Handle --calendar flag
+        if calendar:
+            console.print(Panel(f"[b]Regime:[/b] {pillar.regime}", title="Volatility", expand=False))
+            show_calendar_output("volatility")
+            return
+        
+        # Handle --trades flag
+        if trades:
+            console.print(Panel(f"[b]Regime:[/b] {pillar.regime}", title="Volatility", expand=False))
+            show_trades_output("volatility", pillar.regime or "unknown")
+            return
+        
+        # Handle --delta flag
+        if delta:
+            from ai_options_trader.cli_commands.labs_utils import get_delta_metrics
+            
+            delta_days = parse_delta_period(delta)
+            # Keys must match snapshot keys exactly (with spaces/caps)
+            metric_keys = [
+                "VIX:VIX:",
+                "VIX %ile:VIX Percentile:%",
+                "VIX 3M:VIX 3M:",
+                "Term Struct:VIX Term Structure:",
+                "Score:composite_score:",
+            ]
+            metrics_for_delta, prev_regime = get_delta_metrics("volatility", snapshot, metric_keys, delta_days)
+            show_delta_summary("volatility", pillar.regime or "unknown", prev_regime, metrics_for_delta, delta_days)
+            
+            if prev_regime is None:
+                console.print(f"\n[dim]No cached data from {delta_days}d ago. Run `lox labs vol` daily to build history.[/dim]")
+            return
+        
+        # Build metrics lines
+        metrics_lines = []
         for m in pillar.metrics:
             pct = f" ({m.percentile:.0f}%ile)" if m.percentile else ""
-            console.print(f"  {m.name}: {m.format_value()}{pct}")
+            metrics_lines.append(f"  {m.name}: [bold]{m.format_value()}[/bold]{pct}")
         
+        # Build implications
         implications = pillar._trade_implications() if hasattr(pillar, "_trade_implications") else []
-        if implications:
-            console.print(f"\n[dim]Trade implications:[/dim]")
-            for impl in implications:
-                console.print(f"  • {impl}")
+        impl_lines = [f"  • {impl}" for impl in implications] if implications else []
         
-        console.print(f"\n[dim]{pillar._interpret()}[/dim]")
+        body_parts = [
+            f"[b]Regime:[/b] {pillar.regime}",
+            f"[b]Score:[/b] {pillar.composite_score:.0f}/100" if pillar.composite_score else "",
+            f"[b]Term Structure:[/b] {pillar.term_structure_status()}",
+            "",
+            *metrics_lines,
+        ]
+        if impl_lines:
+            body_parts.extend(["", "[dim]Trade implications:[/dim]", *impl_lines])
+        body_parts.extend(["", f"[dim]{pillar._interpret()}[/dim]"])
+        
+        body = "\n".join([l for l in body_parts if l or l == ""])
+        console.print(Panel(body, title="Volatility", expand=False))
+        
+        if llm:
+            _run_llm_analysis(settings, "volatility", snapshot, pillar.regime or "unknown", pillar._interpret(), console)

@@ -248,14 +248,15 @@ def register(app: typer.Typer) -> None:
                 expand=False,
             )
         )
-
         label = "LIVE" if live_ok else "PAPER"
         if not typer.confirm(f"Execute: BUY {sym} using ~${budget:,.2f} notional? [{label}]", default=False):
             raise typer.Exit(code=0)
 
         if not execute:
             console.print("[dim]DRY RUN[/dim]: re-run with `--execute` to submit this order.")
-            raise typer.Exit(code=0)        # Submit: prefer notional market order (fractional shares). Fallback to whole-share qty.
+            raise typer.Exit(code=0)
+
+        # Submit: prefer notional market order (fractional shares). Fallback to whole-share qty.
         try:
             from ai_options_trader.execution.alpaca import submit_equity_notional_order, submit_equity_order
 

@@ -1,6 +1,20 @@
-# Lox Capital — Systematic Options & Tail-Risk Hedging
+# Lox Capital — Discretionary Macro with Systematic Research
 
-**A quantitative trading system for regime-aware options portfolio management**
+**A research platform for regime-aware portfolio management and tail-risk hedging**
+
+---
+
+## Philosophy
+
+Lox Capital combines **discretionary portfolio management** with **systematic research tools**. Every trade decision is made by a human analyst after rigorous examination of macro regimes, quantitative metrics, and market context.
+
+The platform provides:
+- **Regime classification** across inflation, growth, liquidity, and volatility
+- **Quantitative dashboards** with z-scores, percentiles, and historical context
+- **PhD-level research briefs** synthesizing news, data, and scenario analysis
+- **Trade idea generation** as starting points for further analysis
+
+**The tools inform. The portfolio manager decides.**
 
 ---
 
@@ -13,119 +27,176 @@
 | **Current NAV** | $968 |
 | **TWR (Since Inception)** | **+3.20%** |
 | **Benchmark (SPY)** | +2.1% |
-| **Strategy** | Tail-risk hedging with convex payoffs |
+| **Strategy** | Discretionary macro with tail-risk hedging |
 
 *Last updated: Jan 19, 2026 • Run `lox nav snapshot` for live NAV*
 
 ---
 
-## Quick Start
+## Investment Process
+
+### 1. Regime Assessment
+Every morning begins with understanding the current macro environment:
 
 ```bash
-# Install
-pip install -e .
-
-# Configure .env with API keys (Alpaca, FRED, FMP, OpenAI)
-
-# Check portfolio health
-lox status
-
-# Get trade ideas
-lox suggest --style defensive
-
-# Full macro dashboard
-lox dashboard
+lox dashboard                    # Unified view: inflation, growth, liquidity, vol
+lox labs rates snapshot --llm    # PhD-level rates/curve analysis
+lox labs vol --llm               # Volatility regime with scenario probabilities
 ```
+
+The dashboard surfaces:
+- **Inflation**: CPI trends, breakevens, sticky vs flexible components
+- **Growth**: Payrolls momentum, claims, PMI signals
+- **Liquidity**: Fed balance sheet, SOFR-IORB spreads, TGA dynamics
+- **Volatility**: VIX level/percentile, term structure, mean-reversion signals
+
+### 2. Deep Research
+Before any trade, I conduct multi-source analysis:
+
+```bash
+lox labs commodities snapshot --llm   # Oil, gold, copper with news synthesis
+lox labs growth snapshot --llm        # Employment trends with probability scenarios
+lox monetary fedfunds-outlook         # Fed policy outlook with historical analogs
+```
+
+Each `--llm` report provides:
+- **Probability-weighted scenarios** (Bull/Base/Bear with specific targets)
+- **Event-driven catalyst calendar** (impact estimates for upcoming releases)
+- **Cross-asset trade expressions** (sector ETFs, not just the obvious plays)
+- **Historical analogs** with what's different this time
+- **News synthesis** with source citations
+
+### 3. Idea Generation
+The platform generates trade ideas as **starting points for analysis**, not execution signals:
+
+```bash
+lox suggest --style defensive    # Ideas aligned to risk posture
+lox labs hedge                   # Portfolio-aware defensive ideas
+lox labs grow                    # Regime-aligned offensive ideas
+```
+
+Every idea is evaluated against:
+- Current portfolio Greeks and exposures
+- Regime alignment and conviction level
+- Risk/reward with explicit targets and stops
+
+### 4. Risk Analysis
+Before execution, stress-test the portfolio:
+
+```bash
+lox labs mc-v01 --regime RISK_OFF --real    # Crash scenario (-25% drift)
+lox labs mc-v01 --regime VOL_CRUSH --real   # Hedge drag scenario
+lox labs mc-v01 --regime SLOW_BLEED --real  # Death by 1000 cuts
+lox analyze --depth deep                     # Full position analysis
+```
+
+### 5. Execution Decision
+After completing research, I make the final call:
+- Size based on conviction and portfolio impact
+- Entry triggers based on technical/catalyst timing
+- Stops and targets informed by scenario analysis
+
+**No trade is executed without completing this workflow.**
 
 ---
 
-## Core Commands
-
-### Portfolio Commands
-```bash
-lox status              # Portfolio health at a glance (2s)
-lox status -v           # With position details
-lox report              # Investor-ready summary
-lox analyze             # Quick risk analysis
-lox analyze --depth deep # Full LLM analysis
-lox suggest             # Trade suggestions
-lox run                 # Full workflow (status → analyze → suggest)
-```
+## Research Capabilities
 
 ### Regime Dashboard
 ```bash
-lox dashboard                     # All pillars: inflation, growth, liquidity, vol
-lox dashboard --focus inflation   # Deep-dive: CPI, breakevens, stickiness
-lox dashboard --focus liquidity   # Deep-dive: Fed balance sheet, SOFR, TGA
-lox dashboard --focus growth      # Deep-dive: payrolls, claims, unemployment
-lox dashboard --focus volatility  # Deep-dive: VIX, term structure, skew
-lox dashboard --features          # Export ML features as JSON
+lox dashboard                     # All pillars at a glance
+lox dashboard --focus inflation   # Deep-dive with component breakdown
+lox dashboard --features          # Export metrics as ML features
 ```
 
-### Monte Carlo Risk Analysis
+### LLM Research Briefs
 ```bash
-lox labs mc-v01 --regime RISK_OFF --real     # Crash scenario (-25% drift)
-lox labs mc-v01 --regime VOL_CRUSH --real    # Worst for hedges (VIX→10)
-lox labs mc-v01 --regime SLOW_BLEED --real   # Death by 1000 cuts
-lox labs mc-v01 --regime ALL --real          # Baseline 6-month outlook
+lox labs vol --llm                # Volatility regime analysis
+lox labs rates snapshot --llm     # Rates/curve analysis  
+lox labs commodities snapshot --llm
+lox labs inflation snapshot --llm
+lox labs growth snapshot --llm
+lox labs liquidity snapshot --llm
 ```
 
-### Trade Ideas
+Each brief includes:
+- Regime status with confidence level
+- Key metrics with percentiles and z-scores
+- News synthesis with citations [1], [2], etc.
+- Scenario analysis with probability weights
+- Cross-asset trade expressions with sector implications
+- Historical context and analogs
+
+### Monte Carlo Scenarios
 ```bash
-lox labs hedge          # Defensive ideas (portfolio-aware)
-lox labs grow           # Offensive ideas (regime-aligned)
-lox options scan SPY    # Options strike ladder with delta
+lox labs mc-v01 --regime RISK_OFF --real     # -25% equity shock
+lox labs mc-v01 --regime VOL_CRUSH --real    # VIX collapse to 10
+lox labs mc-v01 --regime SLOW_BLEED --real   # Persistent -5% drift
+lox labs mc-v01 --regime STAGFLATION --real  # Inflation + growth shock
+lox labs mc-v01 --regime ALL --real          # 6-month baseline
 ```
 
 ---
 
-## Architecture
+## Quick Reference
 
+### Daily Workflow
+```bash
+# Morning: Regime context (15 min)
+lox status
+lox dashboard
+lox labs vol --llm
+
+# Research: Deep analysis (as needed)
+lox labs rates snapshot --llm
+lox labs commodities snapshot --llm
+
+# Ideas: Starting points for analysis
+lox suggest --style defensive
+
+# Risk: Pre-trade stress test
+lox labs mc-v01 --regime RISK_OFF --real
+
+# EOD: Record NAV
+lox nav snapshot
 ```
-lox/
-├── Core Commands
-│   ├── status      → Fast portfolio health
-│   ├── report      → Investor summary
-│   ├── analyze     → Risk analysis
-│   ├── suggest     → Trade ideas
-│   └── run         → Full workflow
-│
-├── Dashboard
-│   └── dashboard   → Unified regime view
-│       ├── Inflation (CPI, breakevens, stickiness)
-│       ├── Growth (payrolls, claims, unemployment)
-│       ├── Liquidity (Fed balance sheet, SOFR, TGA)
-│       └── Volatility (VIX, term structure)
-│
-├── Labs (Power User)
-│   ├── mc-v01      → Monte Carlo with 8 regime scenarios
-│   ├── hedge       → Portfolio-aware defensive ideas
-│   ├── grow        → Regime-aligned offensive ideas
-│   └── fedfunds-outlook → PhD-level macro analysis
-│
-└── Options
-    ├── scan        → Strike ladder with Greeks
-    ├── moonshot    → High-variance scanner
-    └── pick        → Budget-constrained selection
-```
+
+### Portfolio Commands
+| Command | Purpose |
+|---------|---------|
+| `lox status` | Portfolio health at a glance |
+| `lox status -v` | With position details |
+| `lox analyze --depth deep` | Full LLM analysis |
+| `lox nav snapshot` | Record current NAV |
+| `lox account summary` | Account + positions + P&L |
+
+### Research Commands
+| Command | Purpose |
+|---------|---------|
+| `lox dashboard` | All regime pillars |
+| `lox labs vol --llm` | Volatility research brief |
+| `lox labs rates snapshot --llm` | Rates/curve analysis |
+| `lox labs mc-v01 --real` | Monte Carlo scenarios |
+| `lox monetary fedfunds-outlook` | Fed policy outlook |
 
 ---
 
 ## Strategy
 
 ### Mandate
-Systematic tail-risk hedging with positive carry during calm periods.
+Discretionary macro portfolio management with systematic research support. Primary focus on tail-risk hedging with positive carry during calm periods.
 
 ### Thesis
 - Persistent inflation risk above 2010s baseline
 - Rising macro volatility from fiscal/rates dynamics
 - Structural shift in Treasury issuance → higher vol premium
+- Regime awareness improves timing and sizing
 
 ### Implementation
 - **Long convexity**: OTM puts on SPY/QQQ, VIX calls
-- **Delta hedge**: Short equity/credit to offset directional exposure
-- **Carry optimization**: Time spreads and selling near-the-money premium
-- **Regime-aware**: Adjust Greeks based on macro/funding/vol regimes
+- **Delta management**: Adjust exposures based on regime signals
+- **Carry optimization**: Time spreads and premium selling in favorable regimes
+- **Cross-asset**: Sector rotation based on rate/vol/growth implications
 
 ### Risk Limits
 | Metric | Limit |
@@ -137,10 +208,22 @@ Systematic tail-risk hedging with positive carry during calm periods.
 
 ---
 
+## Data Sources
+
+| Source | Data |
+|--------|------|
+| **FRED** | Macro time series (rates, employment, inflation) |
+| **Alpaca** | Real-time quotes, positions, news with full content |
+| **FMP** | Stock news, economic calendar, company data |
+| **CBOE** | VIX, term structure, options data |
+
+The LLM analyst aggregates these sources into research briefs with proper citations.
+
+---
+
 ## Installation
 
 ```bash
-# Clone and install
 git clone <repo>
 cd ai-options-trader-starter
 pip install -e .
@@ -162,89 +245,35 @@ lox dashboard
 
 ---
 
-## Daily Workflow
+## Architecture
 
-```bash
-# Morning: Context
-lox status
-lox dashboard
-
-# Midday: Ideas  
-lox suggest --style defensive
-lox labs hedge
-
-# EOD: Risk
-lox labs mc-v01 --regime RISK_OFF --real
-lox nav snapshot
+```
+lox/
+├── Research Layer
+│   ├── dashboard      → Unified regime classification
+│   ├── labs *         → PhD-level research briefs (--llm)
+│   └── mc-v01         → Monte Carlo scenario analysis
+│
+├── Portfolio Layer
+│   ├── status         → Fast portfolio health
+│   ├── analyze        → Risk analysis
+│   ├── suggest        → Trade idea generation
+│   └── nav            → NAV tracking & investor reporting
+│
+├── Data Layer
+│   ├── FRED           → Macro time series
+│   ├── Alpaca         → Market data + news
+│   ├── FMP            → News + calendar + quotes
+│   └── Unified News   → Aggregated + deduplicated
+│
+└── Analysis Layer
+    ├── Regime pillars → Inflation, growth, liquidity, vol
+    ├── Sector maps    → Cross-asset implications
+    └── LLM analyst    → Research synthesis + scenarios
 ```
 
 ---
 
-## ML Features
+**Lox Capital** | Discretionary Macro | Research-Driven | Since Jan 2026
 
-The dashboard exports all pillar metrics as ML features:
-
-```bash
-lox dashboard --features > features.json
-```
-
-Output includes:
-- `inflation_cpi_yoy_level`, `inflation_cpi_yoy_zscore`, `inflation_cpi_yoy_mom_3m`
-- `growth_payrolls_3m_ann_level`, `growth_unemployment_rate_level`
-- `liquidity_net_liquidity_level`, `liquidity_sofr_iorb_spread_level`
-- `volatility_vix_level`, `volatility_vix_percentile`, `volatility_term_structure_level`
-
-Use for regime-conditional Monte Carlo, backtesting, or custom models.
-
----
-
-## Command Reference
-
-### Quick Access
-| Command | What it does |
-|---------|-------------|
-| `lox status` | Portfolio health (fast, no LLM) |
-| `lox dashboard` | All regimes at a glance |
-| `lox suggest` | Quick trade ideas |
-| `lox labs hedge` | Defensive ideas |
-| `lox labs mc-v01 --real` | Monte Carlo risk analysis |
-
-### Full Analysis
-| Command | What it does |
-|---------|-------------|
-| `lox analyze --depth deep` | LLM-powered analysis |
-| `lox run` | Full workflow |
-| `lox autopilot run-once --engine ml` | ML trade generation |
-| `lox monetary fedfunds-outlook` | PhD-level macro dashboard |
-
-### NAV & Reporting
-| Command | What it does |
-|---------|-------------|
-| `lox nav snapshot` | Record current NAV |
-| `lox nav investor contribute` | Record investor flow |
-| `lox weekly report` | Weekly performance summary |
-| `lox account summary` | Account + positions + P&L |
-
----
-
-## Testing
-
-```bash
-pytest -q                           # Full suite
-pytest tests/test_macro_playbook.py # Regime tests
-```
-
----
-
-## Documentation
-
-- `docs/OBJECTIVES.md` — Strategy objectives
-- `docs/PROJECT_CONSTITUTION.md` — Design principles
-- `docs/MONTE_CARLO_V01_SUMMARY.md` — MC methodology
-- `docs/COMMANDS_GUIDE.md` — Full command reference
-
----
-
-**Lox Capital** | Systematic Options | Tail-Risk Hedging | Since Jan 2026
-
-*Not investment advice. Research software for educational purposes.*
+*The platform provides research and analysis tools. All investment decisions are made by the portfolio manager after independent evaluation. Not investment advice.*
