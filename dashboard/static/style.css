@@ -1,0 +1,546 @@
+/* LOX FUND Branding - Light Theme */
+:root {
+    --bg-light: #f8f9fa;
+    --bg-container: #f5f5f5;
+    --bg-border: #e0e0e0;
+    --bg-card: #ffffff;
+    --accent-blue: #0066ff;
+    --text-primary: #1a1a1a;
+    --text-secondary: #4a4a4a;
+    --text-dim: #8a8a8a;
+    --green: #00a86b;
+    --red: #e63946;
+    --shadow: rgba(0, 0, 0, 0.06);
+    --shadow-hover: rgba(0, 0, 0, 0.10);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'Roboto', sans-serif;
+    background-color: var(--bg-light);
+    color: var(--text-primary);
+    padding: 20px;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    background-color: var(--bg-container);
+    border: 1px solid var(--bg-border);
+    border-radius: 12px;
+    padding: 48px;
+    box-shadow: 0 2px 8px var(--shadow);
+}
+
+/* LOX FUND Logo */
+.header {
+    text-align: center;
+    margin-bottom: 48px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--bg-border);
+}
+
+.logo-container {
+    position: relative;
+    display: inline-block;
+    margin-bottom: 12px;
+}
+
+.logo-lox {
+    font-size: 56px;
+    font-weight: 700;
+    letter-spacing: -1.5px;
+    color: var(--text-primary);
+    display: inline-block;
+    font-family: 'Inter', -apple-system, sans-serif;
+}
+
+.logo-fund {
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    color: var(--text-primary);
+    display: inline-block;
+    margin-left: 8px;
+    vertical-align: top;
+    padding-top: 10px;
+    font-family: 'Inter', -apple-system, sans-serif;
+}
+
+.logo-underline {
+    position: absolute;
+    bottom: -6px;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--accent-blue);
+    border-radius: 2px;
+}
+
+.header-subtitle {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-top: 16px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    font-weight: 500;
+}
+
+/* Summary Panel */
+.summary-panel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin-bottom: 40px;
+}
+
+.summary-item {
+    background-color: var(--bg-card);
+    border: 1px solid var(--bg-border);
+    border-radius: 10px;
+    padding: 24px;
+    text-align: center;
+    box-shadow: 0 1px 3px var(--shadow);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.summary-item:hover {
+    box-shadow: 0 4px 12px var(--shadow-hover);
+    transform: translateY(-2px);
+}
+
+.summary-label {
+    color: var(--text-dim);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+.summary-value {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.5px;
+}
+
+.summary-value.positive {
+    color: var(--green);
+}
+
+.summary-value.negative {
+    color: var(--red);
+}
+
+/* Macro Indicators Section */
+.macro-section {
+    margin-top: 40px;
+    margin-bottom: 40px;
+}
+
+.macro-section h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: var(--text-primary);
+}
+
+.macro-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.macro-item {
+    background-color: var(--bg-card);
+    border: 1px solid var(--bg-border);
+    border-radius: 10px;
+    padding: 24px;
+    text-align: center;
+    transition: all 0.2s ease;
+    position: relative;
+    box-shadow: 0 1px 3px var(--shadow);
+}
+
+.macro-item.in-range {
+    border-color: var(--green);
+    border-width: 2px;
+    background-color: #f0fdf4;
+}
+
+.macro-item:hover {
+    border-color: var(--accent-blue);
+    box-shadow: 0 4px 12px var(--shadow-hover);
+    transform: translateY(-2px);
+}
+
+.macro-label {
+    color: var(--text-dim);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+.macro-description {
+    color: var(--text-dim);
+    font-size: 10px;
+    font-style: italic;
+    margin-bottom: 12px;
+    line-height: 1.4;
+}
+
+.macro-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+    letter-spacing: -0.5px;
+}
+
+.macro-target {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.macro-target .target-label {
+    color: var(--accent-blue);
+    font-weight: 600;
+}
+
+.macro-context {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 10px;
+    font-style: italic;
+    line-height: 1.5;
+}
+
+.macro-context.in-range {
+    color: var(--green);
+    font-weight: 600;
+    font-style: normal;
+}
+
+.macro-asof {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    font-style: italic;
+}
+
+/* Positions Section */
+.positions-section {
+    margin-top: 40px;
+}
+
+.positions-section h2 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 24px;
+    color: var(--text-primary);
+    letter-spacing: -0.3px;
+}
+
+.macro-section h2 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 24px;
+    color: var(--text-primary);
+    letter-spacing: -0.3px;
+}
+
+.table-container {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: var(--bg-card);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px var(--shadow);
+}
+
+thead {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid var(--bg-border);
+}
+
+th {
+    padding: 16px 20px;
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-dim);
+    font-weight: 700;
+}
+
+th:last-child {
+    text-align: right;
+}
+
+td {
+    padding: 18px 20px;
+    border-top: 1px solid var(--bg-border);
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+td:last-child {
+    text-align: right;
+}
+
+tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+.loading {
+    text-align: center;
+    color: var(--text-dim);
+    font-style: italic;
+}
+
+.pnl-positive {
+    color: var(--green);
+    font-weight: 600;
+}
+
+.pnl-negative {
+    color: var(--red);
+    font-weight: 600;
+}
+
+.symbol {
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 15px;
+    letter-spacing: -0.2px;
+}
+
+.opt-details {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 6px;
+    font-weight: 400;
+}
+
+/* Palmer Analysis Section */
+.analysis-section {
+    margin-top: 48px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--bg-border);
+    border-radius: 12px;
+    padding: 28px;
+    box-shadow: 0 2px 8px var(--shadow);
+}
+
+.analysis-section.palmer-section {
+    border-top: 4px solid #1a1a1a;
+}
+
+.analysis-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--bg-border);
+}
+
+.palmer-brand {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+}
+
+.palmer-name {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.palmer-subtitle {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.analysis-header h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.3px;
+    margin: 0;
+}
+
+.analysis-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.analysis-badge {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 5px 10px;
+    border-radius: 4px;
+}
+
+.refresh-btn {
+    background-color: var(--bg-light);
+    border: 1px solid var(--bg-border);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.refresh-btn:hover {
+    background-color: var(--accent-blue);
+    color: white;
+    border-color: var(--accent-blue);
+}
+
+.refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.analysis-content {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+}
+
+.analysis-content h3,
+.analysis-content strong {
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+.analysis-content p {
+    margin-bottom: 16px;
+}
+
+.analysis-content ul {
+    margin: 12px 0;
+    padding-left: 20px;
+}
+
+.analysis-content li {
+    margin-bottom: 8px;
+}
+
+.analysis-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 40px 20px;
+    color: var(--text-dim);
+    font-style: italic;
+}
+
+.spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--bg-border);
+    border-top-color: var(--accent-blue);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.analysis-timestamp {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--bg-border);
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: right;
+}
+
+.analysis-error {
+    color: var(--red);
+    padding: 20px;
+    text-align: center;
+    font-style: italic;
+}
+
+/* Regime status colors in analysis */
+.regime-positive {
+    color: var(--green);
+    font-weight: 600;
+}
+
+.regime-negative {
+    color: var(--red);
+    font-weight: 600;
+}
+
+.regime-neutral {
+    color: var(--text-secondary);
+}
+
+/* Edge alert highlight */
+.edge-alert {
+    background-color: #fff8e6;
+    border-left: 3px solid #f59e0b;
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 0 6px 6px 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .container {
+        padding: 20px;
+    }
+    
+    .logo-lox {
+        font-size: 48px;
+    }
+    
+    .logo-fund {
+        font-size: 24px;
+    }
+    
+    .summary-panel {
+        grid-template-columns: 1fr;
+    }
+    
+    .analysis-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+}

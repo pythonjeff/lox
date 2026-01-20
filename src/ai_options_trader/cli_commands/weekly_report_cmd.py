@@ -578,14 +578,99 @@ def _safe_float(x) -> float | None:
         return None
 
 
+def _generate_shareable_report(now: datetime) -> None:
+    """Generate a clean, investor-grade shareable report."""
+    lines = []
+    
+    # Header
+    lines.append(f"WEEKLY UPDATE | {now.strftime('%b %d, %Y')}")
+    lines.append("=" * 40)
+    lines.append("")
+    
+    # NAV
+    nav = _get_latest_nav()
+    if nav:
+        eq = float(nav.get("equity") or 0.0)
+        orig = float(nav.get("original_capital") or 0.0)
+        pnl = eq - orig
+        weekly_ret = _safe_float(nav.get("twr_since_prev"))
+        since_ret = _safe_float(nav.get("twr_cum"))
+        
+        lines.append("PERFORMANCE")
+        lines.append(f"  NAV: ${eq:,.0f} (P&L: ${pnl:+,.0f})")
+        if weekly_ret is not None:
+            lines.append(f"  Week: {weekly_ret*100:+.2f}%")
+        if since_ret is not None:
+            lines.append(f"  Since inception: {since_ret*100:+.1f}%")
+        lines.append("")
+    
+    # Regimes
+    regimes = _get_regime_snapshot()
+    if regimes:
+        lines.append("MARKET ENVIRONMENT")
+        if "volatility" in regimes:
+            vol = regimes["volatility"]
+            vix = vol.get("vix")
+            vix_str = f" at {vix:.0f}" if vix else ""
+            lines.append(f"  Volatility: {vol.get('regime', 'N/A')}{vix_str}")
+        if "rates" in regimes:
+            r = regimes["rates"]
+            y10 = r.get("ust_10y")
+            y10_str = f" (10Y: {y10:.2f}%)" if y10 else ""
+            lines.append(f"  Rates: {r.get('regime', 'N/A')}{y10_str}")
+        lines.append("")
+    
+    # Week ahead events
+    events = _fetch_upcoming_events(days=7, max_items=8)
+    if events:
+        high_impact = [e for e in events if e["high_impact"]][:5]
+        if high_impact:
+            lines.append("WEEK AHEAD")
+            for e in high_impact:
+                day = e["date"].strftime("%a %d")
+                lines.append(f"  {day}: {e['event'][:45]}")
+            lines.append("")
+    
+    # Key triggers
+    hy_asof, hy_level, hy_chg, hy_note, hy_chg_num = _hy_oas_metrics()
+    nvda_asof, nvda_rel, nvda_note, nvda_rel_num = _rel_return_vs("NVDA", "SPY")
+    ratio_asof, ratio_level, ratio_chg, ratio_note, ratio_chg_num = _ratio_change("SLV", "TAN")
+    
+    lines.append("POSITIONING & TRIGGERS")
+    lines.append("  Strategy: Tail-risk hedges via puts on credit (HYG),")
+    lines.append("  AI (NVDA), and solar (TAN), plus duration convexity (TLT).")
+    lines.append("")
+    lines.append("  For our hedges to pay off, we need:")
+    lines.append(f"  - Credit stress: HY spreads at {hy_level}, need >325bp")
+    lines.append(f"  - AI de-rating: NVDA vs SPY {nvda_rel} over 3m")
+    lines.append(f"  - Solar weakness: SLV/TAN ratio at {ratio_level}")
+    lines.append("")
+    
+    # Bottom line
+    lines.append("BOTTOM LINE")
+    lines.append("  Markets remain risk-on. Our hedges are cheap insurance.")
+    lines.append("  Watching for credit or tech cracks to validate the thesis.")
+    
+    # Print as plain text
+    print("\n".join(lines))
+
+
 def register(weekly_app: typer.Typer) -> None:
     @weekly_app.command("report")
-    def weekly_report():
+    def weekly_report(
+        share: bool = typer.Option(False, "--share", "-s", help="Chat-friendly format for sharing"),
+    ):
         """
         Institutional-grade weekly report with regime context and forward calendar.
+        
+        Use --share for a compact format you can copy/paste into chats.
         """
         c = Console()
         now = datetime.now(timezone.utc)
+        
+        if share:
+            _generate_shareable_report(now)
+            return
         
         # ════════════════════════════════════════════════════════════════════════
         # HEADER
