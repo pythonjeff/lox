@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOX FUND | Live Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header with LOX FUND branding -->
+        <header class="header">
+            <div class="logo-container">
+                <span class="logo-lox">LOX</span>
+                <span class="logo-fund">FUND</span>
+                <div class="logo-underline"></div>
+            </div>
+            <div class="header-subtitle">Portfolio Dashboard • Updates every 5 minutes</div>
+        </header>
+
+        <!-- Summary Panel -->
+        <section class="summary-panel">
+            <div class="summary-item">
+                <div class="summary-label">NAV</div>
+                <div class="summary-value" id="nav-value">—</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">Total P&L</div>
+                <div class="summary-value" id="total-pnl">—</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-label">Last Update</div>
+                <div class="summary-value" id="last-update">—</div>
+            </div>
+        </section>
+
+        <!-- Macro Indicators -->
+        <section class="macro-section">
+            <h2>Key Macro Indicators</h2>
+            <div class="macro-grid" id="macro-indicators">
+                <div class="macro-item">
+                    <div class="macro-label">Loading...</div>
+                    <div class="macro-value">—</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Positions Table -->
+        <section class="positions-section">
+            <h2>Positions</h2>
+            <div class="table-container">
+                <table id="positions-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Quantity</th>
+                            <th>Market Value</th>
+                            <th>P&L</th>
+                            <th>P&L %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="positions-body">
+                        <tr>
+                            <td colspan="5" class="loading">Loading positions...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Palmer: LLM Regime & Economic Analysis (Server-Cached) -->
+        <section class="analysis-section palmer-section">
+            <div class="analysis-header">
+                <div class="palmer-brand">
+                    <h2 class="palmer-name">PALMER</h2>
+                    <span class="palmer-subtitle">Macro Strategist</span>
+                </div>
+                <div class="analysis-meta">
+                    <span class="analysis-badge">Auto-Refresh Every 30 Min</span>
+                </div>
+            </div>
+            <div class="analysis-content" id="regime-analysis">
+                <div class="analysis-loading">
+                    <div class="spinner"></div>
+                    <span>Loading Palmer's analysis...</span>
+                </div>
+            </div>
+            <div class="analysis-timestamp" id="analysis-timestamp"></div>
+        </section>
+    </div>
+
+    <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</body>
+</html>
