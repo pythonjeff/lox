@@ -1,3 +1,7 @@
+# Install local ai_options_trader package
+-e .
+
+# Dashboard dependencies
 flask>=3.0.0
 gunicorn>=21.0.0
 python-dotenv>=1.0.0
