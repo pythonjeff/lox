@@ -50,7 +50,7 @@
 
         <!-- Positions Table -->
         <section class="positions-section">
-            <h2>Positions</h2>
+            <h2>Open Positions</h2>
             <div class="table-container">
                 <table id="positions-table">
                     <thead>
@@ -65,6 +65,52 @@
                     <tbody id="positions-body">
                         <tr>
                             <td colspan="5" class="loading">Loading positions...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Closed Trades -->
+        <section class="closed-trades-section">
+            <div class="closed-trades-header">
+                <h2>Closed Trades</h2>
+                <div class="win-rate-badge" id="win-rate-badge">
+                    <span class="win-rate-label">Win Rate</span>
+                    <span class="win-rate-value" id="win-rate-value">—</span>
+                </div>
+            </div>
+            
+            <!-- Summary Stats -->
+            <div class="closed-stats" id="closed-stats">
+                <div class="closed-stat">
+                    <span class="stat-label">Realized P&L</span>
+                    <span class="stat-value" id="realized-pnl">—</span>
+                </div>
+                <div class="closed-stat">
+                    <span class="stat-label">Wins</span>
+                    <span class="stat-value wins" id="total-wins">—</span>
+                </div>
+                <div class="closed-stat">
+                    <span class="stat-label">Losses</span>
+                    <span class="stat-value losses" id="total-losses">—</span>
+                </div>
+            </div>
+            
+            <!-- Closed Trades Table -->
+            <div class="table-container">
+                <table id="closed-trades-table">
+                    <thead>
+                        <tr>
+                            <th>Position</th>
+                            <th>Cost</th>
+                            <th>Proceeds</th>
+                            <th>P&L</th>
+                        </tr>
+                    </thead>
+                    <tbody id="closed-trades-body">
+                        <tr>
+                            <td colspan="4" class="loading">Loading closed trades...</td>
                         </tr>
                     </tbody>
                 </table>

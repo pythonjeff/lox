@@ -104,10 +104,12 @@ def _register_commands() -> None:
     from ai_options_trader.cli_commands.core_cmd import register_core
     from ai_options_trader.cli_commands.dashboard_cmd import register as register_dashboard
     from ai_options_trader.cli_commands.dashboard_cmd import register_pillar_commands
+    from ai_options_trader.cli_commands.closed_trades_cmd import register as register_closed_trades
 
     # Core commands (top-level for quick access)
     register_core(app)
     register_dashboard(app)  # Main dashboard command
+    register_closed_trades(app)  # Closed trades P&L
     
     # Options: modular command registration
     register_options(options_app)       # scan, most-traded

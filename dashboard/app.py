@@ -377,6 +377,155 @@ def api_positions():
     return jsonify(data)
 
 
+@app.route('/api/closed-trades')
+def api_closed_trades():
+    """API endpoint for closed trades (realized P&L)."""
+    try:
+        return jsonify(get_closed_trades_data())
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "trades": [], "total_pnl": 0, "win_rate": 0})
+
+
+def get_closed_trades_data():
+    """Fetch closed trades and calculate realized P&L."""
+    from collections import defaultdict
+    
+    try:
+        settings = load_settings()
+        trading, _ = make_clients(settings)
+    except Exception as e:
+        return {"error": str(e), "trades": [], "total_pnl": 0, "win_rate": 0}
+    
+    try:
+        from alpaca.trading.requests import GetOrdersRequest
+        from alpaca.trading.enums import QueryOrderStatus
+        
+        req = GetOrdersRequest(status=QueryOrderStatus.ALL, limit=500)
+        orders = trading.get_orders(req) or []
+    except Exception as e:
+        return {"error": str(e), "trades": [], "total_pnl": 0, "win_rate": 0}
+    
+    # Group filled orders by symbol
+    trades_by_symbol = defaultdict(lambda: {'buys': [], 'sells': []})
+    
+    for o in orders:
+        status = str(getattr(o, 'status', '?')).split('.')[-1].lower()
+        if 'filled' not in status:
+            continue
+        
+        sym = getattr(o, 'symbol', '?')
+        side = str(getattr(o, 'side', '?')).split('.')[-1].lower()
+        filled_qty = float(getattr(o, 'filled_qty', 0) or 0)
+        filled_price = getattr(o, 'filled_avg_price', 0)
+        filled_at = getattr(o, 'filled_at', None)
+        
+        try:
+            price = float(filled_price) if filled_price else 0
+        except (ValueError, TypeError):
+            price = 0
+        
+        if filled_qty <= 0 or price <= 0:
+            continue
+        
+        # Determine if option (multiplier = 100)
+        is_option = len(sym) > 10 and any(c.isdigit() for c in sym[-8:]) and '/' not in sym
+        mult = 100 if is_option else 1
+        
+        trade = {
+            'qty': filled_qty,
+            'price': price,
+            'date': str(filled_at)[:10] if filled_at else '?',
+            'value': filled_qty * price * mult
+        }
+        
+        if side == 'buy':
+            trades_by_symbol[sym]['buys'].append(trade)
+        else:
+            trades_by_symbol[sym]['sells'].append(trade)
+    
+    # Calculate closed trades
+    closed_trades = []
+    
+    for sym, data in trades_by_symbol.items():
+        buys = data['buys']
+        sells = data['sells']
+        
+        total_bought_qty = sum(b['qty'] for b in buys)
+        total_sold_qty = sum(s['qty'] for s in sells)
+        total_bought_value = sum(b['value'] for b in buys)
+        total_sold_value = sum(s['value'] for s in sells)
+        
+        display_sym = _parse_option_symbol_display(sym)
+        
+        # Only include if we have both buys and sells (round trip)
+        if total_bought_qty > 0 and total_sold_qty > 0:
+            if total_bought_qty == total_sold_qty:
+                realized_pnl = total_sold_value - total_bought_value
+                fully_closed = True
+            else:
+                closed_qty = min(total_bought_qty, total_sold_qty)
+                close_ratio = closed_qty / max(total_bought_qty, total_sold_qty)
+                realized_pnl = (total_sold_value - total_bought_value) * close_ratio
+                fully_closed = False
+            
+            closed_trades.append({
+                'symbol': display_sym,
+                'cost': total_bought_value,
+                'proceeds': total_sold_value,
+                'pnl': realized_pnl,
+                'fully_closed': fully_closed
+            })
+    
+    # Sort by P&L (best first)
+    closed_trades.sort(key=lambda x: x['pnl'], reverse=True)
+    
+    # Calculate totals
+    total_realized = sum(t['pnl'] for t in closed_trades)
+    total_wins = sum(1 for t in closed_trades if t['pnl'] >= 0)
+    total_losses = sum(1 for t in closed_trades if t['pnl'] < 0)
+    win_rate = total_wins / (total_wins + total_losses) * 100 if (total_wins + total_losses) > 0 else 0
+    
+    return {
+        "trades": closed_trades,
+        "total_pnl": total_realized,
+        "wins": total_wins,
+        "losses": total_losses,
+        "win_rate": win_rate,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _parse_option_symbol_display(sym: str) -> str:
+    """Parse option symbol for display."""
+    if '/' in sym:  # Crypto
+        return sym
+    if len(sym) <= 6:  # Stock/ETF
+        return sym
+    
+    try:
+        i = 0
+        while i < len(sym) and not sym[i].isdigit():
+            i += 1
+        
+        if i == 0 or i >= len(sym):
+            return sym
+        
+        ticker = sym[:i]
+        rest = sym[i:]
+        
+        if len(rest) >= 15:
+            exp = f"{rest[2:4]}/{rest[4:6]}"
+            opt_type = "C" if rest[6] == 'C' else "P"
+            strike = int(rest[7:]) / 1000
+            return f"{ticker} ${strike:.0f}{opt_type} {exp}"
+    except (ValueError, IndexError):
+        pass
+    
+    return sym
+
+
 def fetch_economic_calendar(days_back=3, days_ahead=7):
     """Fetch recent and upcoming economic events from FMP."""
     try:

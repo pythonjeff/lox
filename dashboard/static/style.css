@@ -339,6 +339,131 @@ tbody tr:hover {
     font-weight: 400;
 }
 
+/* Closed Trades Section */
+.closed-trades-section {
+    margin-top: 40px;
+}
+
+.closed-trades-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.closed-trades-header h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.3px;
+    margin: 0;
+}
+
+.win-rate-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--bg-border);
+    border-radius: 8px;
+    padding: 8px 16px;
+}
+
+.win-rate-badge.positive {
+    border-color: var(--green);
+    background-color: rgba(40, 167, 69, 0.05);
+}
+
+.win-rate-badge.negative {
+    border-color: var(--red);
+    background-color: rgba(220, 53, 69, 0.05);
+}
+
+.win-rate-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.win-rate-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.win-rate-badge.positive .win-rate-value {
+    color: var(--green);
+}
+
+.win-rate-badge.negative .win-rate-value {
+    color: var(--red);
+}
+
+.closed-stats {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 20px;
+    padding: 16px 20px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--bg-border);
+    border-radius: 10px;
+}
+
+.closed-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.closed-stat .stat-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.closed-stat .stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.closed-stat .stat-value.positive {
+    color: var(--green);
+}
+
+.closed-stat .stat-value.negative {
+    color: var(--red);
+}
+
+.closed-stat .stat-value.wins {
+    color: var(--green);
+}
+
+.closed-stat .stat-value.losses {
+    color: var(--red);
+}
+
+#closed-trades-table .closed-symbol {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.win-icon {
+    color: var(--green);
+    font-weight: bold;
+    margin-right: 8px;
+}
+
+.loss-icon {
+    color: var(--red);
+    font-weight: bold;
+    margin-right: 8px;
+}
+
 /* Palmer Analysis Section */
 .analysis-section {
     margin-top: 48px;
