@@ -124,6 +124,49 @@ def get_vix():
         return None
 
 
+def get_sp500_return_since_inception():
+    """Get S&P 500 return since fund inception (Jan 9, 2026) for comparison."""
+    try:
+        settings = load_settings()
+        if not settings or not hasattr(settings, 'FMP_API_KEY') or not settings.FMP_API_KEY:
+            return None
+        
+        import requests
+        
+        # Fund inception date
+        inception_date = "2026-01-09"
+        
+        # Get SPY historical prices
+        url = f"https://financialmodelingprep.com/api/v3/historical-price-full/SPY"
+        resp = requests.get(url, params={
+            "apikey": settings.FMP_API_KEY,
+            "from": inception_date,
+        }, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        if not isinstance(data, dict) or 'historical' not in data:
+            return None
+        
+        historical = data['historical']
+        if not historical or len(historical) < 2:
+            return None
+        
+        # historical is sorted newest first
+        current_price = historical[0].get('close', 0)
+        inception_price = historical[-1].get('close', 0)
+        
+        if inception_price <= 0:
+            return None
+        
+        sp500_return = ((current_price - inception_price) / inception_price) * 100
+        return sp500_return
+    
+    except Exception as e:
+        print(f"S&P 500 return fetch error: {e}")
+        return None
+
+
 def get_10y_yield():
     """Get 10Y Treasury yield - key for TLT calls. Uses live FMP data."""
     try:
@@ -305,6 +348,13 @@ def get_positions_data():
         # Sort by P&L (most profitable to least profitable)
         positions_list.sort(key=lambda x: x["pnl"], reverse=True)
         
+        # Calculate return percentage
+        return_pct = (total_pnl / original_capital * 100) if original_capital > 0 else 0.0
+        
+        # Get S&P 500 performance since inception for comparison
+        sp500_return = get_sp500_return_since_inception()
+        alpha = return_pct - sp500_return if sp500_return is not None else None
+        
         # Get macro indicators
         macro_indicators = []
         hy_oas = get_hy_oas()
@@ -323,6 +373,9 @@ def get_positions_data():
             "total_value": total_value,
             "nav_equity": nav_equity,
             "original_capital": original_capital,
+            "return_pct": return_pct,
+            "sp500_return": sp500_return,
+            "alpha": alpha,
             "macro_indicators": macro_indicators,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }

@@ -72,6 +72,32 @@ function updateDashboard() {
             updateEl.textContent = formatTimestamp(data.timestamp);
             updateEl.className = 'summary-value';
 
+            // Update performance comparison
+            const fundReturnEl = document.getElementById('fund-return');
+            if (data.return_pct !== undefined) {
+                const returnVal = data.return_pct;
+                fundReturnEl.textContent = `${returnVal >= 0 ? '+' : ''}${returnVal.toFixed(2)}%`;
+                fundReturnEl.className = 'perf-value ' + (returnVal >= 0 ? 'positive' : 'negative');
+            }
+            
+            const sp500ReturnEl = document.getElementById('sp500-return');
+            if (data.sp500_return !== undefined && data.sp500_return !== null) {
+                const sp500Val = data.sp500_return;
+                sp500ReturnEl.textContent = `${sp500Val >= 0 ? '+' : ''}${sp500Val.toFixed(2)}%`;
+                sp500ReturnEl.className = 'perf-value ' + (sp500Val >= 0 ? 'positive' : 'negative');
+            } else {
+                sp500ReturnEl.textContent = '—';
+            }
+            
+            const alphaEl = document.getElementById('alpha-value');
+            if (data.alpha !== undefined && data.alpha !== null) {
+                const alphaVal = data.alpha;
+                alphaEl.textContent = `${alphaVal >= 0 ? '+' : ''}${alphaVal.toFixed(2)}%`;
+                alphaEl.className = 'perf-value alpha ' + (alphaVal >= 0 ? 'positive' : 'negative');
+            } else {
+                alphaEl.textContent = '—';
+            }
+
             // Update macro indicators
             const macroContainer = document.getElementById('macro-indicators');
             if (data.macro_indicators && data.macro_indicators.length > 0) {
