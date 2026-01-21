@@ -5,8 +5,106 @@ from rich.table import Table
 from rich import print
 from rich.panel import Panel
 
+from ai_options_trader.config import load_settings
+
+
+def run_solar_snapshot(
+    *,
+    start: str = "2011-01-01",
+    refresh: bool = False,
+    features: bool = False,
+    json_out: bool = False,
+    llm: bool = False,
+) -> None:
+    """Quick solar regime snapshot (no execution)."""
+    from ai_options_trader.cli_commands.labs_utils import handle_output_flags
+    from ai_options_trader.solar.signals import build_solar_state
+    from ai_options_trader.solar.regime import classify_solar_regime
+
+    settings = load_settings()
+    state = build_solar_state(settings=settings, start_date=start, refresh=refresh)
+    regime = classify_solar_regime(state.inputs)
+
+    # Build snapshot data
+    snapshot_data = {
+        "solar_ret_60d": state.inputs.solar_ret_60d,
+        "solar_rel_ret_60d": state.inputs.solar_rel_ret_60d,
+        "silver_ret_60d": state.inputs.silver_ret_60d,
+        "z_solar_rel_ret_60d": state.inputs.z_solar_rel_ret_60d,
+        "z_silver_ret_60d": state.inputs.z_silver_ret_60d,
+        "solar_headwind_score": state.inputs.solar_headwind_score,
+        "regime": regime.label,
+    }
+
+    feature_dict = {
+        "solar_ret_60d": state.inputs.solar_ret_60d,
+        "solar_rel_ret_60d": state.inputs.solar_rel_ret_60d,
+        "silver_ret_60d": state.inputs.silver_ret_60d,
+        "z_solar_rel_ret_60d": state.inputs.z_solar_rel_ret_60d,
+        "z_silver_ret_60d": state.inputs.z_silver_ret_60d,
+        "solar_headwind_score": state.inputs.solar_headwind_score,
+    }
+
+    # Handle --features and --json flags
+    if handle_output_flags(
+        domain="solar",
+        snapshot=snapshot_data,
+        features=feature_dict,
+        regime=regime.label,
+        regime_description=regime.description,
+        asof=state.asof,
+        output_json=json_out,
+        output_features=features,
+    ):
+        return
+
+    # Standard output
+    print(
+        Panel(
+            f"[b]Regime:[/b] {regime.label}\n"
+            f"[b]Solar 60d ret:[/b] {state.inputs.solar_ret_60d}\n"
+            f"[b]Solar rel 60d (vs SPY):[/b] {state.inputs.solar_rel_ret_60d}\n"
+            f"[b]Silver 60d (SLV):[/b] {state.inputs.silver_ret_60d}\n"
+            f"[b]Z solar rel 60d:[/b] {state.inputs.z_solar_rel_ret_60d}\n"
+            f"[b]Z silver 60d:[/b] {state.inputs.z_silver_ret_60d}\n"
+            f"[b]Solar headwind score:[/b] {state.inputs.solar_headwind_score}\n\n"
+            f"[dim]{regime.description}[/dim]\n"
+            f"[dim]{state.notes}[/dim]",
+            title="Solar / Silver snapshot",
+            expand=False,
+        )
+    )
+
+    if llm:
+        from ai_options_trader.llm.analyst import llm_analyze_regime
+        from rich.markdown import Markdown
+
+        print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
+
+        analysis = llm_analyze_regime(
+            settings=settings,
+            domain="solar",
+            snapshot=snapshot_data,
+            regime_label=regime.label,
+            regime_description=regime.description,
+        )
+
+        print(Panel(Markdown(analysis), title="Analysis", expand=False))
+
 
 def register(solar_app: typer.Typer) -> None:
+    # Default callback so `lox labs solar --llm` works without `snapshot`
+    @solar_app.callback(invoke_without_command=True)
+    def solar_default(
+        ctx: typer.Context,
+        llm: bool = typer.Option(False, "--llm", help="Get LLM analysis with real-time data"),
+        features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
+        json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+    ):
+        """Solar / silver regime (solar basket vs SLV)"""
+        if ctx.invoked_subcommand is None:
+            run_solar_snapshot(llm=llm, features=features, json_out=json_out)
+
     @solar_app.command("snapshot")
     def snapshot(
         start: str = typer.Option("2011-01-01", "--start"),
@@ -16,11 +114,16 @@ def register(solar_app: typer.Typer) -> None:
         budgeted: bool = typer.Option(True, "--budgeted/--no-budgeted", help="If enabled, constrain options by available cash. Default: budgeted."),
         max_trades: int = typer.Option(5, "--max-trades", help="Max number of option ideas to list from the solar basket."),
         pair_trade: bool = typer.Option(True, "--pair-trade/--no-pair-trade", help="Use 70% options short TAN + 30% equity long SLV."),
+        llm: bool = typer.Option(False, "--llm", help="Get LLM analysis with real-time data"),
+        features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
+        json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
     ):
-        """
-        Solar basket + silver headwind snapshot.
-        """
-        from ai_options_trader.config import load_settings
+        """Solar basket + silver headwind snapshot with optional execution."""
+        # If just requesting features/json/llm without execution, use the simple snapshot
+        if (features or json_out or llm) and not execute:
+            run_solar_snapshot(start=start, refresh=refresh, features=features, json_out=json_out, llm=llm)
+            return
+
         from ai_options_trader.data.alpaca import make_clients, fetch_option_chain, to_candidates
         from ai_options_trader.execution.alpaca import submit_equity_notional_order, submit_option_order
         from ai_options_trader.options.budget_scan import affordable_options_for_ticker, pick_best_delta_theta

@@ -13,43 +13,125 @@ from ai_options_trader.macro.signals import build_macro_state
 from ai_options_trader.usd.signals import build_usd_state
 
 
+def run_crypto_snapshot(
+    *,
+    symbol: str = "BTC/USD",
+    benchmark: str = "",
+    start: str = "2017-01-01",
+    features: bool = False,
+    json_out: bool = False,
+    llm: bool = False,
+) -> None:
+    """Shared implementation for crypto snapshot."""
+    from ai_options_trader.cli_commands.labs_utils import handle_output_flags
+    from ai_options_trader.crypto.snapshot import build_crypto_quant_snapshot
+    from ai_options_trader.crypto.models import CryptoQuantSnapshot
+
+    settings = load_settings()
+    console = Console()
+
+    if not settings.alpaca_api_key:
+        console.print(Panel("[red]Missing Alpaca API keys[/red]", title="Error", expand=False))
+        raise typer.Exit(code=1)
+
+    try:
+        px = fetch_crypto_daily_closes(
+            api_key=settings.alpaca_data_key or settings.alpaca_api_key,
+            api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,
+            symbols=[symbol.upper()] + ([benchmark.upper()] if benchmark.strip() else []),
+            start=start,
+        )
+        snap_dict = build_crypto_quant_snapshot(
+            prices=px,
+            symbol=symbol,
+            benchmark=(benchmark.strip() or None),
+        )
+        snap = CryptoQuantSnapshot(**snap_dict)
+    except Exception as e:
+        console.print(Panel(f"[red]Failed to build crypto snapshot[/red]\n\n{e}", title="Error", expand=False))
+        raise typer.Exit(code=1)
+
+    # Build snapshot data
+    snapshot_data = {
+        "symbol": snap.symbol,
+        "price": snap.price,
+        "ret_1d": snap.ret_1d,
+        "ret_7d": snap.ret_7d,
+        "ret_30d": snap.ret_30d,
+        "vol_30d": snap.vol_30d,
+        "trend_60d": snap.trend_60d,
+    }
+
+    feature_dict = {
+        "price": snap.price,
+        "ret_1d": snap.ret_1d,
+        "ret_7d": snap.ret_7d,
+        "ret_30d": snap.ret_30d,
+        "vol_30d": snap.vol_30d,
+        "trend_60d": snap.trend_60d,
+    }
+
+    # Handle --features and --json flags
+    if handle_output_flags(
+        domain="crypto",
+        snapshot=snapshot_data,
+        features=feature_dict,
+        regime=f"{symbol} trend: {snap.trend_60d}",
+        regime_description=f"30d volatility: {snap.vol_30d:.1%}",
+        asof=snap.asof,
+        output_json=json_out,
+        output_features=features,
+    ):
+        return
+
+    # Standard output
+    print(snap)
+
+    if llm:
+        from ai_options_trader.llm.analyst import llm_analyze_regime
+        from rich.markdown import Markdown
+
+        print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
+
+        analysis = llm_analyze_regime(
+            settings=settings,
+            domain="crypto",
+            snapshot=snapshot_data,
+            regime_label=f"{symbol} trend: {snap.trend_60d}",
+            regime_description=f"30d volatility: {snap.vol_30d:.1%}",
+        )
+
+        print(Panel(Markdown(analysis), title="Analysis", expand=False))
+
+
 def register(crypto_app: typer.Typer) -> None:
+    # Default callback so `lox labs crypto --llm` works without `snapshot`
+    @crypto_app.callback(invoke_without_command=True)
+    def crypto_default(
+        ctx: typer.Context,
+        symbol: str = typer.Option("BTC/USD", "--symbol", help='Crypto pair symbol, e.g. "BTC/USD"'),
+        llm: bool = typer.Option(False, "--llm", help="Get LLM analysis with real-time data"),
+        features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
+        json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+    ):
+        """Crypto snapshots and LLM outlooks"""
+        if ctx.invoked_subcommand is None:
+            run_crypto_snapshot(symbol=symbol, llm=llm, features=features, json_out=json_out)
+
     @crypto_app.command("snapshot")
     def crypto_snapshot(
         symbol: str = typer.Option("BTC/USD", "--symbol", help='Crypto pair symbol, e.g. "BTC/USD"'),
         benchmark: str = typer.Option("", "--benchmark", help='Optional benchmark pair, e.g. "ETH/USD"'),
         start: str = typer.Option("2017-01-01", "--start", help="Start date YYYY-MM-DD for price data"),
+        features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
+        json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+        llm: bool = typer.Option(False, "--llm", help="Get LLM analysis with real-time data"),
     ):
-        """
-        Compute and print a quantitative snapshot for a crypto pair (returns, trend, volatility).
-        """
-        settings = load_settings()
-        console = Console()
-
-        if not settings.alpaca_api_key:
-            console.print(Panel("[red]Missing Alpaca API keys[/red]", title="Error", expand=False))
-            raise typer.Exit(code=1)
-
-        try:
-            from ai_options_trader.crypto.snapshot import build_crypto_quant_snapshot
-            from ai_options_trader.crypto.models import CryptoQuantSnapshot
-
-            px = fetch_crypto_daily_closes(
-                api_key=settings.alpaca_data_key or settings.alpaca_api_key,
-                api_secret=settings.alpaca_data_secret or settings.alpaca_api_secret,
-                symbols=[symbol.upper()] + ([benchmark.upper()] if benchmark.strip() else []),
-                start=start,
-            )
-            snap_dict = build_crypto_quant_snapshot(
-                prices=px,
-                symbol=symbol,
-                benchmark=(benchmark.strip() or None),
-            )
-            snap = CryptoQuantSnapshot(**snap_dict)
-            print(snap)
-        except Exception as e:
-            console.print(Panel(f"[red]Failed to build crypto snapshot[/red]\n\n{e}", title="Error", expand=False))
-            raise typer.Exit(code=1)
+        """Compute and print a quantitative snapshot for a crypto pair (returns, trend, volatility)."""
+        run_crypto_snapshot(
+            symbol=symbol, benchmark=benchmark, start=start,
+            features=features, json_out=json_out, llm=llm,
+        )
 
     @crypto_app.command("outlook")
     def crypto_outlook(
