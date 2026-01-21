@@ -798,6 +798,18 @@ tbody tr:hover {
     font-weight: 600;
 }
 
+.headline-ticker {
+    display: inline-block;
+    background: var(--accent-blue);
+    color: white;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 5px;
+    border-radius: 3px;
+    margin-right: 6px;
+    letter-spacing: 0.5px;
+}
+
 .headline-loading {
     font-size: 12px;
     color: var(--text-dim);

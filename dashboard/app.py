@@ -889,38 +889,73 @@ def fetch_earnings_calendar(tickers, days_ahead=14):
         return []
 
 
-def fetch_macro_headlines(settings, limit=5):
-    """Fetch top macro/financial headlines from Alpaca News API."""
+def fetch_macro_headlines(settings, portfolio_tickers=None, limit=5):
+    """Fetch top macro/financial headlines from Alpaca News API.
+    
+    Falls back to portfolio-specific headlines if macro headlines are empty.
+    """
     headlines = []
+    
+    def _fetch_news_for_symbols(news_client, symbols_str, fetch_limit):
+        """Helper to fetch news for a comma-separated symbols string."""
+        from alpaca.data.requests import NewsRequest
+        results = []
+        try:
+            req = NewsRequest(
+                symbols=symbols_str,
+                limit=fetch_limit,
+            )
+            resp = news_client.get_news(req)
+            news_items = getattr(resp, 'news', []) or []
+            
+            for item in news_items:
+                headline = getattr(item, 'headline', '') or ''
+                source = getattr(item, 'source', '') or ''
+                created = getattr(item, 'created_at', None)
+                symbols = getattr(item, 'symbols', []) or []
+                
+                if headline:
+                    time_str = created.strftime("%b %d %H:%M") if created else ""
+                    # Add ticker tag if it's from portfolio
+                    ticker_tag = symbols[0] if symbols else ""
+                    results.append({
+                        "headline": headline[:120],
+                        "source": source,
+                        "time": time_str,
+                        "ticker": ticker_tag,
+                    })
+        except Exception as e:
+            print(f"[Palmer] News fetch error for {symbols_str}: {e}")
+        return results
+    
     try:
         from alpaca.data.historical.news import NewsClient
-        from alpaca.data.requests import NewsRequest
         
         news_client = NewsClient(api_key=settings.alpaca_api_key, secret_key=settings.alpaca_api_secret)
         
-        # Alpaca expects comma-separated string for symbols
+        # Try macro symbols first (SPY, TLT, GLD for broad market news)
         macro_symbols = "SPY,TLT,GLD"
+        headlines = _fetch_news_for_symbols(news_client, macro_symbols, limit * 2)
         
-        req = NewsRequest(
-            symbols=macro_symbols,
-            limit=limit * 2,  # Fetch more, filter down
-        )
+        # If no macro headlines, fall back to portfolio tickers
+        if not headlines and portfolio_tickers:
+            # Filter to underlying tickers (not option symbols)
+            clean_tickers = [t for t in portfolio_tickers if t and len(t) <= 5 and t.isalpha()]
+            if clean_tickers:
+                portfolio_symbols = ",".join(clean_tickers[:5])  # Limit to 5 tickers
+                print(f"[Palmer] No macro headlines, trying portfolio: {portfolio_symbols}")
+                headlines = _fetch_news_for_symbols(news_client, portfolio_symbols, limit * 2)
         
-        resp = news_client.get_news(req)
-        news_items = getattr(resp, 'news', []) or []
+        # Dedupe and limit
+        seen = set()
+        unique_headlines = []
+        for h in headlines:
+            if h["headline"] not in seen:
+                seen.add(h["headline"])
+                unique_headlines.append(h)
         
-        for item in news_items[:limit]:
-            headline = getattr(item, 'headline', '') or ''
-            source = getattr(item, 'source', '') or ''
-            created = getattr(item, 'created_at', None)
-            
-            if headline:
-                time_str = created.strftime("%b %d %H:%M") if created else ""
-                headlines.append({
-                    "headline": headline[:120],  # Truncate long headlines
-                    "source": source,
-                    "time": time_str,
-                })
+        headlines = unique_headlines[:limit]
+        
     except Exception as e:
         print(f"[Palmer] Headlines fetch error: {e}")
     
@@ -996,11 +1031,20 @@ def _generate_palmer_analysis():
     # Get Fed/fiscal focused calendar
     fed_fiscal_events = fetch_fed_fiscal_calendar(settings, days_ahead=14)
     
-    # Get macro headlines
-    headlines = fetch_macro_headlines(settings, limit=5)
-    
-    # Get positions for context
+    # Get positions for context (need tickers for headline fallback)
     positions_data = get_positions_data()
+    
+    # Extract portfolio tickers for headline fallback
+    portfolio_tickers = []
+    for p in positions_data.get("positions", []):
+        opt = p.get("opt_info")
+        if opt:
+            portfolio_tickers.append(opt.get("underlying"))
+        else:
+            portfolio_tickers.append(p.get("symbol"))
+    
+    # Get macro headlines (with portfolio fallback)
+    headlines = fetch_macro_headlines(settings, portfolio_tickers=portfolio_tickers, limit=5)
     
     # Build regime snapshot for structured output
     regime_snapshot = {
