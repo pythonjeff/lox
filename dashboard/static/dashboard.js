@@ -258,7 +258,9 @@ function fetchPalmerDashboard() {
             if (data.headlines && data.headlines.length > 0) {
                 headlinesContainer.innerHTML = data.headlines.map(h => `
                     <div class="headline-item">
-                        <div class="headline-text">${h.headline}</div>
+                        <div class="headline-text">
+                            ${h.ticker ? `<span class="headline-ticker">${h.ticker}</span> ` : ''}${h.headline}
+                        </div>
                         <div class="headline-meta">
                             <span class="headline-source">${h.source || 'News'}</span>
                             ${h.time ? ` • ${h.time}` : ''}
@@ -266,7 +268,7 @@ function fetchPalmerDashboard() {
                     </div>
                 `).join('');
             } else {
-                headlinesContainer.innerHTML = '<div class="headline-loading">No recent macro headlines</div>';
+                headlinesContainer.innerHTML = '<div class="headline-loading">No recent headlines</div>';
             }
             
             // Update Palmer's insight
