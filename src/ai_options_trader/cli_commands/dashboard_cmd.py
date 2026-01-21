@@ -112,7 +112,7 @@ def register_pillar_commands(app: typer.Typer) -> None:
             regime_description=regime_description,
         )
         
-        console.print(Panel(Markdown(analysis), title="[bold magenta]PhD Macro Analyst[/bold magenta]", expand=False))
+        console.print(Panel(Markdown(analysis), title="Analysis", expand=False))
     
     @app.command("inflation")
     def inflation_cmd(

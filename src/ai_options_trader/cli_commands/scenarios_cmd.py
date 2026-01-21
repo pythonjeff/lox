@@ -90,7 +90,7 @@ def register(labs_app: typer.Typer) -> None:
             return
         
         # --- Get current market state ---
-        c.print("[cyan]Fetching current market state...[/cyan]")
+        c.print("[dim]Loading...[/dim]")
         regimes = get_current_macro_regime(settings, start=start, refresh=refresh)
         baseline_macro = regimes["macro_state"]
         baseline_funding = regimes["liquidity_state"]

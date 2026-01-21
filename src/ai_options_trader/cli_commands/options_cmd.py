@@ -38,6 +38,138 @@ def _fmt_pct(x: float | None) -> str:
 def register(options_app: typer.Typer) -> None:
     """Register core options commands."""
 
+    @options_app.command("best")
+    def options_best(
+        ticker: str = typer.Argument(..., help="Underlying ticker"),
+        want: str = typer.Option("put", "--want", "-w", help="call|put"),
+        budget: float = typer.Option(200.0, "--budget", "-b", help="Max premium in USD"),
+        delta: float = typer.Option(0.30, "--delta", "-d", help="Target delta"),
+        min_days: int = typer.Option(30, "--min-days", help="Min DTE"),
+        max_days: int = typer.Option(90, "--max-days", help="Max DTE"),
+        show: int = typer.Option(3, "--show", "-n", help="Number of picks"),
+    ):
+        """
+        Find best options under a budget.
+        
+        Examples:
+            lox options best FXI --budget 200
+            lox options best NVDA --want call --budget 500 --delta 0.40
+        """
+        settings = load_settings()
+        _, data = make_clients(settings)
+        
+        w = (want or "put").strip().lower()
+        if w not in {"call", "put"}:
+            w = "put"
+        
+        console = Console()
+        console.print(f"\n[bold cyan]{ticker.upper()} {w.upper()}s[/bold cyan] | Budget: ${budget:.0f} | Target Δ: {delta:.2f}\n")
+        
+        chain = fetch_option_chain(data, ticker, feed=settings.alpaca_options_feed)
+        if not chain:
+            console.print("[yellow]No options data[/yellow]")
+            return
+        
+        today = date.today()
+        candidates = []
+        
+        for opt in chain.values():
+            symbol = str(getattr(opt, "symbol", ""))
+            if not symbol:
+                continue
+            try:
+                expiry, opt_type, strike = parse_occ_option_symbol(symbol, ticker)
+                if opt_type != w:
+                    continue
+                
+                dte = (expiry - today).days
+                if dte < min_days or dte > max_days:
+                    continue
+                
+                # Get greeks
+                greeks = getattr(opt, "greeks", None)
+                opt_delta = getattr(greeks, "delta", None) if greeks else None
+                opt_gamma = getattr(greeks, "gamma", None) if greeks else None
+                opt_theta = getattr(greeks, "theta", None) if greeks else None
+                
+                # Get bid/ask from latest_quote
+                quote = getattr(opt, "latest_quote", None)
+                bid = getattr(quote, "bid_price", None) if quote else None
+                ask = getattr(quote, "ask_price", None) if quote else None
+                
+                # Get last from latest_trade
+                trade = getattr(opt, "latest_trade", None)
+                last = getattr(trade, "price", None) if trade else None
+                
+                # Calculate premium (use ask for budget filter)
+                price = float(ask) if ask else (float(last) if last else None)
+                if price is None or price <= 0:
+                    continue
+                
+                premium = price * 100  # Per contract
+                if premium > budget:
+                    continue
+                
+                # Need delta for ranking
+                if opt_delta is None:
+                    continue
+                
+                candidates.append({
+                    "symbol": symbol,
+                    "strike": strike,
+                    "expiry": expiry,
+                    "dte": dte,
+                    "delta": float(opt_delta),
+                    "gamma": float(opt_gamma) if opt_gamma else None,
+                    "theta": float(opt_theta) if opt_theta else None,
+                    "bid": float(bid) if bid else None,
+                    "ask": float(ask) if ask else None,
+                    "last": float(last) if last else None,
+                    "premium": premium,
+                })
+            except Exception:
+                continue
+        
+        if not candidates:
+            console.print(f"[yellow]No {w}s under ${budget:.0f} in {min_days}-{max_days} DTE range[/yellow]")
+            console.print("[dim]Try increasing --budget or widening DTE range[/dim]")
+            return
+        
+        # Rank by: closest to target delta
+        target = abs(delta)
+        candidates.sort(key=lambda x: abs(abs(x["delta"]) - target))
+        
+        top = candidates[:show]
+        
+        # Display
+        table = Table(title=f"Top {len(top)} Picks (under ${budget:.0f})", show_header=True)
+        table.add_column("#", justify="right", style="bold", width=3)
+        table.add_column("Strike", justify="right", width=8)
+        table.add_column("Exp", justify="center", width=10)
+        table.add_column("DTE", justify="right", width=4)
+        table.add_column("Delta", justify="right", width=7)
+        table.add_column("Gamma", justify="right", width=7)
+        table.add_column("Theta", justify="right", width=7)
+        table.add_column("Bid/Ask", justify="right", width=14)
+        table.add_column("Cost", justify="right", style="yellow", width=6)
+        
+        for i, c in enumerate(top, 1):
+            bid_ask = f"${c['bid']:.2f}/${c['ask']:.2f}" if c["bid"] and c["ask"] else "—"
+            table.add_row(
+                str(i),
+                f"${c['strike']:.0f}",
+                c["expiry"].strftime("%b %d"),
+                str(c["dte"]),
+                f"{c['delta']:+.2f}",
+                f"{c['gamma']:.3f}" if c["gamma"] else "—",
+                f"{c['theta']:.3f}" if c["theta"] else "—",
+                bid_ask,
+                f"${c['premium']:.0f}",
+            )
+        
+        console.print(table)
+        console.print(f"\n[dim]{len(candidates)} contracts matched | Showing top {len(top)}[/dim]")
+
     @options_app.command("scan")
     def options_scan(
         ticker: str = typer.Option(..., "--ticker", "-t", help="Underlying ticker"),

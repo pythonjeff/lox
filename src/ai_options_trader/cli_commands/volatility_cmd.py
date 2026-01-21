@@ -58,7 +58,7 @@ def _run_volatility_snapshot(start: str = "2011-01-01", refresh: bool = False, l
         )
         
         from rich.markdown import Markdown
-        print(Panel(Markdown(analysis), title="[bold magenta]PhD Macro Analyst[/bold magenta]", expand=False))
+        print(Panel(Markdown(analysis), title="Analysis", expand=False))
 
 
 def register(vol_app: typer.Typer) -> None:

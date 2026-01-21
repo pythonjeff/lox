@@ -880,6 +880,94 @@ def fetch_earnings_calendar(tickers, days_ahead=14):
         return []
 
 
+def fetch_macro_headlines(settings, limit=5):
+    """Fetch top macro/financial headlines from Alpaca News API."""
+    headlines = []
+    try:
+        from alpaca.data.historical.news import NewsClient
+        from alpaca.data.requests import NewsRequest
+        
+        news_client = NewsClient(api_key=settings.alpaca_api_key, secret_key=settings.alpaca_api_secret)
+        
+        # Macro-focused symbols
+        macro_symbols = ["SPY", "TLT", "GLD", "DXY", "VIX"]
+        
+        req = NewsRequest(
+            symbols=macro_symbols,
+            limit=limit * 2,  # Fetch more, filter down
+        )
+        
+        resp = news_client.get_news(req)
+        news_items = getattr(resp, 'news', []) or []
+        
+        for item in news_items[:limit]:
+            headline = getattr(item, 'headline', '') or ''
+            source = getattr(item, 'source', '') or ''
+            created = getattr(item, 'created_at', None)
+            
+            if headline:
+                time_str = created.strftime("%b %d %H:%M") if created else ""
+                headlines.append({
+                    "headline": headline[:120],  # Truncate long headlines
+                    "source": source,
+                    "time": time_str,
+                })
+    except Exception as e:
+        print(f"[Palmer] Headlines fetch error: {e}")
+    
+    return headlines
+
+
+def fetch_fed_fiscal_calendar(settings, days_ahead=14):
+    """Fetch Fed and fiscal-focused economic events."""
+    events = []
+    
+    # Fed/fiscal keywords to prioritize
+    fed_fiscal_keywords = [
+        'fed', 'fomc', 'powell', 'rate', 'treasury', 'auction', 'debt', 'deficit',
+        'fiscal', 'budget', 'gdp', 'cpi', 'pce', 'inflation', 'employment', 'payroll',
+        'jobless', 'retail', 'housing', 'durable', 'ism', 'pmi'
+    ]
+    
+    try:
+        fmp_key = settings.fmp_api_key
+        if not fmp_key:
+            return events
+        
+        from datetime import datetime, timedelta
+        import requests
+        
+        start = datetime.now().strftime("%Y-%m-%d")
+        end = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+        
+        url = f"https://financialmodelingprep.com/api/v3/economic_calendar?from={start}&to={end}&apikey={fmp_key}"
+        resp = requests.get(url, timeout=10)
+        
+        if resp.status_code == 200:
+            data = resp.json() or []
+            
+            for item in data:
+                event_name = (item.get("event") or "").lower()
+                
+                # Only include Fed/fiscal focused events
+                is_fed_fiscal = any(kw in event_name for kw in fed_fiscal_keywords)
+                
+                if is_fed_fiscal:
+                    events.append({
+                        "date": item.get("date", "")[:10],
+                        "event": item.get("event", ""),
+                        "estimate": item.get("estimate"),
+                        "previous": item.get("previous"),
+                        "impact": item.get("impact", ""),
+                    })
+    except Exception as e:
+        print(f"[Palmer] Fed/fiscal calendar error: {e}")
+    
+    # Sort by date and limit
+    events.sort(key=lambda x: x["date"])
+    return events[:8]
+
+
 def _generate_palmer_analysis():
     """Internal function to generate Palmer's analysis (called by cache refresh)."""
     try:
@@ -896,157 +984,145 @@ def _generate_palmer_analysis():
     vix = get_vix()
     yield_10y = get_10y_yield()
     
-    # Get economic calendar - 3 business days back, 5 trading days ahead
-    recent_releases, upcoming_events = fetch_economic_calendar(days_back=3, days_ahead=5)
+    # Get Fed/fiscal focused calendar
+    fed_fiscal_events = fetch_fed_fiscal_calendar(settings, days_ahead=14)
     
-    # Get positions
+    # Get macro headlines
+    headlines = fetch_macro_headlines(settings, limit=5)
+    
+    # Get positions for context
     positions_data = get_positions_data()
-    positions_summary = []
-    position_tickers = []
-    for p in positions_data.get("positions", []):
-        opt = p.get("opt_info")
-        if opt:
-            positions_summary.append(f"{opt['underlying']} {opt['strike']}{opt['opt_type']} (exp {opt['expiry']})")
-            position_tickers.append(opt['underlying'])
+    
+    # Build regime snapshot for structured output
+    regime_snapshot = {
+        "hy_oas_bps": hy_oas.get("value") if hy_oas else None,
+        "vix": vix.get("value") if vix else None,
+        "yield_10y": yield_10y.get("value") if yield_10y else None,
+        "portfolio_nav": positions_data.get("nav_equity"),
+        "portfolio_pnl": positions_data.get("total_pnl"),
+    }
+    
+    # Determine traffic light statuses
+    def get_regime_status(vix_val, hy_val):
+        if vix_val is None:
+            return "UNKNOWN", "gray"
+        if vix_val > 25 or (hy_val and hy_val > 400):
+            return "RISK-OFF", "red"
+        elif vix_val > 18 or (hy_val and hy_val > 350):
+            return "CAUTIOUS", "yellow"
         else:
-            symbol = p.get("symbol", "?")
-            positions_summary.append(symbol)
-            position_tickers.append(symbol)
-        
-        # Get earnings calendar for our holdings
-        upcoming_earnings = fetch_earnings_calendar(position_tickers, days_ahead=14)
-        
-        # Build regime snapshot
-        regime_snapshot = {
-            "hy_oas_bps": hy_oas.get("value") if hy_oas else None,
-            "vix": vix.get("value") if vix else None,
-            "yield_10y": yield_10y.get("value") if yield_10y else None,
-            "portfolio_nav": positions_data.get("nav_equity"),
-            "portfolio_pnl": positions_data.get("total_pnl"),
-            "positions": positions_summary,
-            "recent_releases": recent_releases,
-            "upcoming_events": upcoming_events,
-        }
-        
-        # Monte Carlo scenario framework
-        scenarios = {
-            "GOLDILOCKS": {"prob": 25, "condition": "Low inflation + solid growth", "portfolio_impact": "negative - hedges decay"},
-            "STAGFLATION": {"prob": 15, "condition": "High inflation + weak growth", "portfolio_impact": "positive - NVDA puts, HYG puts pay"},
-            "RISK_OFF": {"prob": 10, "condition": "Sharp equity drawdown, vol spike", "portfolio_impact": "very positive - all hedges pay"},
-            "RATES_SHOCK": {"prob": 10, "condition": "10Y > 5%, curve steepening", "portfolio_impact": "mixed - TLT calls hurt, others benefit"},
-            "CREDIT_STRESS": {"prob": 10, "condition": "HY spreads > 400bp", "portfolio_impact": "very positive - HYG puts pay"},
-            "SLOW_BLEED": {"prob": 15, "condition": "Gradual risk-off, vol stays low", "portfolio_impact": "negative - theta decay"},
-            "VOL_CRUSH": {"prob": 5, "condition": "VIX < 12, complacency", "portfolio_impact": "negative - VIXM loses"},
-            "BASE_CASE": {"prob": 10, "condition": "Muddle through, no clear trend", "portfolio_impact": "neutral - time decay"},
-        }
-        
-        # Build consolidated ECONOMIC CALENDAR section
-        # Format: Recent (with results) + Upcoming
-        calendar_lines = []
-        
-        # Recent releases (last 3 business days)
-        if recent_releases:
-            calendar_lines.append("RECENT (Last 3 Days):")
-            for r in recent_releases[:5]:
-                surprise_str = ""
-                if r.get("surprise") is not None and abs(r["surprise"]) > 0.01:
-                    s = r["surprise"]
-                    surprise_str = f" [{'+' if s > 0 else ''}{s:.2f} vs est]"
-                calendar_lines.append(f"  {r['date']} | {r['event']}: {r['actual']}{surprise_str}")
+            return "RISK-ON", "green"
+    
+    def get_vol_status(vix_val):
+        if vix_val is None:
+            return "UNKNOWN", "gray"
+        if vix_val > 25:
+            return "ELEVATED", "red"
+        elif vix_val > 18:
+            return "MODERATE", "yellow"
         else:
-            calendar_lines.append("RECENT: No releases in last 3 days")
-        
-        calendar_lines.append("")
-        
-        # Upcoming events (next 5 trading days)
-        if upcoming_events:
-            calendar_lines.append("UPCOMING (Next 5 Days):")
-            for u in upcoming_events[:6]:
-                est_str = f"est: {u.get('estimate')}" if u.get('estimate') else f"prev: {u.get('previous', 'n/a')}"
-                calendar_lines.append(f"  {u['date'].split(' ')[0]} | {u['event']} ({est_str})")
+            return "LOW", "green"
+    
+    def get_credit_status(hy_val):
+        if hy_val is None:
+            return "UNKNOWN", "gray"
+        if hy_val > 400:
+            return "STRESSED", "red"
+        elif hy_val > 325:
+            return "WATCHING", "yellow"
         else:
-            calendar_lines.append("UPCOMING: No events in next 5 days")
-        
-        calendar_text = "\n".join(calendar_lines)
-        
-        # Format earnings for our holdings (next 2 weeks) with history
-        earnings_lines = []
-        if upcoming_earnings:
-            for e in upcoming_earnings[:4]:
-                time_str = "BMO" if e.get("time") == "bmo" else "AMC" if e.get("time") == "amc" else ""
-                
-                # EPS estimate
-                eps_str = ""
-                if e.get('eps_estimate'):
-                    eps_str = f"EPS est: ${e['eps_estimate']:.2f}"
-                
-                # Historical beat/miss rate
-                history_str = ""
-                hist = e.get('history')
-                if hist:
-                    history_str = f" | Last 4Q: {hist['beats']} beats, {hist['misses']} misses ({hist['beat_rate']}% beat rate)"
-                
-                earnings_lines.append(f"  {e['date']} {time_str} | {e['symbol']} {eps_str}{history_str}")
-        earnings_text = "\n".join(earnings_lines) if earnings_lines else "  None in next 14 days"
-        
-        try:
-            from openai import OpenAI
-        except ImportError:
-            return {"error": "OpenAI package not installed", "analysis": None}
-        
+            return "STABLE", "green"
+    
+    def get_rates_status(yield_val):
+        if yield_val is None:
+            return "UNKNOWN", "gray"
+        if yield_val > 4.8:
+            return "RESTRICTIVE", "red"
+        elif yield_val > 4.3:
+            return "ELEVATED", "yellow"
+        else:
+            return "NORMAL", "green"
+    
+    vix_val = regime_snapshot.get("vix")
+    hy_val = regime_snapshot.get("hy_oas_bps")
+    yield_val = regime_snapshot.get("yield_10y")
+    
+    regime_label, regime_color = get_regime_status(vix_val, hy_val)
+    vol_label, vol_color = get_vol_status(vix_val)
+    credit_label, credit_color = get_credit_status(hy_val)
+    rates_label, rates_color = get_rates_status(yield_val)
+    
+    # Format events for display
+    events_display = []
+    for e in fed_fiscal_events[:4]:
+        est_str = f"est: {e['estimate']}" if e.get('estimate') else ""
+        events_display.append({
+            "date": e["date"],
+            "event": e["event"][:50],
+            "estimate": est_str,
+        })
+    
+    # Format headlines for display
+    headlines_display = []
+    for h in headlines[:4]:
+        headlines_display.append({
+            "headline": h["headline"],
+            "source": h["source"],
+            "time": h["time"],
+        })
+    
+    # Generate LLM insight (just one focused paragraph)
+    try:
+        from openai import OpenAI
         client = OpenAI(api_key=settings.openai_api_key)
         
-        prompt = f"""You are Palmer, senior macro strategist. Provide a concise, professional assessment.
+        # Simplified prompt for one insight
+        prompt = f"""You are Palmer, a macro strategist. Give ONE actionable insight (3-4 sentences max).
 
-═══════════════════════════════════════════════════════════════
-MARKET CONDITIONS
-═══════════════════════════════════════════════════════════════
-HY OAS: {regime_snapshot['hy_oas_bps']:.0f}bp | VIX: {regime_snapshot['vix']:.1f} | 10Y: {regime_snapshot['yield_10y']:.2f}%
-NAV: ${regime_snapshot['portfolio_nav']:,.0f} | P&L: ${regime_snapshot['portfolio_pnl']:+,.0f}
+CURRENT CONDITIONS:
+- VIX: {f'{vix_val:.1f}' if vix_val else 'N/A'}
+- HY Spreads: {f'{hy_val:.0f}bp' if hy_val else 'N/A'}
+- 10Y Yield: {f'{yield_val:.2f}%' if yield_val else 'N/A'}
+- Portfolio: Long vol (VIXM), short credit (HYG puts), short NVDA, short solar (TAN puts), long bonds (TLT calls)
 
-═══════════════════════════════════════════════════════════════
-ECONOMIC CALENDAR
-═══════════════════════════════════════════════════════════════
-{calendar_text}
+UPCOMING FED/FISCAL EVENTS:
+{chr(10).join(f"- {e['date']}: {e['event']}" for e in fed_fiscal_events[:5]) if fed_fiscal_events else "None in next 2 weeks"}
 
-═══════════════════════════════════════════════════════════════
-EARNINGS CALENDAR (Holdings)
-═══════════════════════════════════════════════════════════════
-{earnings_text}
+RECENT HEADLINES:
+{chr(10).join(f"- {h['headline']}" for h in headlines[:3]) if headlines else "No recent macro headlines"}
 
-═══════════════════════════════════════════════════════════════
-POSITIONS
-═══════════════════════════════════════════════════════════════
-{chr(10).join(f"  {p}" for p in regime_snapshot['positions'])}
+Write ONE insight paragraph that:
+1. States the current regime in 1 sentence
+2. Identifies the key risk or opportunity from the calendar/headlines
+3. Gives a specific implication for the portfolio
 
-CRITICAL - POSITION DIRECTION (DO NOT GET THIS WRONG):
-• TAN PUTS = We are BEARISH on solar. ENPH/solar MISS = GOOD for us. ENPH/solar BEAT = BAD for us.
-• NVDA PUTS = We are BEARISH on NVDA. NVDA MISS = GOOD for us. NVDA BEAT = BAD for us.
-• HYG PUTS = We are BEARISH on HY credit. Credit stress = GOOD for us.
-• TLT CALLS = We are BULLISH on bonds. Yields falling = GOOD for us.
-• DIVERSIFIERS: VIXM (long vol), GLDM (long gold), BTC (long crypto)
+Be direct and specific. No fluff. Under 75 words total."""
 
-═══════════════════════════════════════════════════════════════
-
-Provide analysis in this exact format:
-
-REGIME STATUS
-[2-3 sentences on current macro regime and confidence level]
-
-CATALYST REVIEW
-Recent: [Analyze any releases from last 3 days - results, surprises, market reaction]
-Upcoming: [Key events in next 5 days and positioning implications]
-
-EARNINGS RISK
-[Analyze each upcoming earnings using the EPS estimates and historical beat/miss rates provided. For our PUTS (TAN/NVDA/HYG): MISS = good, BEAT = bad. Note if a company tends to beat/miss consistently.]
-
-SCENARIO WATCH
-[Top 3 scenarios by probability, adjusted for recent data]
-
-EDGE ALERT
-[Most actionable insight - what's the market missing?]
-
-— Palmer"""
+        response = client.chat.completions.create(
+            model=settings.openai_model or "gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=200,
+        )
+        
+        insight = response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"[Palmer] LLM error: {e}")
+        insight = "Analysis temporarily unavailable."
+    
+    return {
+        "analysis": insight,
+        "regime_snapshot": regime_snapshot,
+        "traffic_lights": {
+            "regime": {"label": regime_label, "color": regime_color},
+            "volatility": {"label": vol_label, "color": vol_color, "value": f"VIX {vix_val:.1f}" if vix_val else "N/A"},
+            "credit": {"label": credit_label, "color": credit_color, "value": f"{hy_val:.0f}bp" if hy_val else "N/A"},
+            "rates": {"label": rates_label, "color": rates_color, "value": f"{yield_val:.2f}%" if yield_val else "N/A"},
+        },
+        "events": events_display,
+        "headlines": headlines_display,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
     response = client.chat.completions.create(
         model=settings.openai_model or "gpt-4o-mini",
@@ -1073,6 +1149,9 @@ def _refresh_palmer_cache():
         with PALMER_CACHE_LOCK:
             PALMER_CACHE["analysis"] = result.get("analysis")
             PALMER_CACHE["regime_snapshot"] = result.get("regime_snapshot")
+            PALMER_CACHE["traffic_lights"] = result.get("traffic_lights")
+            PALMER_CACHE["events"] = result.get("events")
+            PALMER_CACHE["headlines"] = result.get("headlines")
             PALMER_CACHE["timestamp"] = result.get("timestamp")
             PALMER_CACHE["last_refresh"] = datetime.now(timezone.utc)
             PALMER_CACHE["error"] = result.get("error")
@@ -1108,6 +1187,9 @@ def api_regime_analysis():
         return jsonify({
             "analysis": PALMER_CACHE.get("analysis"),
             "regime_snapshot": PALMER_CACHE.get("regime_snapshot"),
+            "traffic_lights": PALMER_CACHE.get("traffic_lights"),
+            "events": PALMER_CACHE.get("events"),
+            "headlines": PALMER_CACHE.get("headlines"),
             "timestamp": PALMER_CACHE.get("timestamp"),
             "cached": True,
             "next_refresh": (PALMER_CACHE["last_refresh"] + timedelta(seconds=PALMER_REFRESH_INTERVAL)).isoformat() if PALMER_CACHE.get("last_refresh") else None,

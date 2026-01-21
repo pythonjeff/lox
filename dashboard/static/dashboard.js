@@ -196,101 +196,107 @@ function updateDashboard() {
         });
 }
 
-// Format Palmer's analysis text to clean HTML
-function formatAnalysis(text) {
-    if (!text) return '';
-    
-    // Clean up the text first
-    let html = text.trim();
-    
-    // Convert section headers (ALL CAPS words at start of line) to styled headers
-    html = html.replace(/^(REGIME STATUS|CATALYST REVIEW|EARNINGS RISK|SCENARIO WATCH|EDGE ALERT|DATA RELEASE ANALYSIS|PRE-EVENT POSITIONING|EARNINGS WATCH|SCENARIO PROBABILITIES|NEXT CATALYST|PREVIOUS CATALYST)/gm, 
-        '<div class="palmer-section-header">$1</div>');
-    
-    // Handle "Recent:" and "Upcoming:" labels
-    html = html.replace(/^(Recent:|Upcoming:)/gm, '<span class="palmer-label">$1</span>');
-    
-    // Bold text with **
-    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    
-    // Lists
-    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-    html = html.replace(/^• (.+)$/gm, '<li>$1</li>');
-    
-    // Wrap consecutive li in ul
-    html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-    
-    // Handle Palmer signature
-    html = html.replace(/—\s*Palmer/g, '<div class="palmer-signature">— Palmer</div>');
-    
-    // Convert double newlines to paragraph breaks
-    html = html.replace(/\n\n+/g, '</p><p>');
-    
-    // Convert single newlines to line breaks (but not inside headers)
-    html = html.replace(/\n/g, '<br>');
-    
-    // Clean up empty paragraphs and extra br tags
-    html = html.replace(/<p><br>/g, '<p>');
-    html = html.replace(/<br><\/p>/g, '</p>');
-    html = html.replace(/<p>\s*<\/p>/g, '');
-    html = html.replace(/<br>\s*<div/g, '<div');
-    
-    // Wrap in paragraph if not already
-    if (!html.startsWith('<')) {
-        html = '<p>' + html + '</p>';
-    }
-    
-    return html;
-}
-
-// Fetch and display Palmer's cached regime analysis
-function fetchRegimeAnalysis() {
-    const container = document.getElementById('regime-analysis');
-    const timestamp = document.getElementById('analysis-timestamp');
+// Fetch and display Palmer's dashboard (traffic lights, events, headlines, insight)
+function fetchPalmerDashboard() {
+    const trafficLights = document.getElementById('traffic-lights');
+    const eventsContainer = document.getElementById('palmer-events');
+    const headlinesContainer = document.getElementById('palmer-headlines');
+    const insightContainer = document.getElementById('palmer-insight');
+    const timestampEl = document.getElementById('palmer-timestamp');
     
     fetch('/api/regime-analysis')
         .then(response => response.json())
         .then(data => {
-            if (data.error && !data.analysis) {
-                container.innerHTML = `<div class="analysis-error">Error: ${data.error}</div>`;
-                timestamp.textContent = '';
+            if (data.error && !data.traffic_lights) {
+                insightContainer.innerHTML = `<div class="insight-loading">Error: ${data.error}</div>`;
                 return;
             }
             
-            if (data.analysis) {
-                container.innerHTML = formatAnalysis(data.analysis);
-                
-                // Show when analysis was generated and next refresh time
-                let timestampText = '';
-                if (data.timestamp) {
-                    timestampText = `Analysis generated: ${formatTimestamp(data.timestamp)}`;
-                }
-                if (data.next_refresh) {
-                    const nextRefresh = new Date(data.next_refresh);
-                    const now = new Date();
-                    const minsUntilRefresh = Math.max(0, Math.round((nextRefresh - now) / 60000));
-                    timestampText += ` • Next refresh in ${minsUntilRefresh} min`;
-                }
-                timestamp.textContent = timestampText;
-            } else {
-                // Analysis not yet generated - show loading
-                container.innerHTML = `
-                    <div class="analysis-loading">
-                        <div class="spinner"></div>
-                        <span>Palmer is generating initial analysis...</span>
+            // Update traffic lights
+            if (data.traffic_lights) {
+                const tl = data.traffic_lights;
+                trafficLights.innerHTML = `
+                    <div class="traffic-item" data-status="${tl.regime?.color || 'gray'}">
+                        <span class="traffic-label">REGIME</span>
+                        <span class="traffic-dot">●</span>
+                        <span class="traffic-value">${tl.regime?.label || '—'}</span>
+                    </div>
+                    <div class="traffic-item" data-status="${tl.volatility?.color || 'gray'}">
+                        <span class="traffic-label">VOLATILITY</span>
+                        <span class="traffic-dot">●</span>
+                        <span class="traffic-value">${tl.volatility?.label || '—'} ${tl.volatility?.value ? '(' + tl.volatility.value + ')' : ''}</span>
+                    </div>
+                    <div class="traffic-item" data-status="${tl.credit?.color || 'gray'}">
+                        <span class="traffic-label">CREDIT</span>
+                        <span class="traffic-dot">●</span>
+                        <span class="traffic-value">${tl.credit?.label || '—'} ${tl.credit?.value ? '(' + tl.credit.value + ')' : ''}</span>
+                    </div>
+                    <div class="traffic-item" data-status="${tl.rates?.color || 'gray'}">
+                        <span class="traffic-label">RATES</span>
+                        <span class="traffic-dot">●</span>
+                        <span class="traffic-value">${tl.rates?.label || '—'} ${tl.rates?.value ? '(' + tl.rates.value + ')' : ''}</span>
                     </div>
                 `;
-                timestamp.textContent = '';
-                // Retry in 10 seconds
-                setTimeout(fetchRegimeAnalysis, 10000);
             }
+            
+            // Update Fed/Fiscal events
+            if (data.events && data.events.length > 0) {
+                eventsContainer.innerHTML = data.events.map(e => `
+                    <div class="event-item">
+                        <span class="event-date">${e.date ? e.date.substring(5) : '—'}</span>
+                        <div>
+                            <div class="event-name">${e.event || '—'}</div>
+                            ${e.estimate ? `<div class="event-estimate">${e.estimate}</div>` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                eventsContainer.innerHTML = '<div class="event-loading">No upcoming Fed/fiscal events</div>';
+            }
+            
+            // Update macro headlines
+            if (data.headlines && data.headlines.length > 0) {
+                headlinesContainer.innerHTML = data.headlines.map(h => `
+                    <div class="headline-item">
+                        <div class="headline-text">${h.headline}</div>
+                        <div class="headline-meta">
+                            <span class="headline-source">${h.source || 'News'}</span>
+                            ${h.time ? ` • ${h.time}` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                headlinesContainer.innerHTML = '<div class="headline-loading">No recent macro headlines</div>';
+            }
+            
+            // Update Palmer's insight
+            if (data.analysis) {
+                insightContainer.innerHTML = `<div class="insight-text">"${data.analysis}"</div>`;
+            } else {
+                insightContainer.innerHTML = '<div class="insight-loading">Palmer is generating analysis...</div>';
+                // Retry in 10 seconds
+                setTimeout(fetchPalmerDashboard, 10000);
+                return;
+            }
+            
+            // Update timestamp
+            let timestampText = '';
+            if (data.timestamp) {
+                timestampText = `Updated: ${formatTimestamp(data.timestamp)}`;
+            }
+            if (data.next_refresh) {
+                const nextRefresh = new Date(data.next_refresh);
+                const now = new Date();
+                const minsUntilRefresh = Math.max(0, Math.round((nextRefresh - now) / 60000));
+                timestampText += ` • Next refresh in ${minsUntilRefresh}m`;
+            }
+            timestampEl.textContent = timestampText;
         })
         .catch(error => {
-            console.error('Analysis fetch error:', error);
-            container.innerHTML = '<div class="analysis-error">Unable to load Palmer analysis. Server may be starting up.</div>';
-            timestamp.textContent = '';
+            console.error('Palmer fetch error:', error);
+            insightContainer.innerHTML = '<div class="insight-loading">Unable to load Palmer. Server may be starting up.</div>';
             // Retry in 10 seconds
-            setTimeout(fetchRegimeAnalysis, 10000);
+            setTimeout(fetchPalmerDashboard, 10000);
         });
 }
 
@@ -356,7 +362,7 @@ function fetchClosedTrades() {
 // Initial load
 updateDashboard();
 fetchClosedTrades();
-fetchRegimeAnalysis();
+fetchPalmerDashboard();
 
 // Auto-refresh positions every 5 minutes
 setInterval(updateDashboard, 300000);
@@ -365,4 +371,4 @@ setInterval(updateDashboard, 300000);
 setInterval(fetchClosedTrades, 300000);
 
 // Check for new Palmer analysis every 5 minutes (server refreshes every 30 min)
-setInterval(fetchRegimeAnalysis, 300000);
+setInterval(fetchPalmerDashboard, 300000);
