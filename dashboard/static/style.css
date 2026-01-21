@@ -741,17 +741,6 @@ tbody tr:hover {
     margin: 0;
 }
 
-.palmer-badge {
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    padding: 4px 10px;
-    background: var(--bg-light);
-    border-radius: 4px;
-}
-
 /* Traffic Light Indicators */
 .traffic-lights {
     display: grid;
@@ -944,10 +933,48 @@ tbody tr:hover {
     font-size: 13px;
 }
 
-.palmer-timestamp {
-    font-size: 11px;
+/* Loading skeleton animation */
+@keyframes shimmer {
+    0% { background-position: -200px 0; }
+    100% { background-position: 200px 0; }
+}
+
+.loading-skeleton {
+    background: linear-gradient(90deg, var(--bg-light) 25%, var(--bg-border) 50%, var(--bg-light) 75%);
+    background-size: 200px 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+}
+
+/* Footer */
+.dashboard-footer {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid var(--bg-border);
+    text-align: center;
+}
+
+.footer-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    font-size: 12px;
     color: var(--text-dim);
-    text-align: right;
+}
+
+.footer-brand {
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--text-secondary);
+}
+
+.footer-divider {
+    opacity: 0.4;
+}
+
+.footer-updated {
+    font-weight: 400;
 }
 
 /* Responsive */

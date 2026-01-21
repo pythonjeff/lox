@@ -1,4 +1,4 @@
-// LOX FUND Dashboard - Auto-refresh functionality
+// LOX FUND Dashboard v1
 
 function formatCurrency(value, showCents = false) {
     // Show cents for smaller values or when explicitly requested
@@ -170,7 +170,6 @@ function fetchPalmerDashboard() {
     const eventsContainer = document.getElementById('palmer-events');
     const headlinesContainer = document.getElementById('palmer-headlines');
     const insightContainer = document.getElementById('palmer-insight');
-    const timestampEl = document.getElementById('palmer-timestamp');
     
     fetch('/api/regime-analysis')
         .then(response => response.json())
@@ -249,18 +248,8 @@ function fetchPalmerDashboard() {
                 return;
             }
             
-            // Update timestamp
-            let timestampText = '';
-            if (data.timestamp) {
-                timestampText = `Updated: ${formatTimestamp(data.timestamp)}`;
-            }
-            if (data.next_refresh) {
-                const nextRefresh = new Date(data.next_refresh);
-                const now = new Date();
-                const minsUntilRefresh = Math.max(0, Math.round((nextRefresh - now) / 60000));
-                timestampText += ` • Next refresh in ${minsUntilRefresh}m`;
-            }
-            timestampEl.textContent = timestampText;
+            // Update footer timestamp
+            updateFooterTimestamp();
         })
         .catch(error => {
             console.error('Palmer fetch error:', error);
@@ -332,16 +321,25 @@ function fetchClosedTrades() {
         });
 }
 
+// Update footer with last updated time
+function updateFooterTimestamp() {
+    const footerEl = document.getElementById('last-updated');
+    if (footerEl) {
+        const now = new Date();
+        footerEl.textContent = `Updated ${now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+    }
+}
+
 // Initial load
 updateDashboard();
 fetchClosedTrades();
 fetchPalmerDashboard();
+updateFooterTimestamp();
 
-// Auto-refresh positions every 5 minutes
-setInterval(updateDashboard, 300000);
-
-// Auto-refresh closed trades every 5 minutes
-setInterval(fetchClosedTrades, 300000);
-
-// Check for new Palmer analysis every 5 minutes (server refreshes every 30 min)
-setInterval(fetchPalmerDashboard, 300000);
+// Auto-refresh every 5 minutes (silent)
+setInterval(() => {
+    updateDashboard();
+    fetchClosedTrades();
+    fetchPalmerDashboard();
+    updateFooterTimestamp();
+}, 300000);
