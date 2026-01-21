@@ -957,8 +957,8 @@ def fetch_macro_headlines(settings, portfolio_tickers=None, limit=5):
             clean_tickers = [t for t in portfolio_tickers if t and len(t) <= 5 and t.isalpha()]
             tickers_to_fetch.extend(clean_tickers[:5])
         
-        # Add macro tickers if we don't have enough
-        macro_tickers = ["SPY", "QQQ", "TLT", "GLD"]
+        # Add macro tickers if we don't have enough (avoid GLD - over-represents gold news)
+        macro_tickers = ["SPY", "QQQ", "TLT", "VIX"]
         for mt in macro_tickers:
             if mt not in tickers_to_fetch and len(tickers_to_fetch) < 6:
                 tickers_to_fetch.append(mt)
@@ -1068,6 +1068,7 @@ def _get_event_source_url(event_name: str) -> str:
 def fetch_fed_fiscal_calendar(settings, days_ahead=14):
     """Fetch Fed and fiscal-focused economic events."""
     events = []
+    seen_events = set()  # Track seen event names to prevent duplicates
     
     # Fed/fiscal keywords to prioritize
     fed_fiscal_keywords = [
@@ -1094,15 +1095,25 @@ def fetch_fed_fiscal_calendar(settings, days_ahead=14):
             data = resp.json() or []
             
             for item in data:
-                event_name = (item.get("event") or "").lower()
+                event_name_lower = (item.get("event") or "").lower()
                 
                 # Only include Fed/fiscal focused events
-                is_fed_fiscal = any(kw in event_name for kw in fed_fiscal_keywords)
+                is_fed_fiscal = any(kw in event_name_lower for kw in fed_fiscal_keywords)
                 
                 if is_fed_fiscal:
                     event_name = item.get("event", "")
+                    event_date = item.get("date", "")[:10]
+                    
+                    # Create a unique key to prevent duplicates
+                    # Use simplified event name (first 30 chars) + date
+                    dedup_key = f"{event_name[:30].lower().strip()}|{event_date}"
+                    
+                    if dedup_key in seen_events:
+                        continue
+                    seen_events.add(dedup_key)
+                    
                     events.append({
-                        "date": item.get("date", "")[:10],
+                        "date": event_date,
                         "event": event_name,
                         "estimate": item.get("estimate"),
                         "previous": item.get("previous"),
@@ -1291,21 +1302,6 @@ Be direct and specific. No fluff. Under 75 words total."""
         },
         "events": events_display,
         "headlines": headlines_display,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-
-    response = client.chat.completions.create(
-        model=settings.openai_model or "gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3,
-        max_tokens=1000,
-    )
-    
-    analysis = response.choices[0].message.content.strip()
-    
-    return {
-        "analysis": analysis,
-        "regime_snapshot": regime_snapshot,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 

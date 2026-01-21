@@ -12,7 +12,130 @@ from ai_options_trader.config import load_settings
 console = Console()
 
 
+def _run_tariff_snapshot(
+    *,
+    basket: str = "import_retail_apparel",
+    start: str = "2011-01-01",
+    benchmark: str = "XLY",
+    refresh: bool = False,
+    llm: bool = False,
+    features: bool = False,
+    json_out: bool = False,
+) -> None:
+    """Shared implementation for tariff snapshot."""
+    from ai_options_trader.cli_commands.labs_utils import handle_output_flags
+    from ai_options_trader.data.fred import FredClient
+    from ai_options_trader.data.market import fetch_equity_daily_closes
+    from ai_options_trader.tariff.universe import BASKETS
+    from ai_options_trader.tariff.proxies import DEFAULT_COST_PROXY_SERIES
+    from ai_options_trader.tariff.signals import build_tariff_regime_state
+
+    settings = load_settings()
+
+    if basket not in BASKETS:
+        console.print(f"[red]Unknown basket: {basket}. Choose from: {list(BASKETS.keys())}[/red]")
+        return
+
+    universe = BASKETS[basket].tickers
+
+    # --- Cost proxies (FRED) ---
+    fred = FredClient(api_key=settings.FRED_API_KEY)
+
+    frames = []
+    for col, sid in DEFAULT_COST_PROXY_SERIES.items():
+        df = fred.fetch_series(sid, start_date=start, refresh=refresh)
+        df = df.rename(columns={"value": col}).set_index("date")
+        frames.append(df[[col]])
+
+    cost_df = pd.concat(frames, axis=1).sort_index()
+    cost_df = cost_df.resample("D").ffill()
+
+    # --- Equities ---
+    symbols = sorted(set(universe + [benchmark]))
+    px = fetch_equity_daily_closes(settings=settings, symbols=symbols, start=start, refresh=bool(refresh))
+    px = px.sort_index().ffill().dropna(how="all")
+
+    state = build_tariff_regime_state(
+        cost_df=cost_df,
+        equity_prices=px,
+        universe=universe,
+        benchmark=benchmark,
+        basket_name=basket,
+        start_date=start,
+    )
+
+    inputs = state.inputs
+    
+    # Build snapshot data
+    snapshot_data = {
+        "tariff_regime_score": inputs.tariff_regime_score,
+        "is_tariff_regime": inputs.is_tariff_regime,
+        "z_cost_pressure": inputs.z_cost_pressure,
+        "equity_denial_beta": inputs.equity_denial_beta,
+        "z_earnings_fragility": inputs.z_earnings_fragility,
+        "basket": state.basket,
+        "benchmark": state.benchmark,
+    }
+
+    feature_dict = {
+        "tariff_regime_score": inputs.tariff_regime_score,
+        "z_cost_pressure": inputs.z_cost_pressure,
+        "equity_denial_beta": inputs.equity_denial_beta,
+        "z_earnings_fragility": inputs.z_earnings_fragility,
+        "is_tariff_regime": 1.0 if inputs.is_tariff_regime else 0.0,
+    }
+
+    regime_label = "Tariff Regime ACTIVE" if inputs.is_tariff_regime else "Tariff Regime Inactive"
+
+    # Handle --features and --json flags
+    if handle_output_flags(
+        domain="tariff",
+        snapshot=snapshot_data,
+        features=feature_dict,
+        regime=regime_label,
+        regime_description=f"Score: {inputs.tariff_regime_score:.2f}",
+        asof=state.asof,
+        output_json=json_out,
+        output_features=features,
+    ):
+        return
+
+    if llm:
+        _llm_tariff_analysis(state, settings)
+    else:
+        in_regime = "✅ YES" if inputs.is_tariff_regime else "❌ NO"
+        
+        console.print()
+        console.print(Panel(
+            f"[bold]Basket:[/bold] {state.basket}\n"
+            f"[bold]Universe:[/bold] {', '.join(state.universe)}\n"
+            f"[bold]Benchmark:[/bold] {state.benchmark}\n"
+            f"[bold]As of:[/bold] {state.asof}\n\n"
+            f"[bold cyan]Tariff Regime Score:[/bold cyan] {inputs.tariff_regime_score:.2f}\n"
+            f"[bold]In Tariff Regime:[/bold] {in_regime}\n\n"
+            f"[dim]Components:[/dim]\n"
+            f"  Cost Pressure (z): {inputs.z_cost_pressure:+.2f}\n"
+            f"  Equity Denial Beta: {inputs.equity_denial_beta:.4f}\n"
+            f"  Earnings Fragility (z): {inputs.z_earnings_fragility:.2f}",
+            title="Tariff Regime Snapshot",
+            border_style="yellow"
+        ))
+
+
 def register(tariff_app: typer.Typer) -> None:
+    # Default callback so `lox labs tariff --llm` works without `snapshot`
+    @tariff_app.callback(invoke_without_command=True)
+    def tariff_default(
+        ctx: typer.Context,
+        llm: bool = typer.Option(False, "--llm", help="Get LLM analysis with real-time data"),
+        features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
+        json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+    ):
+        """Tariff / cost-push regime signals"""
+        if ctx.invoked_subcommand is None:
+            # Run default snapshot with flags
+            _run_tariff_snapshot(llm=llm, features=features, json_out=json_out)
+
     @tariff_app.command("baskets")
     def tariff_baskets():
         """List available tariff baskets."""
@@ -317,76 +440,15 @@ def register(tariff_app: typer.Typer) -> None:
         start: str = typer.Option("2011-01-01", "--start"),
         benchmark: str = typer.Option("XLY", "--benchmark", help="Sector or market benchmark (e.g., XLY, SPY)"),
         refresh: bool = typer.Option(False, "--refresh"),
-        llm: bool = typer.Option(False, "--llm", help="Generate LLM analysis of tariff regime"),
+        llm: bool = typer.Option(False, "--llm", help="Get LLM analysis with real-time data"),
+        features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
+        json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
     ):
-        """
-        Compute tariff/cost-push regime snapshot for an import-exposed basket.
-        """
-        from ai_options_trader.data.fred import FredClient
-        from ai_options_trader.data.market import fetch_equity_daily_closes
-        from ai_options_trader.tariff.universe import BASKETS
-        from ai_options_trader.tariff.proxies import DEFAULT_COST_PROXY_SERIES
-        from ai_options_trader.tariff.signals import build_tariff_regime_state
-
-        settings = load_settings()
-
-        if basket not in BASKETS:
-            raise typer.BadParameter(f"Unknown basket: {basket}. Choose from: {list(BASKETS.keys())}")
-
-        universe = BASKETS[basket].tickers
-
-        # --- Cost proxies (FRED) ---
-        fred = FredClient(api_key=settings.FRED_API_KEY)
-
-        frames = []
-        for col, sid in DEFAULT_COST_PROXY_SERIES.items():
-            df = fred.fetch_series(sid, start_date=start, refresh=refresh)
-            df = df.rename(columns={"value": col}).set_index("date")
-            frames.append(df[[col]])
-
-        cost_df = pd.concat(frames, axis=1).sort_index()
-
-        # Align to daily for merging with equities
-        cost_df = cost_df.resample("D").ffill()
-
-        # --- Equities (historical closes; default: FMP) ---
-        symbols = sorted(set(universe + [benchmark]))
-        px = fetch_equity_daily_closes(settings=settings, symbols=symbols, start=start, refresh=bool(refresh))
-        px = px.sort_index().ffill().dropna(how="all")
-
-        state = build_tariff_regime_state(
-            cost_df=cost_df,
-            equity_prices=px,
-            universe=universe,
-            benchmark=benchmark,
-            basket_name=basket,
-            start_date=start,
+        """Compute tariff/cost-push regime snapshot for an import-exposed basket."""
+        _run_tariff_snapshot(
+            basket=basket, start=start, benchmark=benchmark, refresh=refresh,
+            llm=llm, features=features, json_out=json_out,
         )
-
-        if llm:
-            _llm_tariff_analysis(state, settings)
-        else:
-            # Pretty print the state
-            inputs = state.inputs
-            in_regime = "✅ YES" if inputs.is_tariff_regime else "❌ NO"
-            
-            console.print()
-            console.print(Panel(
-                f"[bold]Basket:[/bold] {state.basket}\n"
-                f"[bold]Universe:[/bold] {', '.join(state.universe)}\n"
-                f"[bold]Benchmark:[/bold] {state.benchmark}\n"
-                f"[bold]As of:[/bold] {state.asof}\n\n"
-                f"[bold cyan]Tariff Regime Score:[/bold cyan] {inputs.tariff_regime_score:.2f}\n"
-                f"[bold]In Tariff Regime:[/bold] {in_regime}\n\n"
-                f"[dim]Components:[/dim]\n"
-                f"  Cost Pressure (z): {inputs.z_cost_pressure:+.2f}\n"
-                f"  Equity Denial Beta: {inputs.equity_denial_beta:.4f}\n"
-                f"  Earnings Fragility (z): {inputs.z_earnings_fragility:.2f}",
-                title="Tariff Regime Snapshot",
-                border_style="yellow"
-            ))
-            console.print()
-            console.print("[dim]Use --llm for AI analysis of this regime state[/dim]")
 
 
 def _show_candidates_table(candidates):
