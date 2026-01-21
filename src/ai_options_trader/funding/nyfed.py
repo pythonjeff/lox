@@ -34,12 +34,13 @@ def fetch_nyfed_secured_rate(
     """
     Fetch NY Fed reference rates (secured) as daily time series.
 
-    Endpoint pattern (public):
-      https://markets.newyorkfed.org/api/rates/secured/{rate}.json
+    Endpoint (public):
+      https://markets.newyorkfed.org/api/rates/secured/all/search.json?startDate=...&type=rate
 
     We cache the full CSV locally and filter to `start_date` on read.
     """
     rate_l = (rate or "").strip().lower()
+    rate_u = rate_l.upper()  # API returns type in uppercase (SOFR, BGCR, TGCR)
     if rate_l not in {"sofr", "tgcr", "bgcr", "obfr"}:
         raise ValueError(f"Unknown rate: {rate!r}")
 
@@ -63,7 +64,10 @@ def fetch_nyfed_secured_rate(
     # Suppress only the InsecureRequestWarning for this specific call
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    url = f"https://markets.newyorkfed.org/api/rates/secured/{rate_l}.json"
+    # Use the /all/search.json endpoint which supports all rate types
+    end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    url = f"https://markets.newyorkfed.org/api/rates/secured/all/search.json?startDate={start_date}&endDate={end_date}&type=rate"
+    
     # Some environments (notably certain macOS Python builds) can throw odd SSL PermissionErrors.
     # Try verified HTTPS first; if the SSL stack is broken, fall back to verify=False (best-effort).
     source = "nyfed:markets_api"
@@ -78,12 +82,16 @@ def fetch_nyfed_secured_rate(
         resp.raise_for_status()
         js = resp.json()
 
-    # JSON shape: { "refRates": [ { "effectiveDate": "YYYY-MM-DD", "percentRate": "3.64", ... }, ... ] }
+    # JSON shape: { "refRates": [ { "effectiveDate": "YYYY-MM-DD", "percentRate": "3.64", "type": "BGCR", ... }, ... ] }
     rows = []
     ref = js.get("refRates") if isinstance(js, dict) else None
     if isinstance(ref, list):
         for r in ref:
             if not isinstance(r, dict):
+                continue
+            # Filter to the specific rate type we want
+            rate_type = r.get("type", "").upper()
+            if rate_type != rate_u:
                 continue
             d = r.get("effectiveDate") or r.get("effective_date") or r.get("date")
             v = r.get("percentRate") or r.get("percent_rate") or r.get("rate") or r.get("value")
