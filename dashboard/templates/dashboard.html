@@ -63,11 +63,10 @@
             </div>
         </section>
 
-        <!-- Palmer: Macro Intelligence (MOVED UP) -->
+        <!-- Palmer: Macro Intelligence -->
         <section class="palmer-section">
             <div class="palmer-header">
                 <h2 class="palmer-name">PALMER</h2>
-                <span class="palmer-badge">Auto-Refresh 30m</span>
             </div>
             
             <!-- Traffic Light Indicators -->
@@ -118,7 +117,6 @@
                 </div>
             </details>
             
-            <div class="palmer-timestamp" id="palmer-timestamp"></div>
         </section>
 
         <!-- Positions Table -->
@@ -185,6 +183,15 @@
                 </table>
             </div>
         </details>
+        
+        <!-- Footer -->
+        <footer class="dashboard-footer">
+            <div class="footer-content">
+                <span class="footer-brand">LOX FUND</span>
+                <span class="footer-divider">•</span>
+                <span class="footer-updated" id="last-updated"></span>
+            </div>
+        </footer>
     </div>
 
     <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
