@@ -396,7 +396,7 @@ def _run_fiscal_snapshot(
             regime_description=regime.description,
         )
 
-        print(Panel(Markdown(analysis), title="[bold magenta]PhD Macro Analyst[/bold magenta]", expand=False))
+        print(Panel(Markdown(analysis), title="Analysis", expand=False))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -174,7 +174,7 @@ def run_funding_snapshot(
             regime_description=regime.description,
         )
         
-        print(Panel(Markdown(analysis), title="[bold magenta]PhD Macro Analyst[/bold magenta]", expand=False))
+        print(Panel(Markdown(analysis), title="Analysis", expand=False))
 
 
 def register(funding_app: typer.Typer) -> None:

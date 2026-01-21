@@ -105,7 +105,7 @@ def register_v3(labs_app: typer.Typer) -> None:
         c = Console()
         
         # Get current market state
-        c.print(f"[cyan]Fetching current market state and running {n_scenarios:,} scenarios...[/cyan]")
+        c.print(f"[dim]Running {n_scenarios:,} scenarios...[/dim]")
         
         import warnings
         warnings.filterwarnings("ignore", message=".*Optional series.*unavailable.*")

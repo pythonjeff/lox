@@ -143,24 +143,62 @@
             </div>
         </section>
 
-        <!-- Palmer: LLM Regime & Economic Analysis (Server-Cached) -->
-        <section class="analysis-section palmer-section">
-            <div class="analysis-header">
-                <div class="palmer-brand">
-                    <h2 class="palmer-name">PALMER</h2>
-                    <span class="palmer-subtitle">Macro Strategist</span>
+        <!-- Palmer: Macro Dashboard -->
+        <section class="palmer-section">
+            <div class="palmer-header">
+                <h2 class="palmer-name">PALMER</h2>
+                <span class="palmer-badge">Auto-Refresh 30m</span>
+            </div>
+            
+            <!-- Traffic Light Indicators -->
+            <div class="traffic-lights" id="traffic-lights">
+                <div class="traffic-item" data-status="loading">
+                    <span class="traffic-label">REGIME</span>
+                    <span class="traffic-dot">●</span>
+                    <span class="traffic-value">—</span>
                 </div>
-                <div class="analysis-meta">
-                    <span class="analysis-badge">Auto-Refresh Every 30 Min</span>
+                <div class="traffic-item" data-status="loading">
+                    <span class="traffic-label">VOLATILITY</span>
+                    <span class="traffic-dot">●</span>
+                    <span class="traffic-value">—</span>
+                </div>
+                <div class="traffic-item" data-status="loading">
+                    <span class="traffic-label">CREDIT</span>
+                    <span class="traffic-dot">●</span>
+                    <span class="traffic-value">—</span>
+                </div>
+                <div class="traffic-item" data-status="loading">
+                    <span class="traffic-label">RATES</span>
+                    <span class="traffic-dot">●</span>
+                    <span class="traffic-value">—</span>
                 </div>
             </div>
-            <div class="analysis-content" id="regime-analysis">
-                <div class="analysis-loading">
-                    <div class="spinner"></div>
-                    <span>Loading Palmer's analysis...</span>
+            
+            <!-- Two Column Layout: Events + Headlines -->
+            <div class="palmer-columns">
+                <!-- Fed/Fiscal Calendar -->
+                <div class="palmer-column">
+                    <h3 class="palmer-col-title">FED & FISCAL CALENDAR</h3>
+                    <div class="palmer-events" id="palmer-events">
+                        <div class="event-loading">Loading events...</div>
+                    </div>
+                </div>
+                
+                <!-- Macro Headlines -->
+                <div class="palmer-column">
+                    <h3 class="palmer-col-title">MACRO HEADLINES</h3>
+                    <div class="palmer-headlines" id="palmer-headlines">
+                        <div class="headline-loading">Loading headlines...</div>
+                    </div>
                 </div>
             </div>
-            <div class="analysis-timestamp" id="analysis-timestamp"></div>
+            
+            <!-- Palmer's Insight -->
+            <div class="palmer-insight" id="palmer-insight">
+                <div class="insight-loading">Loading insight...</div>
+            </div>
+            
+            <div class="palmer-timestamp" id="palmer-timestamp"></div>
         </section>
     </div>
 

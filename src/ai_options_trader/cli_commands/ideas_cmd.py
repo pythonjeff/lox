@@ -419,7 +419,7 @@ def register(ideas_app: typer.Typer) -> None:
                 "- These are research ideas, not advice.\n"
                 "- 'ExpRet/Hit/Worst' are conditional forward returns computed over similar historical regime days.\n"
                 "- Options legs are filtered to premium <= $100, delta required, and DTE 30..90.",
-                title="Macro Playbook (MVP)",
+                title="Macro Playbook",
                 expand=False,
             )
         )
