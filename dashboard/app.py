@@ -890,63 +890,60 @@ def fetch_earnings_calendar(tickers, days_ahead=14):
 
 
 def fetch_macro_headlines(settings, portfolio_tickers=None, limit=5):
-    """Fetch top macro/financial headlines from Alpaca News API.
+    """Fetch top macro/financial headlines using FMP stock news API.
     
-    Falls back to portfolio-specific headlines if macro headlines are empty.
+    Uses portfolio tickers if provided, otherwise defaults to macro ETFs.
     """
     headlines = []
     
-    def _fetch_news_for_symbols(news_client, symbols_str, fetch_limit):
-        """Helper to fetch news for a comma-separated symbols string."""
-        from alpaca.data.requests import NewsRequest
-        results = []
-        try:
-            req = NewsRequest(
-                symbols=symbols_str,
-                limit=fetch_limit,
-            )
-            resp = news_client.get_news(req)
-            news_items = getattr(resp, 'news', []) or []
-            
-            for item in news_items:
-                headline = getattr(item, 'headline', '') or ''
-                source = getattr(item, 'source', '') or ''
-                created = getattr(item, 'created_at', None)
-                symbols = getattr(item, 'symbols', []) or []
-                
-                if headline:
-                    time_str = created.strftime("%b %d %H:%M") if created else ""
-                    # Add ticker tag if it's from portfolio
-                    ticker_tag = symbols[0] if symbols else ""
-                    results.append({
-                        "headline": headline[:120],
-                        "source": source,
-                        "time": time_str,
-                        "ticker": ticker_tag,
-                    })
-        except Exception as e:
-            print(f"[Palmer] News fetch error for {symbols_str}: {e}")
-        return results
-    
     try:
-        from alpaca.data.historical.news import NewsClient
+        # Build ticker list: portfolio tickers first, then macro fallback
+        tickers_to_fetch = []
         
-        news_client = NewsClient(api_key=settings.alpaca_api_key, secret_key=settings.alpaca_api_secret)
-        
-        # Try macro symbols first (SPY, TLT, GLD for broad market news)
-        macro_symbols = "SPY,TLT,GLD"
-        headlines = _fetch_news_for_symbols(news_client, macro_symbols, limit * 2)
-        
-        # If no macro headlines, fall back to portfolio tickers
-        if not headlines and portfolio_tickers:
+        if portfolio_tickers:
             # Filter to underlying tickers (not option symbols)
             clean_tickers = [t for t in portfolio_tickers if t and len(t) <= 5 and t.isalpha()]
-            if clean_tickers:
-                portfolio_symbols = ",".join(clean_tickers[:5])  # Limit to 5 tickers
-                print(f"[Palmer] No macro headlines, trying portfolio: {portfolio_symbols}")
-                headlines = _fetch_news_for_symbols(news_client, portfolio_symbols, limit * 2)
+            tickers_to_fetch.extend(clean_tickers[:5])
         
-        # Dedupe and limit
+        # Add macro tickers if we don't have enough
+        macro_tickers = ["SPY", "QQQ", "TLT", "GLD"]
+        for mt in macro_tickers:
+            if mt not in tickers_to_fetch and len(tickers_to_fetch) < 6:
+                tickers_to_fetch.append(mt)
+        
+        # Fetch from FMP stock news
+        tickers_str = ",".join(tickers_to_fetch)
+        url = f"https://financialmodelingprep.com/api/v3/stock_news?tickers={tickers_str}&limit={limit * 2}&apikey={settings.fmp_api_key}"
+        
+        resp = requests.get(url, timeout=10)
+        data = resp.json()
+        
+        if isinstance(data, list):
+            for item in data:
+                title = item.get("title", "") or ""
+                site = item.get("site", "") or ""
+                published = item.get("publishedDate", "") or ""
+                ticker = item.get("symbol", "") or ""
+                
+                if title:
+                    # Parse date for display
+                    time_str = ""
+                    if published:
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(published.replace("Z", "+00:00"))
+                            time_str = dt.strftime("%b %d")
+                        except:
+                            pass
+                    
+                    headlines.append({
+                        "headline": title[:120],
+                        "source": site[:20] if site else "News",
+                        "time": time_str,
+                        "ticker": ticker,
+                    })
+        
+        # Dedupe by headline
         seen = set()
         unique_headlines = []
         for h in headlines:
@@ -957,7 +954,7 @@ def fetch_macro_headlines(settings, portfolio_tickers=None, limit=5):
         headlines = unique_headlines[:limit]
         
     except Exception as e:
-        print(f"[Palmer] Headlines fetch error: {e}")
+        print(f"[Palmer] FMP news fetch error: {e}")
     
     return headlines
 
