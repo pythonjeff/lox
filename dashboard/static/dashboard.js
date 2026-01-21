@@ -231,17 +231,21 @@ function fetchPalmerDashboard() {
                 `;
             }
             
-            // Update Fed/Fiscal events
+            // Update Fed/Fiscal events with source links
             if (data.events && data.events.length > 0) {
-                eventsContainer.innerHTML = data.events.map(e => `
+                eventsContainer.innerHTML = data.events.map(e => {
+                    const eventContent = e.url 
+                        ? `<a href="${e.url}" target="_blank" rel="noopener noreferrer" class="event-link">${e.event || '—'}</a>`
+                        : (e.event || '—');
+                    return `
                     <div class="event-item">
                         <span class="event-date">${e.date ? e.date.substring(5) : '—'}</span>
                         <div>
-                            <div class="event-name">${e.event || '—'}</div>
+                            <div class="event-name">${eventContent}</div>
                             ${e.estimate ? `<div class="event-estimate">${e.estimate}</div>` : ''}
                         </div>
                     </div>
-                `).join('');
+                `}).join('');
             } else {
                 eventsContainer.innerHTML = '<div class="event-loading">No upcoming Fed/fiscal events</div>';
             }

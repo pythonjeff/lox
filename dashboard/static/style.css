@@ -899,6 +899,20 @@ tbody tr:hover {
     line-height: 1.4;
 }
 
+.event-link {
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+.event-link:hover {
+    color: var(--accent-blue);
+}
+
+.event-item:hover .event-link {
+    color: var(--accent-blue);
+}
+
 .event-estimate {
     font-size: 11px;
     color: var(--text-dim);

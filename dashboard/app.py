@@ -952,6 +952,58 @@ def fetch_macro_headlines(settings, portfolio_tickers=None, limit=5):
     return headlines
 
 
+def _get_event_source_url(event_name: str) -> str:
+    """Map economic event names to authoritative source URLs."""
+    event_lower = event_name.lower()
+    
+    # Federal Reserve / FOMC
+    if any(kw in event_lower for kw in ['fomc', 'fed ', 'federal reserve', 'powell', 'rate decision']):
+        return "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+    
+    # Treasury / Auctions
+    if any(kw in event_lower for kw in ['treasury', 'auction', 't-bill', 't-bond', 't-note']):
+        return "https://www.treasurydirect.gov/auctions/upcoming/"
+    
+    # Employment / Jobs (BLS)
+    if any(kw in event_lower for kw in ['payroll', 'employment', 'unemployment', 'jobless', 'nonfarm', 'jobs']):
+        return "https://www.bls.gov/news.release/empsit.toc.htm"
+    
+    # Inflation - CPI (BLS)
+    if 'cpi' in event_lower or 'consumer price' in event_lower:
+        return "https://www.bls.gov/cpi/"
+    
+    # Inflation - PCE (BEA)
+    if 'pce' in event_lower or 'personal consumption' in event_lower:
+        return "https://www.bea.gov/data/personal-consumption-expenditures-price-index"
+    
+    # GDP (BEA)
+    if 'gdp' in event_lower or 'gross domestic' in event_lower:
+        return "https://www.bea.gov/data/gdp/gross-domestic-product"
+    
+    # Retail Sales (Census)
+    if 'retail' in event_lower:
+        return "https://www.census.gov/retail/index.html"
+    
+    # Housing (Census)
+    if any(kw in event_lower for kw in ['housing', 'home sales', 'building permits', 'housing starts']):
+        return "https://www.census.gov/construction/nrc/index.html"
+    
+    # ISM / PMI
+    if any(kw in event_lower for kw in ['ism', 'pmi', 'manufacturing index', 'services index']):
+        return "https://www.ismworld.org/supply-management-news-and-reports/reports/ism-report-on-business/"
+    
+    # Durable Goods (Census)
+    if 'durable' in event_lower:
+        return "https://www.census.gov/manufacturing/m3/index.html"
+    
+    # Consumer Confidence (Conference Board)
+    if 'consumer confidence' in event_lower or 'consumer sentiment' in event_lower:
+        return "https://www.conference-board.org/topics/consumer-confidence"
+    
+    # Default: Trading Economics calendar
+    return "https://tradingeconomics.com/united-states/calendar"
+
+
 def fetch_fed_fiscal_calendar(settings, days_ahead=14):
     """Fetch Fed and fiscal-focused economic events."""
     events = []
@@ -987,12 +1039,14 @@ def fetch_fed_fiscal_calendar(settings, days_ahead=14):
                 is_fed_fiscal = any(kw in event_name for kw in fed_fiscal_keywords)
                 
                 if is_fed_fiscal:
+                    event_name = item.get("event", "")
                     events.append({
                         "date": item.get("date", "")[:10],
-                        "event": item.get("event", ""),
+                        "event": event_name,
                         "estimate": item.get("estimate"),
                         "previous": item.get("previous"),
                         "impact": item.get("impact", ""),
+                        "url": _get_event_source_url(event_name),
                     })
     except Exception as e:
         print(f"[Palmer] Fed/fiscal calendar error: {e}")
@@ -1112,6 +1166,7 @@ def _generate_palmer_analysis():
             "date": e["date"],
             "event": e["event"][:50],
             "estimate": est_str,
+            "url": e.get("url", ""),
         })
     
     # Format headlines for display
