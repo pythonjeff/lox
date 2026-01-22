@@ -1576,6 +1576,7 @@ def _refresh_palmer_cache():
             PALMER_CACHE["traffic_lights"] = new_lights
             PALMER_CACHE["events"] = result.get("events")
             PALMER_CACHE["headlines"] = result.get("headlines")
+            PALMER_CACHE["monte_carlo"] = result.get("monte_carlo")
             PALMER_CACHE["timestamp"] = result.get("timestamp")
             PALMER_CACHE["last_refresh"] = datetime.now(timezone.utc)
             PALMER_CACHE["error"] = result.get("error")
@@ -1615,13 +1616,14 @@ def api_regime_analysis():
             # First request - trigger initial refresh
             pass
         
-        # Return cached data
+        # Return cached data including monte_carlo
         return jsonify({
             "analysis": PALMER_CACHE.get("analysis"),
             "regime_snapshot": PALMER_CACHE.get("regime_snapshot"),
             "traffic_lights": PALMER_CACHE.get("traffic_lights"),
             "events": PALMER_CACHE.get("events"),
             "headlines": PALMER_CACHE.get("headlines"),
+            "monte_carlo": PALMER_CACHE.get("monte_carlo"),
             "timestamp": PALMER_CACHE.get("timestamp"),
             "regime_changed": PALMER_CACHE.get("regime_changed", False),
             "regime_change_details": PALMER_CACHE.get("regime_change_details"),
