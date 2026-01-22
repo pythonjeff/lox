@@ -106,6 +106,7 @@ def _register_commands() -> None:
     from ai_options_trader.cli_commands.dashboard_cmd import register_pillar_commands
     from ai_options_trader.cli_commands.closed_trades_cmd import register as register_closed_trades
     from ai_options_trader.cli_commands.deep_cmd import register as register_deep
+    from ai_options_trader.cli_commands.stress_cmd import register_stress
 
     # Core commands (top-level for quick access)
     register_core(app)
@@ -141,6 +142,7 @@ def _register_commands() -> None:
     register_scenarios_ml(labs_app)  # ML-enhanced scenarios
     register_hedges(labs_app)  # Simplified hedge recommendations
     register_deep(labs_app)  # Deep dive ticker analysis
+    register_stress(labs_app)  # Stress testing
     register_macro(macro_app)
     register_tariff(tariff_app)
     register_funding(funding_app)
