@@ -570,8 +570,9 @@ tbody tr:hover {
     font-size: 11px;
     color: var(--text-dim);
     font-style: italic;
-    max-width: 200px;
+    max-width: 250px;
     line-height: 1.4;
+    font-weight: 400;
 }
 
 .qty-cell {
