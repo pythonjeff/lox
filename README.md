@@ -4,12 +4,87 @@
 
 ---
 
+## Executive Summary
+
+Lox Capital operates a **discretionary macro portfolio** with systematic research infrastructure. The platform combines real-time web analytics, AI-powered macro intelligence, and quantitative research tools to support regime-aware portfolio management and tail-risk hedging.
+
+**Primary Interface**: Live web dashboard providing real-time portfolio analytics, regime monitoring, and position-level intelligence.
+
+**Research Layer**: CLI tools for deep-dive analysis, scenario modeling, and trade idea generation.
+
+**Philosophy**: Tools inform. Portfolio manager decides. Every trade decision follows rigorous regime assessment, risk analysis, and scenario stress-testing.
+
+---
+
+## Technical Documentation
+
+For reviewers and due diligence, comprehensive technical documentation is available:
+
+| Document | Description |
+|----------|-------------|
+| [**EXECUTIVE_SUMMARY.md**](docs/EXECUTIVE_SUMMARY.md) | One-page technical overview for quick review |
+| [**METHODOLOGY.md**](docs/METHODOLOGY.md) | Palmer, Monte Carlo, regime detection algorithms with full formulas |
+| [**TECHNICAL_SPEC.md**](docs/TECHNICAL_SPEC.md) | Architecture, data lineage, error handling, deployment |
+| [**V3_SUMMARY.md**](docs/V3_SUMMARY.md) | Platform overview and design decisions |
+
+---
+
+## Live Portfolio Dashboard
+
+### Access
+
+**Local Development:**
+```bash
+cd dashboard
+python app.py
+# Navigate to http://localhost:5001
+```
+
+**Production:** [https://loxfund-284aa251b4f3.herokuapp.com](https://loxfund-284aa251b4f3.herokuapp.com)
+
+### Core Capabilities
+
+**Portfolio Analytics**
+- **Liquidation NAV**: Conservative bid/ask marking for accurate portfolio valuation
+- **Unrealized P&L**: Real-time profit/loss with percentage attribution
+- **Performance Attribution**: Fund return vs S&P 500 and BTC with alpha calculation
+- **Position-Level P&L**: Individual position performance with theory explanations
+
+**Palmer — Macro Intelligence Engine**
+- **Traffic Light Indicators**: Real-time regime classification (RISK-ON/CAUTIOUS/RISK-OFF)
+- **Volatility Monitoring**: VIX level with percentile and regime implications
+- **Credit Conditions**: HY spreads with stress indicators
+- **Rates Environment**: 10Y yield with historical context
+- **LLM Analysis**: Concise macro insights updated every 30 minutes
+- **Regime Change Alerts**: Early detection of macro shifts with detailed explanations
+
+**Monte Carlo Forecast**
+- **6-Month Outlook**: Scenario simulation based on current regime persistence
+- **Expected Return**: Mean P&L projection
+- **Tail Risk**: VaR 95% and win probability
+- **Regime-Conditional**: Adjusts assumptions based on current macro state
+
+**Position Intelligence**
+- **LLM-Generated Theories**: Macro-aware explanations of profit conditions for each position
+- **Regime-Conditional Analysis**: Considers VIX, HY spreads, 10Y yield, and regime status
+- **Actionable Insights**: Specific catalysts and market dynamics required for profitability
+- **Dynamic Updates**: Theories adapt to current portfolio and macro conditions
+
+**Economic Intelligence**
+- **Today's Releases**: Economic calendar with actual vs estimate analysis
+- **Beat/Miss Indicators**: Visual indicators for economic surprises
+- **Trading Economics Integration**: Primary data source with timezone-accurate timestamps
+- **Portfolio News**: Dynamic headlines filtered by active positions
+
+---
+
 ## Philosophy
 
 Lox Capital combines **discretionary portfolio management** with **systematic research tools**. Every trade decision is made by a human analyst after rigorous examination of macro regimes, quantitative metrics, and market context.
 
 The platform provides:
 - **Regime classification** across inflation, growth, liquidity, and volatility
+- **Real-time web dashboard** with live portfolio analytics and macro intelligence
 - **Quantitative dashboards** with z-scores, percentiles, and historical context
 - **PhD-level research briefs** synthesizing news, data, and scenario analysis
 - **Trade idea generation** as starting points for further analysis
@@ -35,9 +110,17 @@ The platform provides:
 
 ## Investment Process
 
-### 1. Regime Assessment
-Every morning begins with understanding the current macro environment:
+### 1. Morning Dashboard Review
+Every morning begins with the **live web dashboard** for real-time portfolio and macro context:
 
+**Web Dashboard** (Primary):
+- Open browser to dashboard URL
+- Review Palmer's regime analysis and traffic lights
+- Check Monte Carlo 6-month forecast
+- Review position-level theories and P&L attribution
+- Monitor today's economic releases
+
+**CLI Research** (Deep Dive):
 ```bash
 lox dashboard                    # Unified view: inflation, growth, liquidity, vol
 lox labs rates snapshot --llm    # PhD-level rates/curve analysis
@@ -45,10 +128,14 @@ lox labs vol --llm               # Volatility regime with scenario probabilities
 ```
 
 The dashboard surfaces:
-- **Inflation**: CPI trends, breakevens, sticky vs flexible components
-- **Growth**: Payrolls momentum, claims, PMI signals
-- **Liquidity**: Fed balance sheet, SOFR-IORB spreads, TGA dynamics
-- **Volatility**: VIX level/percentile, term structure, mean-reversion signals
+- **Portfolio Health**: NAV, unrealized P&L, cash available
+- **Performance Attribution**: Fund return vs S&P 500 and BTC with alpha
+- **Regime Status**: Real-time classification (RISK-ON/CAUTIOUS/RISK-OFF)
+- **Volatility Context**: VIX level with percentile and regime implications
+- **Credit Conditions**: HY spreads with stress indicators
+- **Rates Environment**: 10Y yield with historical context
+- **Economic Calendar**: Today's releases with actual vs estimate
+- **Portfolio News**: Position-relevant headlines
 
 ### 2. Deep Research
 Before any trade, I conduct multi-source analysis:
@@ -100,6 +187,26 @@ After completing research, I make the final call:
 
 ---
 
+## Recent Upgrades
+
+### v1 Dashboard (January 2026)
+- **Palmer Macro Intelligence**: AI-powered regime analysis with real-time traffic light indicators
+- **Monte Carlo Forecast**: 6-month outlook simulation based on current regime persistence
+- **LLM Position Theories**: Macro-aware explanations for each position's profit conditions
+- **Economic Calendar Integration**: Trading Economics API with actual vs estimate analysis
+- **Portfolio-Contextual News**: Dynamic headlines filtered by active positions
+- **Conservative P&L Marking**: Bid/ask liquidation pricing for accurate NAV
+- **Regime Change Detection**: Early alerts for macro regime shifts
+- **Mobile-Responsive Design**: Professional interface optimized for all devices
+
+### Enhanced Research Tools
+- **Standardized CLI Flags**: Uniform `--llm`, `--features`, `--json` across all `lox labs` commands
+- **Trading Economics Integration**: Primary calendar data source with FMP fallback
+- **Live Portfolio Monte Carlo**: Real-time scenario analysis using actual positions
+- **Dynamic Portfolio Analysis**: LLM adapts to current positions for contextual insights
+
+---
+
 ## Research Capabilities
 
 ### Regime Dashboard
@@ -142,14 +249,16 @@ lox labs mc-v01 --regime ALL --real          # 6-month baseline
 
 ### Daily Workflow
 ```bash
-# Morning: Regime context (15 min)
-lox status
-lox dashboard
-lox labs vol --llm
+# Morning: Dashboard review (5 min)
+# → Open web dashboard in browser
+# → Review Palmer's regime analysis
+# → Check Monte Carlo forecast
+# → Review position theories
 
-# Research: Deep analysis (as needed)
+# CLI: Deep research (as needed)
+lox status
+lox labs vol --llm
 lox labs rates snapshot --llm
-lox labs commodities snapshot --llm
 
 # Ideas: Starting points for analysis
 lox suggest --style defensive
@@ -161,10 +270,17 @@ lox labs mc-v01 --regime RISK_OFF --real
 lox nav snapshot
 ```
 
+### Dashboard Access
+| Environment | URL | Command |
+|------------|-----|---------|
+| **Local** | http://localhost:5001 | `cd dashboard && python app.py` |
+| **Production** | https://loxfund-284aa251b4f3.herokuapp.com | Direct browser access |
+
 ### Portfolio Commands
 | Command | Purpose |
 |---------|---------|
-| `lox status` | Portfolio health at a glance |
+| **Web Dashboard** | Real-time portfolio analytics, Palmer analysis, Monte Carlo forecast |
+| `lox status` | Portfolio health at a glance (CLI) |
 | `lox status -v` | With position details |
 | `lox analyze --depth deep` | Full LLM analysis |
 | `lox nav snapshot` | Record current NAV |
@@ -214,10 +330,11 @@ Discretionary macro portfolio management with systematic research support. Prima
 |--------|------|
 | **FRED** | Macro time series (rates, employment, inflation) |
 | **Alpaca** | Real-time quotes, positions, news with full content |
-| **FMP** | Stock news, economic calendar, company data |
+| **Trading Economics** | Economic calendar (primary source, timezone-accurate) |
+| **FMP** | Stock news, economic calendar (fallback), company data |
 | **CBOE** | VIX, term structure, options data |
 
-The LLM analyst aggregates these sources into research briefs with proper citations.
+The LLM analyst aggregates these sources into research briefs with proper citations. The dashboard integrates all sources for real-time portfolio and macro intelligence.
 
 ---
 
@@ -235,13 +352,26 @@ ALPACA_API_SECRET=your_secret
 ALPACA_PAPER=true
 FRED_API_KEY=your_fred_key
 FMP_API_KEY=your_fmp_key
+TRADING_ECONOMICS_API_KEY=your_te_key
 OPENAI_API_KEY=your_openai_key
 EOF
 
-# Verify
+# Start web dashboard
+cd dashboard
+python app.py
+# Navigate to http://localhost:5001
+
+# Verify CLI tools
 lox status
 lox dashboard
 ```
+
+### Dashboard Setup
+The dashboard requires:
+- All API keys configured in `.env`
+- Python dependencies: `flask`, `requests`, `openai`
+- Background refresh runs automatically (30-minute intervals)
+- Force refresh: `curl "http://localhost:5001/api/regime-analysis/force-refresh?secret=YOUR_ADMIN_SECRET"`
 
 ---
 
@@ -249,7 +379,15 @@ lox dashboard
 
 ```
 lox/
-├── Research Layer
+├── Web Dashboard (Primary Interface)
+│   ├── Real-time portfolio analytics
+│   ├── Palmer macro intelligence
+│   ├── Monte Carlo forecast
+│   ├── Position-level LLM theories
+│   ├── Economic calendar integration
+│   └── Portfolio-contextual news
+│
+├── Research Layer (CLI)
 │   ├── dashboard      → Unified regime classification
 │   ├── labs *         → PhD-level research briefs (--llm)
 │   └── mc-v01         → Monte Carlo scenario analysis
@@ -262,14 +400,16 @@ lox/
 │
 ├── Data Layer
 │   ├── FRED           → Macro time series
-│   ├── Alpaca         → Market data + news
+│   ├── Alpaca         → Market data + positions + news
 │   ├── FMP            → News + calendar + quotes
+│   ├── Trading Economics → Economic calendar (primary)
 │   └── Unified News   → Aggregated + deduplicated
 │
 └── Analysis Layer
     ├── Regime pillars → Inflation, growth, liquidity, vol
     ├── Sector maps    → Cross-asset implications
-    └── LLM analyst    → Research synthesis + scenarios
+    ├── LLM analyst    → Research synthesis + scenarios
+    └── Position theories → Macro-aware position analysis
 ```
 
 ---

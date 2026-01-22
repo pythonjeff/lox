@@ -124,7 +124,7 @@ def alpaca_to_portfolio(settings: Settings) -> Portfolio:
     
     print(f"\nPortfolio loaded:")
     print(f"  NAV: ${portfolio.nav:,.0f}")
-    print(f"  Net Delta: {portfolio.net_delta_pct*100:+.1f}%")
+    print(f"  Net Delta: {portfolio.net_delta_pct:+.1f}%")  # Already in % form
     print(f"  Net Vega: ${portfolio.net_vega:,.0f}")
     print(f"  Net Theta: ${portfolio.net_theta_per_day:,.0f} /day")
     
