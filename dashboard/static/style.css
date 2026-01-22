@@ -1791,18 +1791,25 @@ tbody tr:hover {
     }
     
     .perf-metric .perf-value {
-        font-size: 24px;
+        font-size: 22px;
+    }
+    
+    .perf-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: nowrap;
     }
     
     .perf-alpha {
-        position: absolute;
-        right: 0;
-        top: 50%;
-        transform: translateY(-50%);
+        position: static;
+        transform: none;
+        font-size: 10px;
+        padding: 2px 6px;
     }
     
     .benchmark-metric {
-        position: relative;
+        position: static;
     }
     
     /* Traffic lights mobile */
