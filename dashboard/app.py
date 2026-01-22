@@ -1262,6 +1262,51 @@ def fetch_fed_fiscal_calendar(settings):
         return [], None
 
 
+def _describe_portfolio(positions):
+    """Build a concise description of portfolio positioning from actual positions."""
+    if not positions:
+        return "No positions"
+    
+    longs = []
+    shorts = []
+    
+    for p in positions:
+        symbol = p.get("symbol", "")
+        qty = p.get("qty", 0)
+        opt = p.get("opt_info")
+        
+        if opt:
+            # Option position
+            underlying = opt.get("underlying", symbol[:3])
+            opt_type = opt.get("type", "").upper()
+            
+            if qty > 0:  # Long options
+                if opt_type == "PUT":
+                    shorts.append(f"{underlying} (puts)")
+                elif opt_type == "CALL":
+                    longs.append(f"{underlying} (calls)")
+            else:  # Short options
+                if opt_type == "PUT":
+                    longs.append(f"{underlying} (short puts)")
+                elif opt_type == "CALL":
+                    shorts.append(f"{underlying} (short calls)")
+        else:
+            # Stock/ETF position
+            ticker = symbol
+            if qty > 0:
+                longs.append(ticker)
+            elif qty < 0:
+                shorts.append(ticker)
+    
+    desc_parts = []
+    if longs:
+        desc_parts.append(f"Long: {', '.join(longs[:4])}")
+    if shorts:
+        desc_parts.append(f"Short: {', '.join(shorts[:4])}")
+    
+    return "; ".join(desc_parts) if desc_parts else "No clear directional exposure"
+
+
 def _calculate_monte_carlo_forecast(vix_val, hy_val, regime_label):
     """
     Calculate simplified Monte Carlo forecast based on current regime.
@@ -1334,6 +1379,9 @@ def _generate_palmer_analysis():
     
     # Get macro headlines (with portfolio fallback)
     headlines = fetch_macro_headlines(settings, portfolio_tickers=portfolio_tickers, limit=3)
+    
+    # Build dynamic portfolio description from actual positions
+    portfolio_desc = _describe_portfolio(positions_data.get("positions", []))
     
     # Build regime snapshot for structured output
     regime_snapshot = {
@@ -1435,16 +1483,16 @@ def _generate_palmer_analysis():
         from openai import OpenAI
         client = OpenAI(api_key=settings.openai_api_key)
         
-        # Clean prompt for concise, professional output
-        prompt = f"""Macro conditions: VIX {f'{vix_val:.1f}' if vix_val else 'N/A'}, HY spreads {f'{hy_val:.0f}bp' if hy_val else 'N/A'}, 10Y at {f'{yield_val:.2f}%' if yield_val else 'N/A'}.
+        # Clean prompt with actual portfolio positioning
+        prompt = f"""Macro: VIX {f'{vix_val:.1f}' if vix_val else 'N/A'}, HY spreads {f'{hy_val:.0f}bp' if hy_val else 'N/A'}, 10Y {f'{yield_val:.2f}%' if yield_val else 'N/A'}.
 
-Today's events: {', '.join(e['event'][:40] for e in fed_fiscal_events[:3]) if fed_fiscal_events else 'None'}
+Events: {', '.join(e['event'][:35] for e in fed_fiscal_events[:3]) if fed_fiscal_events else 'None today'}
 
-Headlines: {' | '.join(h['headline'][:50] for h in headlines[:2]) if headlines else 'None'}
+News: {' | '.join(h['headline'][:45] for h in headlines[:2]) if headlines else 'None'}
 
-Portfolio is positioned: long vol, short credit, short tech, long duration.
+Portfolio: {portfolio_desc}
 
-Write 2-3 sentences. State the current regime (risk-on/cautious/risk-off), identify ONE key risk or catalyst, and what it means for the portfolio. Be specific and direct. No filler words."""
+Write 2-3 sentences max. Name the regime (risk-on/cautious/risk-off), cite ONE specific catalyst from events or news, explain what it means for this portfolio's P&L. Direct and specific."""
 
         response = client.chat.completions.create(
             model=settings.openai_model or "gpt-4o-mini",
