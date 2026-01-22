@@ -280,15 +280,15 @@ function fetchPalmerDashboard() {
                 headlinesContainer.innerHTML = '<div class="grid-loading">No portfolio news</div>';
             }
             
-            // Update Palmer's insight with timestamp
+            // Update Palmer's insight - clean, no quotes
             if (data.analysis) {
                 const now = new Date();
                 const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
                 insightContainer.innerHTML = `
-                    <div class="insight-text">"${data.analysis}"</div>
+                    <div class="insight-text">${data.analysis}</div>
                     <div class="insight-meta">
                         <span class="insight-timestamp">Updated ${timeStr} ET</span>
-                        <span class="insight-tag">AI-Generated</span>
+                        <span class="insight-tag">AI</span>
                     </div>
                 `;
             } else {
@@ -296,6 +296,36 @@ function fetchPalmerDashboard() {
                 // Retry in 10 seconds
                 setTimeout(fetchPalmerDashboard, 10000);
                 return;
+            }
+            
+            // Update Monte Carlo forecast
+            const mcCard = document.getElementById('monte-carlo-card');
+            if (data.monte_carlo && mcCard) {
+                const mc = data.monte_carlo;
+                const expectedEl = document.getElementById('mc-expected');
+                const var95El = document.getElementById('mc-var95');
+                const winrateEl = document.getElementById('mc-winrate');
+                
+                if (mc.mean_pnl_pct !== undefined) {
+                    const expectedPct = (mc.mean_pnl_pct * 100).toFixed(1);
+                    expectedEl.textContent = `${expectedPct > 0 ? '+' : ''}${expectedPct}%`;
+                    expectedEl.classList.toggle('mc-positive', mc.mean_pnl_pct > 0);
+                }
+                
+                if (mc.var_95_pct !== undefined) {
+                    const var95Pct = (mc.var_95_pct * 100).toFixed(1);
+                    var95El.textContent = `${var95Pct}%`;
+                }
+                
+                if (mc.prob_positive !== undefined) {
+                    winrateEl.textContent = `${(mc.prob_positive * 100).toFixed(0)}%`;
+                    winrateEl.classList.toggle('mc-positive', mc.prob_positive > 0.5);
+                }
+                
+                mcCard.style.display = 'block';
+            } else if (mcCard) {
+                // Hide if no data
+                mcCard.style.display = 'none';
             }
             
             // Check for regime changes

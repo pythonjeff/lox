@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o-mini"
     FRED_API_KEY: str | None = None
     FMP_API_KEY: str | None = None
+    TRADING_ECONOMICS_API_KEY: str | None = None
 
     # Backwards-compatible snake_case accessors used across the codebase.
     # Pydantic v2 uses field names as attribute names; these properties allow both styles.
@@ -64,6 +65,10 @@ class Settings(BaseSettings):
     @property
     def fmp_api_key(self) -> str | None:
         return self.FMP_API_KEY
+
+    @property
+    def trading_economics_api_key(self) -> str | None:
+        return self.TRADING_ECONOMICS_API_KEY
 
     @property
     def price_source(self) -> str:

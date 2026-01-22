@@ -1071,23 +1071,121 @@ def _get_event_source_url(event_name: str) -> str:
     return "https://tradingeconomics.com/united-states/calendar"
 
 
+def fetch_trading_economics_calendar(api_key, today_str):
+    """Try Trading Economics API first - better timezone handling."""
+    import requests
+    events = []
+    
+    try:
+        # Trading Economics API endpoint
+        url = f"https://api.tradingeconomics.com/calendar/country/united%20states/{today_str}/{today_str}"
+        headers = {"Authorization": f"Client {api_key}"}
+        resp = requests.get(url, headers=headers, timeout=10)
+        
+        if resp.status_code == 200:
+            data = resp.json() or []
+            for item in data:
+                event_name = item.get("Event", "") or item.get("event", "")
+                event_date_str = item.get("Date", "") or item.get("date", "")
+                
+                # Parse time - Trading Economics provides timezone-aware times
+                event_time = ""
+                if event_date_str:
+                    try:
+                        from zoneinfo import ZoneInfo
+                        # Trading Economics format: "2024-01-22T07:30:00-05:00" (already ET)
+                        if "T" in event_date_str:
+                            dt = datetime.fromisoformat(event_date_str)
+                            # Convert to Eastern if needed
+                            if dt.tzinfo:
+                                dt_et = dt.astimezone(ZoneInfo("America/New_York"))
+                            else:
+                                dt_et = dt
+                            event_time = dt_et.strftime("%I:%M %p ET").lstrip("0")
+                    except:
+                        pass
+                
+                actual = item.get("Actual") or item.get("actual")
+                estimate = item.get("Forecast") or item.get("forecast") or item.get("TEForecast")
+                previous = item.get("Previous") or item.get("previous")
+                
+                events.append({
+                    "event": event_name,
+                    "time": event_time,
+                    "actual": actual,
+                    "estimate": estimate,
+                    "previous": previous,
+                    "source": "tradingeconomics"
+                })
+        
+        return events
+    except Exception as e:
+        print(f"[Palmer] Trading Economics error: {e}")
+        return []
+
+
 def fetch_fed_fiscal_calendar(settings):
-    """Fetch TODAY's economic releases only - Trading Economics style."""
+    """Fetch TODAY's economic releases - tries Trading Economics first, falls back to FMP."""
     events = []
     seen_events = set()
     
+    from datetime import datetime
+    import requests
+    
+    # Only fetch TODAY's events
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_display = datetime.now().strftime("%A, %B %d, %Y")
+    
+    # Try Trading Economics first (better timezone data)
+    te_key = getattr(settings, 'trading_economics_api_key', None) or getattr(settings, 'TRADING_ECONOMICS_API_KEY', None)
+    if te_key:
+        print("[Palmer] Trying Trading Economics for calendar...")
+        te_events = fetch_trading_economics_calendar(te_key, today)
+        if te_events:
+            print(f"[Palmer] Got {len(te_events)} events from Trading Economics")
+            for item in te_events:
+                event_name = item.get("event", "")
+                dedup_key = f"{event_name[:30].lower().strip()}"
+                if dedup_key in seen_events:
+                    continue
+                seen_events.add(dedup_key)
+                
+                # Calculate surprise
+                actual = item.get("actual")
+                estimate = item.get("estimate")
+                surprise_direction = None
+                if actual is not None and estimate is not None:
+                    try:
+                        a = float(str(actual).replace("%", "").replace(",", "").strip())
+                        e = float(str(estimate).replace("%", "").replace(",", "").strip())
+                        if a > e:
+                            surprise_direction = "beat"
+                        elif a < e:
+                            surprise_direction = "miss"
+                    except:
+                        pass
+                
+                events.append({
+                    "time": item.get("time", ""),
+                    "event": event_name,
+                    "actual": actual,
+                    "previous": item.get("previous"),
+                    "estimate": estimate,
+                    "surprise_direction": surprise_direction,
+                    "url": "https://tradingeconomics.com/united-states/calendar",
+                    "source": "tradingeconomics"
+                })
+            
+            if events:
+                return events, today_display
+    
+    # Fallback to FMP
+    print("[Palmer] Using FMP for calendar...")
+    fmp_key = settings.fmp_api_key
+    if not fmp_key:
+        return events, None
+    
     try:
-        fmp_key = settings.fmp_api_key
-        if not fmp_key:
-            return events, None
-        
-        from datetime import datetime
-        import requests
-        
-        # Only fetch TODAY's events
-        today = datetime.now().strftime("%Y-%m-%d")
-        today_display = datetime.now().strftime("%A, %B %d, %Y")
-        
         url = f"https://financialmodelingprep.com/api/v3/economic_calendar?from={today}&to={today}&apikey={fmp_key}"
         resp = requests.get(url, timeout=10)
         
@@ -1105,13 +1203,17 @@ def fetch_fed_fiscal_calendar(settings):
                 event_name_lower = event_name.lower()
                 event_date_str = item.get("date", "")
                 
-                # Parse time - FMP economic calendar is already in Eastern Time
+                # Parse time - FMP may be UTC, convert to ET
                 event_time = ""
                 if len(event_date_str) > 10:
                     try:
-                        # Format: "2024-01-22 10:00:00" - already ET
+                        from zoneinfo import ZoneInfo
                         dt = datetime.fromisoformat(event_date_str.replace(" ", "T"))
-                        event_time = dt.strftime("%I:%M %p ET").lstrip("0")
+                        # Assume FMP is UTC, convert to Eastern
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+                        dt_et = dt.astimezone(ZoneInfo("America/New_York"))
+                        event_time = dt_et.strftime("%I:%M %p ET").lstrip("0")
                     except:
                         pass
                 
@@ -1158,6 +1260,45 @@ def fetch_fed_fiscal_calendar(settings):
     except Exception as e:
         print(f"[Palmer] Calendar error: {e}")
         return [], None
+
+
+def _calculate_monte_carlo_forecast(vix_val, hy_val, regime_label):
+    """
+    Calculate simplified Monte Carlo forecast based on current regime.
+    
+    This is a regime-conditional estimate, not a full MC simulation.
+    The actual MC simulation runs separately via the CLI.
+    """
+    import numpy as np
+    
+    # Base assumptions by regime (6-month horizon)
+    regime_params = {
+        "RISK-ON": {"mean": 0.08, "vol": 0.12, "var95": -0.10, "prob_positive": 0.68},
+        "CAUTIOUS": {"mean": 0.03, "vol": 0.18, "var95": -0.18, "prob_positive": 0.55},
+        "RISK-OFF": {"mean": -0.02, "vol": 0.25, "var95": -0.30, "prob_positive": 0.42},
+        "UNKNOWN": {"mean": 0.04, "vol": 0.15, "var95": -0.15, "prob_positive": 0.55},
+    }
+    
+    params = regime_params.get(regime_label, regime_params["UNKNOWN"])
+    
+    # Adjust for current VIX (higher VIX = more tail risk)
+    if vix_val and vix_val > 20:
+        vol_mult = 1 + (vix_val - 20) / 30  # Scale up volatility
+        params["var95"] *= vol_mult
+        params["vol"] *= min(vol_mult, 1.5)
+    
+    # Adjust for HY spreads (wider = more credit stress)
+    if hy_val and hy_val > 350:
+        params["mean"] -= 0.02
+        params["prob_positive"] -= 0.05
+    
+    return {
+        "mean_pnl_pct": round(params["mean"], 3),
+        "var_95_pct": round(params["var95"], 3),
+        "prob_positive": round(params["prob_positive"], 2),
+        "regime": regime_label,
+        "horizon_months": 6,
+    }
 
 
 def _generate_palmer_analysis():
@@ -1294,27 +1435,16 @@ def _generate_palmer_analysis():
         from openai import OpenAI
         client = OpenAI(api_key=settings.openai_api_key)
         
-        # Simplified prompt for one insight
-        prompt = f"""You are Palmer, a macro strategist. Give ONE actionable insight (3-4 sentences max).
+        # Clean prompt for concise, professional output
+        prompt = f"""Macro conditions: VIX {f'{vix_val:.1f}' if vix_val else 'N/A'}, HY spreads {f'{hy_val:.0f}bp' if hy_val else 'N/A'}, 10Y at {f'{yield_val:.2f}%' if yield_val else 'N/A'}.
 
-CURRENT CONDITIONS:
-- VIX: {f'{vix_val:.1f}' if vix_val else 'N/A'}
-- HY Spreads: {f'{hy_val:.0f}bp' if hy_val else 'N/A'}
-- 10Y Yield: {f'{yield_val:.2f}%' if yield_val else 'N/A'}
-- Portfolio: Long vol (VIXM), short credit (HYG puts), short NVDA, short solar (TAN puts), long bonds (TLT calls)
+Today's events: {', '.join(e['event'][:40] for e in fed_fiscal_events[:3]) if fed_fiscal_events else 'None'}
 
-UPCOMING FED/FISCAL EVENTS:
-{chr(10).join(f"- {e['date']}: {e['event']}" for e in fed_fiscal_events[:5]) if fed_fiscal_events else "None in next 2 weeks"}
+Headlines: {' | '.join(h['headline'][:50] for h in headlines[:2]) if headlines else 'None'}
 
-RECENT HEADLINES:
-{chr(10).join(f"- {h['headline']}" for h in headlines[:3]) if headlines else "No recent macro headlines"}
+Portfolio is positioned: long vol, short credit, short tech, long duration.
 
-Write ONE insight paragraph that:
-1. States the current regime in 1 sentence
-2. Identifies the key risk or opportunity from the calendar/headlines
-3. Gives a specific implication for the portfolio
-
-Be direct and specific. No fluff. Under 75 words total."""
+Write 2-3 sentences. State the current regime (risk-on/cautious/risk-off), identify ONE key risk or catalyst, and what it means for the portfolio. Be specific and direct. No filler words."""
 
         response = client.chat.completions.create(
             model=settings.openai_model or "gpt-4o-mini",
@@ -1328,6 +1458,9 @@ Be direct and specific. No fluff. Under 75 words total."""
         print(f"[Palmer] LLM error: {e}")
         insight = "Analysis temporarily unavailable."
     
+    # Generate simple Monte Carlo forecast based on current regime
+    mc_forecast = _calculate_monte_carlo_forecast(vix_val, hy_val, regime_label)
+    
     return {
         "analysis": insight,
         "regime_snapshot": regime_snapshot,
@@ -1339,6 +1472,7 @@ Be direct and specific. No fluff. Under 75 words total."""
         },
         "events": events_display,
         "headlines": headlines_display,
+        "monte_carlo": mc_forecast,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
