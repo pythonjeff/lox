@@ -865,6 +865,86 @@ tbody tr:hover {
     color: var(--accent-blue);
 }
 
+/* Clean Calendar Items */
+.cal-item {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    background: var(--bg-light);
+    border-radius: 8px;
+    border-left: 3px solid var(--bg-border);
+    transition: all 0.15s ease;
+    animation: slideIn 0.3s ease-out both;
+}
+
+.cal-item:nth-child(1) { animation-delay: 0.05s; }
+.cal-item:nth-child(2) { animation-delay: 0.10s; }
+.cal-item:nth-child(3) { animation-delay: 0.15s; }
+
+.cal-item.beat { border-left-color: var(--green); }
+.cal-item.miss { border-left-color: var(--red); }
+
+.cal-item:hover {
+    transform: translateX(2px);
+}
+
+.cal-time {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
+    min-width: 70px;
+    flex-shrink: 0;
+}
+
+.cal-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.cal-event {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    line-height: 1.3;
+}
+
+.cal-comparison {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-family: 'SF Mono', 'Monaco', monospace;
+}
+
+.cal-actual {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.cal-actual.cal-beat {
+    color: var(--green);
+}
+
+.cal-actual.cal-miss {
+    color: var(--red);
+}
+
+.cal-vs {
+    color: var(--text-dim);
+    font-size: 10px;
+    font-family: inherit;
+}
+
+.cal-estimate {
+    color: var(--text-dim);
+}
+
+.cal-pending {
+    color: var(--text-dim);
+    font-style: italic;
+}
+
 /* Uniform Grid Items */
 .grid-item {
     display: flex;
@@ -1566,75 +1646,92 @@ tbody tr:hover {
     border-radius: 0 6px 6px 0;
 }
 
-/* Monte Carlo Card */
-.monte-carlo-card {
-    background: linear-gradient(135deg, #0c4a6e 0%, #164e63 100%);
+/* LOX Forecast Card */
+.forecast-card {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
     border-radius: 12px;
     padding: 20px 24px;
     margin-top: 16px;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.08);
     animation: fadeIn 0.4s ease-out both;
     animation-delay: 0.3s;
 }
 
-.mc-header {
+.forecast-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
+    margin-bottom: 20px;
 }
 
-.mc-title {
+.forecast-title {
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 1.5px;
-    color: rgba(255,255,255,0.9);
+    color: rgba(255,255,255,0.6);
 }
 
-.mc-subtitle {
+.forecast-regime {
     font-size: 10px;
-    color: rgba(255,255,255,0.5);
-    font-weight: 500;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 12px;
+    background: rgba(74, 222, 128, 0.15);
+    color: #4ade80;
+    letter-spacing: 0.5px;
 }
 
-.mc-metrics {
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
+.forecast-regime.cautious {
+    background: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
 }
 
-.mc-metric {
+.forecast-regime.risk-off {
+    background: rgba(248, 113, 113, 0.15);
+    color: #f87171;
+}
+
+.forecast-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+.forecast-metric {
     text-align: center;
-    flex: 1;
+    padding: 16px 12px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
 }
 
-.mc-label {
+.forecast-label {
     display: block;
     font-size: 9px;
     font-weight: 700;
     letter-spacing: 1px;
-    color: rgba(255,255,255,0.5);
-    text-transform: uppercase;
-    margin-bottom: 6px;
+    color: rgba(255,255,255,0.4);
+    margin-bottom: 8px;
 }
 
-.mc-value {
+.forecast-value {
     display: block;
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 700;
     color: #fff;
     font-family: 'SF Mono', 'Monaco', monospace;
 }
 
-.mc-value.mc-positive { color: #4ade80; }
-.mc-value.mc-risk { color: #fbbf24; }
+.forecast-value.positive { color: #4ade80; }
+.forecast-value.forecast-risk { color: #fbbf24; }
 
-.mc-divider {
-    width: 1px;
-    height: 40px;
-    background: rgba(255,255,255,0.15);
+.forecast-footer {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    font-size: 10px;
+    color: rgba(255,255,255,0.35);
+    text-align: center;
+    font-style: italic;
 }
 
 /* Responsive */
@@ -1727,21 +1824,29 @@ tbody tr:hover {
         grid-template-columns: repeat(2, 1fr);
     }
     
-    /* Monte Carlo mobile */
-    .monte-carlo-card {
+    /* Forecast card mobile */
+    .forecast-card {
         padding: 16px;
     }
     
-    .mc-metrics {
-        flex-direction: row;
+    .forecast-metrics {
+        grid-template-columns: 1fr;
+        gap: 10px;
     }
     
-    .mc-value {
-        font-size: 18px;
+    .forecast-metric {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px;
     }
     
-    .mc-divider {
-        height: 30px;
+    .forecast-label {
+        margin-bottom: 0;
+    }
+    
+    .forecast-value {
+        font-size: 20px;
     }
     
     /* Palmer grid mobile */

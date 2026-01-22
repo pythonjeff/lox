@@ -231,22 +231,39 @@ function fetchPalmerDashboard() {
                 `;
             }
             
-            // Update today's economic releases (uniform grid items - top 3)
+            // Update today's economic releases - clean professional format
             if (data.events && data.events.releases && data.events.releases.length > 0) {
                 const releases = data.events.releases.slice(0, 3);
                 
                 eventsContainer.innerHTML = releases.map(e => {
-                    const actualVal = e.actual !== null && e.actual !== undefined ? e.actual : '';
+                    const hasActual = e.actual !== null && e.actual !== undefined;
+                    const hasEstimate = e.estimate !== null && e.estimate !== undefined;
                     const indicatorClass = e.surprise_direction || '';
                     
-                    return `
-                        <div class="grid-item ${indicatorClass}">
-                            <div class="grid-item-left">
-                                <span class="grid-item-time">${e.time || ''}</span>
+                    // Format the comparison line
+                    let comparisonHtml = '';
+                    if (hasActual && hasEstimate) {
+                        const beatMiss = indicatorClass === 'beat' ? '▲' : indicatorClass === 'miss' ? '▼' : '';
+                        const beatMissClass = indicatorClass === 'beat' ? 'cal-beat' : indicatorClass === 'miss' ? 'cal-miss' : '';
+                        comparisonHtml = `
+                            <div class="cal-comparison">
+                                <span class="cal-actual ${beatMissClass}">${e.actual} ${beatMiss}</span>
+                                <span class="cal-vs">vs est</span>
+                                <span class="cal-estimate">${e.estimate}</span>
                             </div>
-                            <div class="grid-item-content">
-                                <span class="grid-item-title">${e.event}</span>
-                                ${actualVal ? `<span class="grid-item-meta">Actual: <span class="grid-item-value ${indicatorClass}">${actualVal}</span></span>` : ''}
+                        `;
+                    } else if (hasActual) {
+                        comparisonHtml = `<div class="cal-comparison"><span class="cal-actual">${e.actual}</span></div>`;
+                    } else if (hasEstimate) {
+                        comparisonHtml = `<div class="cal-comparison"><span class="cal-pending">Est: ${e.estimate}</span></div>`;
+                    }
+                    
+                    return `
+                        <div class="cal-item ${indicatorClass}">
+                            <div class="cal-time">${e.time || ''}</div>
+                            <div class="cal-content">
+                                <div class="cal-event">${e.event}</div>
+                                ${comparisonHtml}
                             </div>
                         </div>
                     `;
@@ -298,34 +315,37 @@ function fetchPalmerDashboard() {
                 return;
             }
             
-            // Update Monte Carlo forecast
-            const mcCard = document.getElementById('monte-carlo-card');
-            if (data.monte_carlo && mcCard) {
+            // Update LOX Forecast card
+            const forecastCard = document.getElementById('forecast-card');
+            if (data.monte_carlo && forecastCard) {
                 const mc = data.monte_carlo;
-                const expectedEl = document.getElementById('mc-expected');
-                const var95El = document.getElementById('mc-var95');
-                const winrateEl = document.getElementById('mc-winrate');
+                const expectedEl = document.getElementById('forecast-expected');
+                const var95El = document.getElementById('forecast-var95');
+                const winrateEl = document.getElementById('forecast-winrate');
+                const regimeEl = document.getElementById('forecast-regime');
                 
-                if (mc.mean_pnl_pct !== undefined) {
+                if (mc.mean_pnl_pct !== undefined && expectedEl) {
                     const expectedPct = (mc.mean_pnl_pct * 100).toFixed(1);
                     expectedEl.textContent = `${expectedPct > 0 ? '+' : ''}${expectedPct}%`;
-                    expectedEl.classList.toggle('mc-positive', mc.mean_pnl_pct > 0);
+                    expectedEl.classList.toggle('positive', mc.mean_pnl_pct > 0);
                 }
                 
-                if (mc.var_95_pct !== undefined) {
+                if (mc.var_95_pct !== undefined && var95El) {
                     const var95Pct = (mc.var_95_pct * 100).toFixed(1);
                     var95El.textContent = `${var95Pct}%`;
                 }
                 
-                if (mc.prob_positive !== undefined) {
+                if (mc.prob_positive !== undefined && winrateEl) {
                     winrateEl.textContent = `${(mc.prob_positive * 100).toFixed(0)}%`;
-                    winrateEl.classList.toggle('mc-positive', mc.prob_positive > 0.5);
+                    winrateEl.classList.toggle('positive', mc.prob_positive > 0.5);
                 }
                 
-                mcCard.style.display = 'block';
-            } else if (mcCard) {
-                // Hide if no data
-                mcCard.style.display = 'none';
+                if (mc.regime && regimeEl) {
+                    regimeEl.textContent = mc.regime;
+                    regimeEl.classList.remove('cautious', 'risk-off');
+                    if (mc.regime === 'CAUTIOUS') regimeEl.classList.add('cautious');
+                    if (mc.regime === 'RISK-OFF') regimeEl.classList.add('risk-off');
+                }
             }
             
             // Check for regime changes
