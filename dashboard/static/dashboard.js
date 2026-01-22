@@ -155,7 +155,6 @@ function updateDashboard() {
             tbody.innerHTML = data.positions.map(pos => {
                 const pnlClass = pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
                 let optDetails = '';
-                let theory = '';
                 
                 if (pos.opt_info) {
                     // Normalize opt_type to C or P for display
@@ -166,30 +165,10 @@ function updateDashboard() {
                         type = 'P';
                     }
                     optDetails = `<div class="opt-details">${pos.opt_info.expiry} | Strike ${pos.opt_info.strike}${type}</div>`;
-                    
-                    // Theory for options
-                    const underlying = pos.opt_info.underlying || pos.symbol.split('/')[0];
-                    const isLong = pos.qty > 0;
-                    const isCall = type === 'C';
-                    
-                    if (isLong && isCall) {
-                        theory = `↑ ${underlying} rises, IV expands`;
-                    } else if (isLong && !isCall) {
-                        theory = `↓ ${underlying} falls, IV expands`;
-                    } else if (!isLong && isCall) {
-                        theory = `↓ ${underlying} stays down, IV crushes`;
-                    } else {
-                        theory = `↑ ${underlying} stays up, IV crushes`;
-                    }
-                } else {
-                    // Theory for stocks/ETFs
-                    const isLong = pos.qty > 0;
-                    if (isLong) {
-                        theory = `↑ Price appreciation`;
-                    } else {
-                        theory = `↓ Price decline`;
-                    }
                 }
+                
+                // Use LLM-generated theory from API, fallback to simple if missing
+                const theory = pos.theory || (pos.qty > 0 ? '↑ Price appreciation' : '↓ Price decline');
                 
                 // Combined P&L display ($ and % together)
                 const pnlDisplay = `

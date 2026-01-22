@@ -300,6 +300,105 @@ def _fetch_stock_quote(data_client, symbol: str) -> dict:
     return None
 
 
+def _generate_position_theory(position, regime_context, settings):
+    """
+    Generate intelligent macro-aware theory for a position using LLM.
+    
+    Returns a brief (max 50 chars) explanation of what market conditions
+    would make this position profitable, considering current regime.
+    """
+    try:
+        if not settings or not hasattr(settings, 'openai_api_key') or not settings.openai_api_key:
+            return _simple_position_theory(position)
+        
+        from openai import OpenAI
+        client = OpenAI(api_key=settings.openai_api_key)
+        
+        symbol = position.get("symbol", "")
+        qty = position.get("qty", 0)
+        opt_info = position.get("opt_info")
+        
+        # Build position description
+        if opt_info:
+            underlying = opt_info.get("underlying", symbol.split('/')[0] if '/' in symbol else symbol[:3])
+            # Handle both "opt_type" and "type" keys
+            opt_type = opt_info.get("opt_type", opt_info.get("type", "")).upper()
+            strike = opt_info.get("strike", "")
+            expiry = opt_info.get("expiry", "")
+            is_long = qty > 0
+            is_call = opt_type in ['C', 'CALL']
+            
+            pos_desc = f"{'Long' if is_long else 'Short'} {opt_type} on {underlying} (strike {strike}, expires {expiry})"
+        else:
+            underlying = symbol
+            is_long = qty > 0
+            pos_desc = f"{'Long' if is_long else 'Short'} {underlying}"
+        
+        # Get current macro context
+        vix = regime_context.get("vix", "N/A")
+        hy_spread = regime_context.get("hy_oas_bps", "N/A")
+        yield_10y = regime_context.get("yield_10y", "N/A")
+        regime = regime_context.get("regime", "UNKNOWN")
+        
+        prompt = f"""Position: {pos_desc}
+Current regime: {regime}
+Macro: VIX {vix}, HY spreads {hy_spread}bp, 10Y {yield_10y}%
+
+In 1 sentence (max 50 chars), what market conditions would make this profitable?
+Consider: regime shifts, volatility, rates, credit spreads, sector dynamics.
+
+Be specific and actionable. Examples:
+- "Risk-off spike → VIX >25, credit widens"
+- "Growth outperforms → rates fall, tech rallies"
+- "China stress → FXI breaks support, vol expands"
+
+Theory:"""
+        
+        response = client.chat.completions.create(
+            model=settings.openai_model or "gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=80,
+        )
+        
+        theory = response.choices[0].message.content.strip()
+        # Truncate to 50 chars for table display
+        if len(theory) > 50:
+            theory = theory[:47] + "..."
+        
+        return theory
+        
+    except Exception as e:
+        print(f"[Theory] LLM error for {symbol}: {e}")
+        return _simple_position_theory(position)
+
+
+def _simple_position_theory(position):
+    """Fallback simple theory if LLM fails."""
+    symbol = position.get("symbol", "")
+    qty = position.get("qty", 0)
+    opt_info = position.get("opt_info")
+    
+    if opt_info:
+        underlying = opt_info.get("underlying", symbol.split('/')[0] if '/' in symbol else symbol[:3])
+        # Handle both "opt_type" and "type" keys
+        opt_type = opt_info.get("opt_type", opt_info.get("type", "")).upper()
+        is_long = qty > 0
+        is_call = opt_type in ['C', 'CALL']
+        
+        if is_long and is_call:
+            return f"↑ {underlying} rises, IV expands"
+        elif is_long and not is_call:
+            return f"↓ {underlying} falls, IV expands"
+        elif not is_long and is_call:
+            return f"↓ {underlying} stays down, IV crushes"
+        else:
+            return f"↑ {underlying} stays up, IV crushes"
+    else:
+        is_long = qty > 0
+        return f"{'↑' if is_long else '↓'} Price {'appreciation' if is_long else 'decline'}"
+
+
 def get_positions_data():
     """Fetch positions and calculate P&L using conservative bid/ask marking."""
     try:
@@ -339,6 +438,38 @@ def get_positions_data():
         
         # Total P&L = NAV - original capital
         total_pnl = nav_equity - original_capital
+        
+        # Get regime context for intelligent theory generation
+        try:
+            hy_oas = get_hy_oas()
+            vix = get_vix()
+            yield_10y = get_10y_yield()
+            
+            # Determine regime
+            vix_val = vix.get("value") if vix else None
+            hy_val = hy_oas.get("value") if hy_oas else None
+            
+            def get_regime_label(vix_val, hy_val):
+                if vix_val is None:
+                    return "UNKNOWN"
+                if vix_val > 25 or (hy_val and hy_val > 400):
+                    return "RISK-OFF"
+                elif vix_val > 18 or (hy_val and hy_val > 350):
+                    return "CAUTIOUS"
+                else:
+                    return "RISK-ON"
+            
+            regime_label = get_regime_label(vix_val, hy_val)
+            
+            regime_context = {
+                "vix": f"{vix_val:.1f}" if vix_val else "N/A",
+                "hy_oas_bps": f"{hy_val:.0f}" if hy_val else "N/A",
+                "yield_10y": f"{yield_10y.get('value'):.2f}%" if yield_10y and yield_10y.get('value') else "N/A",
+                "regime": regime_label,
+            }
+        except Exception as e:
+            print(f"[Positions] Could not fetch regime context: {e}")
+            regime_context = {"vix": "N/A", "hy_oas_bps": "N/A", "yield_10y": "N/A", "regime": "UNKNOWN"}
         
         positions_list = []
         total_liquidation_value = 0.0
@@ -432,7 +563,8 @@ def get_positions_data():
                 
                 total_liquidation_value += liquidation_value
                 
-                positions_list.append({
+                # Generate intelligent theory for this position
+                position_dict = {
                     "symbol": symbol,
                     "qty": qty,
                     "market_value": liquidation_value,  # Now using liquidation value
@@ -441,7 +573,13 @@ def get_positions_data():
                     "current_price": liquidation_price,  # Show liquidation price
                     "opt_info": opt_info,
                     "bid_ask_mark": True,  # Flag that this is conservatively marked
-                })
+                }
+                
+                # Generate macro-aware theory
+                theory = _generate_position_theory(position_dict, regime_context, settings)
+                position_dict["theory"] = theory
+                
+                positions_list.append(position_dict)
             except Exception as pos_err:
                 print(f"Warning: Error processing position: {pos_err}")
                 continue
