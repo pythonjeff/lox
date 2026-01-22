@@ -1633,26 +1633,145 @@ def _generate_palmer_analysis():
             "url": h.get("url", ""),
         })
     
-    # Generate LLM insight (just one focused paragraph)
+    # Generate LLM insight with technical depth
     try:
         from openai import OpenAI
         client = OpenAI(api_key=settings.openai_api_key)
         
-        # Clean prompt with actual portfolio positioning
-        prompt = f"""Macro: VIX {f'{vix_val:.1f}' if vix_val else 'N/A'}, HY spreads {f'{hy_val:.0f}bp' if hy_val else 'N/A'}, 10Y {f'{yield_val:.2f}%' if yield_val else 'N/A'}.
+        # Build rich context for technical analysis
+        # VIX context: percentile positioning and term structure implications
+        vix_context = ""
+        if vix_val:
+            if vix_val < 14:
+                vix_context = f"VIX {vix_val:.1f} (5th-15th percentile, complacency zone—put premium compressed, hedges cheap)"
+            elif vix_val < 18:
+                vix_context = f"VIX {vix_val:.1f} (25th-45th percentile, normal regime—balanced risk/reward on vol)"
+            elif vix_val < 22:
+                vix_context = f"VIX {vix_val:.1f} (50th-70th percentile, elevated—event risk priced, hedges more expensive)"
+            elif vix_val < 28:
+                vix_context = f"VIX {vix_val:.1f} (75th-90th percentile, stressed—volatility term structure likely inverted)"
+            else:
+                vix_context = f"VIX {vix_val:.1f} (>90th percentile, crisis mode—vol selling opportunities emerging but timing risk high)"
+        
+        # HY OAS context: credit cycle positioning
+        hy_context = ""
+        if hy_val:
+            if hy_val < 300:
+                hy_context = f"HY OAS {hy_val:.0f}bp (tight spreads, late-cycle credit optimism—risk/reward unfavorable for HY longs)"
+            elif hy_val < 350:
+                hy_context = f"HY OAS {hy_val:.0f}bp (normal range, credit benign—watch for spread compression exhaustion)"
+            elif hy_val < 450:
+                hy_context = f"HY OAS {hy_val:.0f}bp (widening, early stress signals—correlation to equity rising)"
+            else:
+                hy_context = f"HY OAS {hy_val:.0f}bp (stressed, dislocation zone—credit leading equities lower, contagion risk)"
+        
+        # 10Y context: real rate and duration regime
+        rate_context = ""
+        if yield_val:
+            if yield_val < 3.5:
+                rate_context = f"10Y {yield_val:.2f}% (dovish regime, duration tailwind—growth concerns dominating)"
+            elif yield_val < 4.2:
+                rate_context = f"10Y {yield_val:.2f}% (neutral range, Fed at terminal—duration neutral)"
+            elif yield_val < 4.7:
+                rate_context = f"10Y {yield_val:.2f}% (restrictive, term premium rebuilding—duration drag on growth assets)"
+            else:
+                rate_context = f"10Y {yield_val:.2f}% (hawkish extreme, fiscal supply pressure—equity multiple compression zone)"
+        
+        # Portfolio transmission mechanism (defensive coding)
+        portfolio_positions = positions_data.get("positions", []) if positions_data else []
+        portfolio_greeks = {
+            "delta_pct": positions_data.get("return_pct", 0) if positions_data else 0,
+            "long_vol": any("VIXM" in str(p.get("symbol", "") or "") or "VIX" in str(p.get("symbol", "") or "") for p in portfolio_positions),
+            "short_credit": any("HYG" in str(p.get("symbol", "") or "") and (p.get("qty") or 0) < 0 for p in portfolio_positions) or any("HYG" in str((p.get("opt_info") or {}).get("underlying", "")) for p in portfolio_positions if (p.get("opt_info") or {}).get("opt_type") == "P"),
+            "em_exposure": any(ticker in str(p.get("symbol", "") or "") for p in portfolio_positions for ticker in ["FXI", "EEM", "EWZ", "EWY"]),
+        }
+        
+        # Format events with economic significance
+        events_context = ""
+        if fed_fiscal_events:
+            event_details = []
+            for e in fed_fiscal_events[:5]:
+                evt_name = e.get("event", "")
+                actual = e.get("actual")
+                estimate = e.get("estimate")
+                
+                # Determine economic significance
+                if "PCE" in evt_name or "CPI" in evt_name:
+                    sig = "inflation gauge—Fed reaction function driver"
+                elif "Payroll" in evt_name or "Employment" in evt_name or "Jobless" in evt_name:
+                    sig = "labor market—recession probability input"
+                elif "GDP" in evt_name:
+                    sig = "growth confirmation—earnings revision catalyst"
+                elif "ISM" in evt_name or "PMI" in evt_name:
+                    sig = "leading indicator—manufacturing cycle signal"
+                elif "Retail" in evt_name:
+                    sig = "consumer health—consumption resilience"
+                elif "FOMC" in evt_name or "Fed" in evt_name:
+                    sig = "policy signal—rate path recalibration"
+                else:
+                    sig = "macro data point"
+                
+                if actual is not None and estimate is not None:
+                    try:
+                        diff = float(actual) - float(estimate)
+                        direction = "beat" if diff > 0 else "miss"
+                        event_details.append(f"{evt_name}: {actual} vs {estimate} est ({direction}, {sig})")
+                    except:
+                        event_details.append(f"{evt_name}: {actual} ({sig})")
+                elif actual is not None:
+                    event_details.append(f"{evt_name}: {actual} ({sig})")
+                else:
+                    event_details.append(f"{evt_name} pending ({sig})")
+            events_context = "; ".join(event_details[:3])
+        
+        # Format headlines with market relevance
+        news_context = ""
+        if headlines:
+            news_items = []
+            for h in headlines[:3]:
+                headline = h.get("headline", "") if h else ""
+                ticker = h.get("ticker", "") if h else ""
+                # Add relevance tag
+                if ticker and any(ticker in str(p.get("symbol", "") or "") or ticker in str((p.get("opt_info") or {}).get("underlying", "")) for p in portfolio_positions):
+                    news_items.append(f"{headline} [POSITION-RELEVANT: {ticker}]")
+                else:
+                    news_items.append(headline)
+            news_context = " | ".join(news_items)
+        
+        # Construct technically rigorous prompt
+        prompt = f"""You are a macro strategist at a systematic hedge fund. Provide a TECHNICAL assessment (not sentiment).
 
-Events: {', '.join(e['event'][:35] for e in fed_fiscal_events[:3]) if fed_fiscal_events else 'None today'}
+QUANTITATIVE CONTEXT:
+- {vix_context}
+- {hy_context}
+- {rate_context}
+- Regime: {regime_label} (VIX/HY-based classification)
 
-News: {' | '.join(h['headline'][:45] for h in headlines[:2]) if headlines else 'None'}
+ECONOMIC CALENDAR:
+{events_context if events_context else "No releases today"}
 
-Portfolio: {portfolio_desc}
+MARKET HEADLINES:
+{news_context if news_context else "No relevant headlines"}
 
-Write 2-3 sentences max. Name the regime (risk-on/cautious/risk-off), cite ONE specific catalyst from events or news, explain what it means for this portfolio's P&L. Direct and specific."""
+PORTFOLIO EXPOSURE:
+{portfolio_desc}
+Long vol: {'Yes' if portfolio_greeks['long_vol'] else 'No'} | EM exposure: {'Yes' if portfolio_greeks['em_exposure'] else 'No'}
+
+TASK: Write 2-3 sentences maximum. Be precise and technical:
+1. State regime with QUANTITATIVE anchor (VIX percentile, HY spread level)
+2. Name the PRIMARY transmission: [data/event] → [mechanism] → [portfolio impact]
+3. Cite ONE specific threshold or magnitude (e.g., "10Y above 4.50% compresses multiples ~5%")
+
+Rules:
+- No sentiment language ("confidence", "optimism")
+- No hedging ("could", "might")
+- Use: "→" for causality chains
+- Be direct about portfolio positioning"""
 
         response = client.chat.completions.create(
             model=settings.openai_model or "gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
+            temperature=0.15,
             max_tokens=200,
         )
         
