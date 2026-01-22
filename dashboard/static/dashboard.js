@@ -155,6 +155,8 @@ function updateDashboard() {
             tbody.innerHTML = data.positions.map(pos => {
                 const pnlClass = pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
                 let optDetails = '';
+                let theory = '';
+                
                 if (pos.opt_info) {
                     // Normalize opt_type to C or P for display
                     let type = 'P';
@@ -164,7 +166,36 @@ function updateDashboard() {
                         type = 'P';
                     }
                     optDetails = `<div class="opt-details">${pos.opt_info.expiry} | Strike ${pos.opt_info.strike}${type}</div>`;
+                    
+                    // Theory for options
+                    const underlying = pos.opt_info.underlying || pos.symbol.split('/')[0];
+                    const isLong = pos.qty > 0;
+                    const isCall = type === 'C';
+                    
+                    if (isLong && isCall) {
+                        theory = `↑ ${underlying} rises, IV expands`;
+                    } else if (isLong && !isCall) {
+                        theory = `↓ ${underlying} falls, IV expands`;
+                    } else if (!isLong && isCall) {
+                        theory = `↓ ${underlying} stays down, IV crushes`;
+                    } else {
+                        theory = `↑ ${underlying} stays up, IV crushes`;
+                    }
+                } else {
+                    // Theory for stocks/ETFs
+                    const isLong = pos.qty > 0;
+                    if (isLong) {
+                        theory = `↑ Price appreciation`;
+                    } else {
+                        theory = `↓ Price decline`;
+                    }
                 }
+                
+                // Combined P&L display ($ and % together)
+                const pnlDisplay = `
+                    <div class="pnl-amount ${pnlClass}">${formatCurrency(pos.pnl)}</div>
+                    <div class="pnl-percent ${pnlClass}">${formatPercent(pos.pnl_pct)}</div>
+                `;
                 
                 return `
                     <tr>
@@ -172,10 +203,10 @@ function updateDashboard() {
                             <div class="symbol">${formatSymbol(pos.symbol, pos.opt_info)}</div>
                             ${optDetails}
                         </td>
-                        <td>${pos.qty > 0 ? '+' : ''}${pos.qty.toFixed(0)}</td>
-                        <td>${formatCurrency(Math.abs(pos.market_value))}</td>
-                        <td class="${pnlClass}">${formatCurrency(pos.pnl)}</td>
-                        <td class="${pnlClass}">${formatPercent(pos.pnl_pct)}</td>
+                        <td class="qty-cell">${pos.qty > 0 ? '+' : ''}${pos.qty.toFixed(0)}</td>
+                        <td class="value-cell">${formatCurrency(Math.abs(pos.market_value))}</td>
+                        <td class="pnl-cell ${pnlClass}">${pnlDisplay}</td>
+                        <td class="theory-cell">${theory}</td>
                     </tr>
                 `;
             }).join('');

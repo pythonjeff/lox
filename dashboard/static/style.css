@@ -511,7 +511,8 @@ th {
     font-weight: 700;
 }
 
-th:last-child {
+th:nth-child(3),
+th:nth-child(4) {
     text-align: right;
 }
 
@@ -523,7 +524,8 @@ td {
     transition: background-color 0.15s ease;
 }
 
-td:last-child {
+td:nth-child(3),
+td:nth-child(4) {
     text-align: right;
 }
 
@@ -544,13 +546,46 @@ tbody tr:hover {
 
 .pnl-positive {
     color: var(--green);
-    font-weight: 600;
-    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 }
 
 .pnl-negative {
     color: var(--red);
+}
+
+.pnl-cell {
+    text-align: right;
+}
+
+.pnl-amount {
+    font-weight: 700;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    font-size: 14px;
+    margin-bottom: 2px;
+}
+
+.pnl-percent {
+    font-weight: 500;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    font-size: 11px;
+    opacity: 0.85;
+}
+
+.theory-cell {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-style: italic;
+    max-width: 200px;
+    line-height: 1.4;
+}
+
+.qty-cell {
+    text-align: center;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
     font-weight: 600;
+}
+
+.value-cell {
+    text-align: right;
     font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 }
 
@@ -1854,13 +1889,26 @@ tbody tr:hover {
     }
     
     #positions-table {
-        min-width: 500px;
+        min-width: 600px;
     }
     
     #positions-table th,
     #positions-table td {
         padding: 12px 8px;
-        font-size: 12px;
+        font-size: 11px;
+    }
+    
+    .theory-cell {
+        font-size: 10px;
+        max-width: 150px;
+    }
+    
+    .pnl-amount {
+        font-size: 13px;
+    }
+    
+    .pnl-percent {
+        font-size: 10px;
     }
     
     .analysis-header {
