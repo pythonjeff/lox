@@ -118,7 +118,7 @@ function updateDashboard() {
                 // Alpha vs S&P
                 if (data.alpha_sp500 !== undefined && data.alpha_sp500 !== null) {
                     const alpha = data.alpha_sp500;
-                    alphaSp500El.textContent = `α: ${alpha >= 0 ? '+' : ''}${alpha.toFixed(1)}%`;
+                    alphaSp500El.textContent = `${alpha >= 0 ? '+' : ''}${alpha.toFixed(1)}%`;
                     alphaSp500El.className = 'perf-alpha ' + (alpha >= 0 ? 'positive' : 'negative');
                 }
             } else {
@@ -137,7 +137,7 @@ function updateDashboard() {
                 // Alpha vs BTC
                 if (data.alpha_btc !== undefined && data.alpha_btc !== null) {
                     const alpha = data.alpha_btc;
-                    alphaBtcEl.textContent = `α: ${alpha >= 0 ? '+' : ''}${alpha.toFixed(1)}%`;
+                    alphaBtcEl.textContent = `${alpha >= 0 ? '+' : ''}${alpha.toFixed(1)}%`;
                     alphaBtcEl.className = 'perf-alpha ' + (alpha >= 0 ? 'positive' : 'negative');
                 }
             } else {

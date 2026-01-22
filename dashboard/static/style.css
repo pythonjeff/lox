@@ -62,8 +62,8 @@ body {
 /* LOX FUND Logo */
 .header {
     text-align: center;
-    margin-bottom: 48px;
-    padding-bottom: 32px;
+    margin-bottom: 40px;
+    padding-bottom: 28px;
     border-bottom: 1px solid var(--bg-border);
 }
 
@@ -177,9 +177,11 @@ body {
 .summary-item {
     background-color: var(--bg-card);
     border: 1px solid var(--bg-border);
-    border-radius: 10px;
-    padding: 24px;
-    text-align: center;
+    border-radius: 12px;
+    padding: 20px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     box-shadow: 0 1px 3px var(--shadow);
     transition: all 0.2s ease;
     animation: fadeIn 0.4s ease-out both;
@@ -191,17 +193,20 @@ body {
 .summary-item:nth-child(4) { animation-delay: 0.20s; }
 
 .summary-item:hover {
-    box-shadow: 0 4px 12px var(--shadow-hover);
-    transform: translateY(-2px);
+    box-shadow: 0 4px 16px var(--shadow-hover);
+    border-color: var(--accent-blue);
 }
 
 .summary-label {
     color: var(--text-dim);
     font-size: 11px;
     text-transform: uppercase;
-    letter-spacing: 1.2px;
-    margin-bottom: 10px;
+    letter-spacing: 1px;
+    margin-bottom: 0;
     font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .mark-tooltip {
@@ -219,10 +224,11 @@ body {
 }
 
 .summary-value {
-    font-size: 32px;
+    font-size: 28px;
     font-weight: 700;
     color: var(--text-primary);
     letter-spacing: -0.5px;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 }
 
 .summary-value.positive {
@@ -236,71 +242,86 @@ body {
 /* Performance Comparison Card */
 .performance-card {
     margin-top: 24px;
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
     border-radius: 16px;
-    padding: 24px 32px;
+    padding: 24px;
     color: white;
-    border: 1px solid rgba(255,255,255,0.05);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    border: 1px solid rgba(255,255,255,0.06);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.12);
 }
 
 .performance-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 20px;
 }
 
 .performance-header h3 {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(255, 255, 255, 0.4);
     text-transform: uppercase;
     letter-spacing: 1.5px;
     margin: 0;
 }
 
 .inception-date {
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.4);
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.3);
     font-weight: 500;
 }
 
 .performance-metrics {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr auto 1fr;
-    align-items: center;
+    display: flex;
+    flex-direction: column;
     gap: 0;
 }
 
 .perf-metric {
-    text-align: center;
-    padding: 0 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.perf-metric:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.perf-metric:first-child {
+    padding-top: 0;
 }
 
 .fund-return {
-    background: rgba(255,255,255,0.03);
-    padding: 16px;
-    border-radius: 12px;
-    margin: -8px;
+    background: none;
+    padding: 14px 0;
+    border-radius: 0;
+    margin: 0;
 }
 
 .perf-metric .perf-label {
-    font-size: 10px;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 600;
     color: rgba(255, 255, 255, 0.5);
     text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+}
+
+.perf-right {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
 }
 
 .perf-metric .perf-value {
-    font-size: 28px;
+    font-size: 22px;
     font-weight: 700;
     color: white;
     letter-spacing: -0.5px;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 }
 
 .perf-metric .perf-value.positive {
@@ -312,76 +333,31 @@ body {
 }
 
 .perf-vs {
-    font-size: 14px;
-    color: rgba(255, 255, 255, 0.4);
-    font-weight: 500;
+    display: none;
 }
 
 .perf-divider {
-    width: 1px;
-    height: 50px;
-    background-color: rgba(255, 255, 255, 0.2);
-    margin: 0 12px;
+    display: none;
 }
 
-/* Benchmark metrics with alpha underneath */
-.benchmark-metric {
-    min-width: 90px;
-}
-
+/* Alpha badge - inline with value */
 .perf-alpha {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
-    margin-top: 4px;
-    color: rgba(255, 255, 255, 0.5);
-}
-
-.perf-alpha.positive {
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(74, 222, 128, 0.15);
     color: #4ade80;
 }
 
 .perf-alpha.negative {
+    background: rgba(248, 113, 113, 0.15);
     color: #f87171;
 }
 
 /* BTC specific styling */
 .btc-metric .perf-label {
     color: #f7931a;
-}
-
-/* Responsive performance card */
-@media (max-width: 600px) {
-    .performance-metrics {
-        flex-direction: column;
-        gap: 0;
-    }
-    
-    .perf-vs {
-        display: none;
-    }
-    
-    .perf-divider {
-        display: none;
-    }
-    
-    .perf-metric {
-        width: 100%;
-        padding: 16px 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    
-    .perf-metric:last-child {
-        border-bottom: none;
-        padding-bottom: 0;
-    }
-    
-    .fund-return {
-        padding-top: 0;
-    }
-    
-    .perf-metric .perf-value {
-        font-size: 28px;
-    }
 }
 
 /* Macro Indicators Section */
@@ -486,15 +462,16 @@ body {
 
 /* Positions Section */
 .positions-section {
-    margin-top: 40px;
+    margin-top: 48px;
 }
 
 .positions-section h2 {
-    font-size: 22px;
+    font-size: 12px;
     font-weight: 700;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
     color: var(--text-primary);
-    letter-spacing: -0.3px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
 }
 
 .macro-section h2 {
@@ -513,22 +490,23 @@ table {
     width: 100%;
     border-collapse: collapse;
     background-color: var(--bg-card);
-    border-radius: 10px;
+    border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 1px 3px var(--shadow);
+    box-shadow: 0 2px 8px var(--shadow);
+    border: 1px solid var(--bg-border);
 }
 
 thead {
-    background-color: #f8f9fa;
+    background: linear-gradient(to bottom, #f8f9fa, #f5f5f5);
     border-bottom: 2px solid var(--bg-border);
 }
 
 th {
-    padding: 16px 20px;
+    padding: 14px 20px;
     text-align: left;
-    font-size: 11px;
+    font-size: 10px;
     text-transform: uppercase;
-    letter-spacing: 1.2px;
+    letter-spacing: 1px;
     color: var(--text-dim);
     font-weight: 700;
 }
@@ -538,18 +516,24 @@ th:last-child {
 }
 
 td {
-    padding: 18px 20px;
+    padding: 16px 20px;
     border-top: 1px solid var(--bg-border);
     color: var(--text-secondary);
     font-weight: 500;
+    transition: background-color 0.15s ease;
 }
 
 td:last-child {
     text-align: right;
 }
 
+tbody tr {
+    transition: all 0.15s ease;
+}
+
 tbody tr:hover {
-    background-color: #f8f9fa;
+    background-color: var(--bg-light);
+    transform: scale(1.001);
 }
 
 .loading {
@@ -561,11 +545,13 @@ tbody tr:hover {
 .pnl-positive {
     color: var(--green);
     font-weight: 600;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 }
 
 .pnl-negative {
     color: var(--red);
     font-weight: 600;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 }
 
 .pnl-pct {
@@ -1694,7 +1680,7 @@ tbody tr:hover {
 .forecast-metrics {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
+    gap: 12px;
 }
 
 .forecast-metric {
