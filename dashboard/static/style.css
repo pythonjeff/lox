@@ -236,51 +236,64 @@ body {
 /* Performance Comparison Card */
 .performance-card {
     margin-top: 24px;
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
     border-radius: 16px;
     padding: 24px 32px;
     color: white;
+    border: 1px solid rgba(255,255,255,0.05);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
 }
 
 .performance-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 
 .performance-header h3 {
-    font-size: 14px;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.7);
+    font-size: 12px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.5);
     text-transform: uppercase;
-    letter-spacing: 1px;
+    letter-spacing: 1.5px;
     margin: 0;
 }
 
 .inception-date {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.5);
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+    font-weight: 500;
 }
 
 .performance-metrics {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
     align-items: center;
-    justify-content: center;
-    gap: 24px;
+    gap: 0;
 }
 
 .perf-metric {
     text-align: center;
+    padding: 0 16px;
+}
+
+.fund-return {
+    background: rgba(255,255,255,0.03);
+    padding: 16px;
+    border-radius: 12px;
+    margin: -8px;
 }
 
 .perf-metric .perf-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.6);
+    font-size: 10px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.5);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 6px;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
 }
 
 .perf-metric .perf-value {
@@ -1553,28 +1566,219 @@ tbody tr:hover {
     border-radius: 0 6px 6px 0;
 }
 
+/* Monte Carlo Card */
+.monte-carlo-card {
+    background: linear-gradient(135deg, #0c4a6e 0%, #164e63 100%);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-top: 16px;
+    border: 1px solid rgba(255,255,255,0.1);
+    animation: fadeIn 0.4s ease-out both;
+    animation-delay: 0.3s;
+}
+
+.mc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.mc-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: rgba(255,255,255,0.9);
+}
+
+.mc-subtitle {
+    font-size: 10px;
+    color: rgba(255,255,255,0.5);
+    font-weight: 500;
+}
+
+.mc-metrics {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+}
+
+.mc-metric {
+    text-align: center;
+    flex: 1;
+}
+
+.mc-label {
+    display: block;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: rgba(255,255,255,0.5);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+
+.mc-value {
+    display: block;
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    font-family: 'SF Mono', 'Monaco', monospace;
+}
+
+.mc-value.mc-positive { color: #4ade80; }
+.mc-value.mc-risk { color: #fbbf24; }
+
+.mc-divider {
+    width: 1px;
+    height: 40px;
+    background: rgba(255,255,255,0.15);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .container {
-        padding: 20px;
+        padding: 16px;
     }
     
     .logo-lox {
-        font-size: 48px;
+        font-size: 42px;
     }
     
     .logo-fund {
+        font-size: 20px;
+    }
+    
+    /* Summary panel - stack on mobile */
+    .summary-panel {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+    
+    .summary-item {
+        padding: 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        text-align: left;
+    }
+    
+    .summary-label {
+        margin-bottom: 0;
+    }
+    
+    .summary-value {
+        font-size: 22px;
+    }
+    
+    /* Performance card mobile */
+    .performance-card {
+        padding: 20px;
+    }
+    
+    .performance-metrics {
+        grid-template-columns: 1fr;
+        gap: 0;
+    }
+    
+    .perf-vs, .perf-divider {
+        display: none;
+    }
+    
+    .perf-metric {
+        padding: 14px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        text-align: left;
+    }
+    
+    .perf-metric:last-child {
+        border-bottom: none;
+    }
+    
+    .fund-return {
+        margin: 0;
+        padding: 14px 0;
+        background: none;
+        border-radius: 0;
+    }
+    
+    .perf-metric .perf-value {
         font-size: 24px;
     }
     
-    .summary-panel {
+    .perf-alpha {
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+    }
+    
+    .benchmark-metric {
+        position: relative;
+    }
+    
+    /* Traffic lights mobile */
+    .traffic-lights {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    /* Monte Carlo mobile */
+    .monte-carlo-card {
+        padding: 16px;
+    }
+    
+    .mc-metrics {
+        flex-direction: row;
+    }
+    
+    .mc-value {
+        font-size: 18px;
+    }
+    
+    .mc-divider {
+        height: 30px;
+    }
+    
+    /* Palmer grid mobile */
+    .palmer-grid {
         grid-template-columns: 1fr;
+    }
+    
+    /* Positions table mobile */
+    .table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    #positions-table {
+        min-width: 500px;
+    }
+    
+    #positions-table th,
+    #positions-table td {
+        padding: 12px 8px;
+        font-size: 12px;
     }
     
     .analysis-header {
         flex-direction: column;
         align-items: flex-start;
         gap: 12px;
+    }
+    
+    /* Palmer insight mobile */
+    .palmer-insight {
+        padding: 20px;
+    }
+    
+    .insight-text {
+        font-size: 13px;
+        line-height: 1.6;
     }
 }
 

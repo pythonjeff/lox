@@ -30,6 +30,7 @@ def safe_load_settings() -> Settings | None:
                 OPENAI_MODEL=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
                 FRED_API_KEY=os.getenv("FRED_API_KEY"),
                 FMP_API_KEY=os.getenv("FMP_API_KEY"),
+                TRADING_ECONOMICS_API_KEY=os.getenv("TRADING_ECONOMICS_API_KEY"),
             )
         except Exception:
             return None
