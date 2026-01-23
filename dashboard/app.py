@@ -618,8 +618,27 @@ def get_positions_data():
         # Total P&L based on liquidation value (conservative)
         liquidation_pnl = liquidation_nav - original_capital
         
-        # Calculate return percentage based on liquidation
-        return_pct = (liquidation_pnl / original_capital * 100) if original_capital > 0 else 0.0
+        # Use TWR (Time-Weighted Return) from nav_sheet - excludes cash flow distortion
+        twr_pct = None
+        try:
+            nav_sheet_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_sheet.csv")
+            if os.path.exists(nav_sheet_path):
+                import csv
+                with open(nav_sheet_path, "r") as f:
+                    reader = csv.DictReader(f)
+                    rows = list(reader)
+                    if rows:
+                        # Get latest TWR cumulative (already a decimal, e.g. 0.128 = 12.8%)
+                        latest = rows[-1]
+                        twr_cum = latest.get("twr_cum", "")
+                        if twr_cum:
+                            twr_pct = float(twr_cum) * 100  # Convert to percentage
+        except Exception as twr_err:
+            print(f"[Positions] Could not read TWR: {twr_err}")
+        
+        # Fall back to simple return if TWR not available
+        simple_return_pct = (liquidation_pnl / original_capital * 100) if original_capital > 0 else 0.0
+        return_pct = twr_pct if twr_pct is not None else simple_return_pct
         
         # Get benchmark performance since inception for comparison
         sp500_return = get_sp500_return_since_inception()
