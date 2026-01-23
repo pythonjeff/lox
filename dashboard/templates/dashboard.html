@@ -4,6 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LOX FUND | Live Dashboard</title>
+    <meta name="description" content="Live performance metrics and portfolio dashboard for the LOX Fund.">
+    
+    <!-- Favicons -->
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='images/icons8-chart-material-two-tone-32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='images/icons8-chart-material-two-tone-16.png') }}">
+    
+    <!-- Open Graph / Social Share -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="LOX FUND | Live Dashboard">
+    <meta property="og:description" content="Live performance metrics and portfolio dashboard for the LOX Fund.">
+    <meta property="og:image" content="{{ url_for('static', filename='images/sushi.jpg', _external=True) }}">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="LOX FUND | Live Dashboard">
+    <meta name="twitter:description" content="Live performance metrics and portfolio dashboard for the LOX Fund.">
+    <meta name="twitter:image" content="{{ url_for('static', filename='images/sushi.jpg', _external=True) }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
