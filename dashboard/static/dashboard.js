@@ -99,11 +99,16 @@ function updateDashboard() {
             cashEl.textContent = formatCurrency(data.cash_available || 0);
             cashEl.className = 'summary-value';
 
-            // Update performance comparison
+            // Update performance comparison with flash animation
             const fundReturnEl = document.getElementById('fund-return');
             if (data.return_pct !== undefined) {
                 const returnVal = data.return_pct;
-                fundReturnEl.textContent = `${returnVal >= 0 ? '+' : ''}${returnVal.toFixed(2)}%`;
+                const newText = `${returnVal >= 0 ? '+' : ''}${returnVal.toFixed(2)}%`;
+                if (fundReturnEl.textContent !== newText && fundReturnEl.textContent !== '—') {
+                    fundReturnEl.classList.add('value-updated');
+                    setTimeout(() => fundReturnEl.classList.remove('value-updated'), 500);
+                }
+                fundReturnEl.textContent = newText;
                 fundReturnEl.className = 'perf-value ' + (returnVal >= 0 ? 'positive' : 'negative');
             }
             
@@ -540,11 +545,15 @@ fetchInvestors();
 fetchPalmerDashboard();
 updateFooterTimestamp();
 
-// Auto-refresh every 5 minutes (silent)
+// Live refresh for positions/performance (every 60 seconds)
 setInterval(() => {
     updateDashboard();
+    updateFooterTimestamp();
+}, 60000);
+
+// Slower refresh for historical data (every 5 minutes)
+setInterval(() => {
     fetchClosedTrades();
     fetchInvestors();
     fetchPalmerDashboard();
-    updateFooterTimestamp();
 }, 300000);
