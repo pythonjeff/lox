@@ -284,6 +284,36 @@ body {
     margin: 0;
 }
 
+.perf-header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.live-indicator {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 9px;
+    font-weight: 600;
+    color: #00c853;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.live-dot {
+    width: 6px;
+    height: 6px;
+    background: #00c853;
+    border-radius: 50%;
+    animation: pulse-live 2s ease-in-out infinite;
+}
+
+@keyframes pulse-live {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+}
+
 .inception-date {
     font-size: 10px;
     color: rgba(255, 255, 255, 0.3);
@@ -339,6 +369,12 @@ body {
     font-weight: 700;
     color: white;
     letter-spacing: -0.5px;
+    transition: background-color 0.3s ease;
+}
+
+.perf-metric .perf-value.value-updated {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
 }
 
 .perf-metric .perf-value.positive {
