@@ -39,14 +39,35 @@ Use `lox nav investor contribute` for real investor cash moves so both ledgers s
 ### 7) Idea generation from a link (LLM)
 - **`lox ideas event --url <URL> --thesis "..."`**: turn an article into structured hedge/trade ideas (optional execution).
 
-### 8) Power-user / Labs
+### 8) Interactive Research Chat (LLM)
+- **`lox chat`**: start interactive chat with portfolio context loaded.
+- **`lox chat -c fiscal`**: chat with US fiscal regime data (deficits, issuance, TGA).
+- **`lox chat -c funding`**: chat with funding/liquidity context (SOFR, repo, reserves).
+- **`lox chat -c macro`**: chat with macro regime context (inflation, growth).
+- **`lox chat -c regimes`**: chat with all regime classifications loaded.
+- **Ticker deep-dive**: ask about specific tickers (e.g., "tell me about FXI") for automatic snapshot, news, and analysis.
+
+### 9) Power-user / Labs
 - **`lox labs <module> ...`**: regime builders, datasets, diagnostics, legacy tools.
   - Examples:
     - `lox labs fiscal snapshot`
     - `lox labs rates snapshot`
-    - `lox labs regimes show`
+    - `lox labs funding snapshot`
+    - `lox labs vol --llm`
+    - `lox labs ticker outlook -t AAPL`
     - `lox labs ticker news -t NVDA`
+    - `lox labs mc-v01 --regime RISK_OFF --real`
+    - `lox labs hedge` (defensive trade ideas)
+    - `lox labs grow` (offensive trade ideas)
+
+### 10) Portfolio Analysis
+- **`lox status`**: quick portfolio health (NAV, P&L, cash).
+- **`lox status -v`**: with position details.
+- **`lox analyze --depth deep`**: full LLM portfolio analysis.
+- **`lox suggest --style defensive`**: trade ideas aligned to risk posture.
+- **`lox closed-trades`**: realized P&L from closed positions.
 
 ### Notes
 - Run **`lox <command> --help`** for flags.
 - Paper vs live is controlled by **`ALPACA_PAPER`** and **`--live`**.
+- All `--llm` flags require `OPENAI_API_KEY` in `.env`.
