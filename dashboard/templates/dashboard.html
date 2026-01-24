@@ -28,273 +28,298 @@
 </head>
 <body>
     <div class="container">
-        <!-- Header with LOX FUND branding -->
-        <header class="header">
-            <div class="logo-container">
-                <span class="logo-lox">LOX</span>
+        <!-- Compact Header -->
+        <header class="header-compact">
+            <div class="header-left">
+                <span class="logo-text">LOX</span>
                 <span class="logo-fund">FUND</span>
-                <div class="logo-underline"></div>
             </div>
-            <div class="header-subtitle">Portfolio Dashboard</div>
-            
-            <!-- Regime Change Alert (hidden by default) -->
-            <div class="regime-alert" id="regime-alert" style="display: none;">
-                <span class="alert-icon">⚡</span>
-                <span class="alert-text" id="alert-text">Regime shift detected</span>
-                <button class="alert-dismiss" onclick="dismissAlert()">×</button>
+            <div class="header-right">
+                <span class="live-indicator"><span class="live-dot"></span>LIVE</span>
+                <span class="header-timestamp" id="header-timestamp">—</span>
             </div>
         </header>
 
-        <!-- Summary Panel -->
-        <section class="summary-panel">
-            <div class="summary-item">
-                <div class="summary-label">Liquidation NAV<span class="mark-tooltip" title="Longs at bid, shorts at ask">ⓘ</span></div>
-                <div class="summary-value" id="nav-value">—</div>
-            </div>
-            <div class="summary-item">
-                <div class="summary-label">Unrealized P&L<span class="mark-tooltip" title="Based on liquidation prices">ⓘ</span></div>
-                <div class="summary-value" id="total-pnl">—</div>
-            </div>
-            <div class="summary-item">
-                <div class="summary-label">Cash</div>
-                <div class="summary-value" id="cash-available">—</div>
-            </div>
+        <!-- Regime Alert (hidden by default) -->
+        <div class="regime-alert" id="regime-alert" style="display: none;">
+            <span class="alert-icon">⚡</span>
+            <span class="alert-text" id="alert-text">Regime shift detected</span>
+            <button class="alert-dismiss" onclick="dismissAlert()">×</button>
+        </div>
+
+        <!-- HERO ZONE: Fund Return -->
+        <section class="hero-zone">
+            <div class="hero-label">FUND RETURN</div>
+            <div class="hero-value" id="hero-return">—</div>
+            <div class="hero-benchmark" id="hero-benchmark">—</div>
+            <div class="hero-context">Since Jan 9, 2026</div>
         </section>
-        
-        <!-- Performance Comparison Card -->
-        <section class="performance-card">
-            <div class="performance-header">
-                <h3>Performance Since Inception</h3>
-                <div class="perf-header-right">
-                    <span class="live-indicator"><span class="live-dot"></span>LIVE</span>
-                    <span class="inception-date">Jan 9, 2026</span>
-                </div>
+
+        <!-- Metrics Row -->
+        <section class="metrics-row">
+            <div class="metric-item">
+                <div class="metric-label">Liquidation NAV<span class="info-tip" title="Longs at bid, shorts at ask">ⓘ</span></div>
+                <div class="metric-value" id="nav-value">—</div>
             </div>
-            <div class="performance-metrics">
-                <div class="perf-metric fund-return">
-                    <div class="perf-label">LOX FUND</div>
-                    <div class="perf-right">
-                        <div class="perf-value" id="fund-return">—</div>
-                    </div>
-                </div>
-                <div class="perf-metric benchmark-metric">
-                    <div class="perf-label">S&P 500</div>
-                    <div class="perf-right">
-                        <div class="perf-value" id="sp500-return">—</div>
-                        <div class="perf-alpha" id="alpha-sp500">—</div>
-                    </div>
-                </div>
-                <div class="perf-metric benchmark-metric btc-metric">
-                    <div class="perf-label">BTC/USD</div>
-                    <div class="perf-right">
-                        <div class="perf-value" id="btc-return">—</div>
-                        <div class="perf-alpha" id="alpha-btc">—</div>
-                    </div>
-                </div>
+            <div class="metric-divider"></div>
+            <div class="metric-item">
+                <div class="metric-label">Unrealized P&L</div>
+                <div class="metric-value" id="total-pnl">—</div>
+            </div>
+            <div class="metric-divider"></div>
+            <div class="metric-item">
+                <div class="metric-label">Cash</div>
+                <div class="metric-value" id="cash-value">—</div>
             </div>
         </section>
 
-        <!-- Palmer: Macro Intelligence -->
-        <section class="palmer-section">
-            <div class="palmer-header">
-                <h2 class="palmer-name">PALMER</h2>
-            </div>
+        <!-- Accordion Sections -->
+        <div class="accordion">
             
-            <!-- Traffic Light Indicators -->
-            <div class="traffic-lights" id="traffic-lights">
-                <div class="traffic-item" data-status="loading">
-                    <span class="traffic-label">REGIME</span>
-                    <span class="traffic-dot">●</span>
-                    <span class="traffic-value">—</span>
-                </div>
-                <div class="traffic-item" data-status="loading">
-                    <span class="traffic-label">VOLATILITY</span>
-                    <span class="traffic-dot">●</span>
-                    <span class="traffic-value">—</span>
-                </div>
-                <div class="traffic-item" data-status="loading">
-                    <span class="traffic-label">CREDIT</span>
-                    <span class="traffic-dot">●</span>
-                    <span class="traffic-value">—</span>
-                </div>
-                <div class="traffic-item" data-status="loading">
-                    <span class="traffic-label">RATES</span>
-                    <span class="traffic-dot">●</span>
-                    <span class="traffic-value">—</span>
-                </div>
-            </div>
-            
-            <!-- Palmer's Insight (prominent) -->
-            <div class="palmer-insight" id="palmer-insight">
-                <div class="insight-loading">Loading insight...</div>
-            </div>
-            
-            <!-- LOX Monte Carlo Simulation -->
-            <div class="forecast-card" id="forecast-card">
-                <div class="forecast-header">
-                    <span class="forecast-title">📊 LOX 6-MONTH SIMULATION</span>
-                    <span class="forecast-regime" id="forecast-regime">—</span>
-                </div>
-                <div class="forecast-metrics">
-                    <div class="forecast-metric">
-                        <span class="forecast-label">EXPECTED RETURN</span>
-                        <span class="forecast-value" id="forecast-expected">—</span>
+            <!-- Positions Section -->
+            <details class="accordion-section">
+                <summary class="accordion-header">
+                    <span class="accordion-title">Positions</span>
+                    <div class="accordion-badges">
+                        <span class="badge-label" id="positions-count">—</span>
+                        <span class="badge-pnl" id="positions-pnl">—</span>
                     </div>
-                    <div class="forecast-metric">
-                        <span class="forecast-label">TAIL RISK (5%)</span>
-                        <span class="forecast-value forecast-risk" id="forecast-var95">—</span>
-                    </div>
-                    <div class="forecast-metric">
-                        <span class="forecast-label">WIN PROBABILITY</span>
-                        <span class="forecast-value" id="forecast-winrate">—</span>
-                    </div>
+                </summary>
+                <div class="accordion-content">
+                    <table class="positions-table">
+                        <thead>
+                            <tr>
+                                <th>Position</th>
+                                <th>Qty</th>
+                                <th>Value</th>
+                                <th>P&L</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positions-body">
+                            <tr><td colspan="4" class="loading">Loading...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
-                <div class="forecast-details" id="forecast-details">
-                    <span class="forecast-detail" id="forecast-risk-driver"></span>
-                    <span class="forecast-detail" id="forecast-worst"></span>
-                </div>
-                <div class="forecast-footer" id="forecast-footer">Monte Carlo simulation • Refreshes hourly</div>
-            </div>
-            
-            <!-- Calendar & Headlines - Side by Side -->
-            <div class="palmer-grid">
-                <div class="palmer-grid-item">
-                    <h4 class="grid-title">
-                        <span class="grid-icon">📅</span>
-                        ECONOMIC CALENDAR
-                        <span class="live-dot"></span>
-                    </h4>
-                    <div class="grid-content" id="palmer-events">
-                        <div class="grid-loading">Loading...</div>
-                    </div>
-                    <a href="https://tradingeconomics.com/united-states/calendar" target="_blank" rel="noopener" class="grid-source">
-                        View full calendar →
-                    </a>
-                </div>
-                <div class="palmer-grid-item">
-                    <h4 class="grid-title">
-                        <span class="grid-icon">📰</span>
-                        PORTFOLIO NEWS
-                    </h4>
-                    <div class="grid-content" id="palmer-headlines">
-                        <div class="grid-loading">Loading...</div>
-                    </div>
-                </div>
-            </div>
-            
-        </section>
+            </details>
 
-        <!-- Open Positions (collapsible) -->
-        <details class="open-positions-section" open>
-            <summary class="open-positions-toggle">
-                <span class="toggle-title">Open Positions</span>
-                <span class="open-pnl-badge" id="open-pnl-badge">
-                    <span class="open-pnl-value" id="open-pnl-value">—</span>
-                </span>
-                <span class="open-pnl-amount-badge" id="open-pnl-amount-badge">—</span>
-            </summary>
-            
-            <!-- Open Positions Table -->
-            <div class="table-container">
-                <table id="positions-table">
-                    <thead>
-                        <tr>
-                            <th>Position</th>
-                            <th>Qty</th>
-                            <th>Value</th>
-                            <th>P&L</th>
-                            <th>Theory</th>
-                        </tr>
-                    </thead>
-                    <tbody id="positions-body">
-                        <tr>
-                            <td colspan="5" class="loading">Loading positions...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </details>
-
-        <!-- Closed Trades (collapsible, least important) -->
-        <details class="closed-trades-section">
-            <summary class="closed-trades-toggle">
-                <span class="toggle-title">Closed Trades</span>
-                <span class="win-rate-badge" id="win-rate-badge">
-                    <span class="win-rate-value" id="win-rate-value">—</span>
-                </span>
-                <span class="realized-pnl-badge" id="realized-pnl-badge">—</span>
-            </summary>
-            
-            <!-- Summary Stats -->
-            <div class="closed-stats" id="closed-stats">
-                <div class="closed-stat">
-                    <span class="stat-label">Wins</span>
-                    <span class="stat-value wins" id="total-wins">—</span>
+            <!-- Your Investment Section -->
+            <details class="accordion-section">
+                <summary class="accordion-header">
+                    <span class="accordion-title">Your Investment</span>
+                    <div class="accordion-badges">
+                        <span class="badge-label">NAV/UNIT</span>
+                        <span class="badge-value" id="nav-per-unit">—</span>
+                    </div>
+                </summary>
+                <div class="accordion-content">
+                    <table class="investor-table">
+                        <thead>
+                            <tr>
+                                <th>Investor</th>
+                                <th>Ownership</th>
+                                <th>Basis</th>
+                                <th>Value</th>
+                                <th>P&L</th>
+                                <th>Return</th>
+                            </tr>
+                        </thead>
+                        <tbody id="investor-body">
+                            <tr><td colspan="6" class="loading">Loading...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
-                <div class="closed-stat">
-                    <span class="stat-label">Losses</span>
-                    <span class="stat-value losses" id="total-losses">—</span>
-                </div>
-            </div>
-            
-            <!-- Closed Trades Table -->
-            <div class="table-container">
-                <table id="closed-trades-table">
-                    <thead>
-                        <tr>
-                            <th>Position</th>
-                            <th>Cost</th>
-                            <th>Proceeds</th>
-                            <th>P&L</th>
-                        </tr>
-                    </thead>
-                    <tbody id="closed-trades-body">
-                        <tr>
-                            <td colspan="4" class="loading">Loading closed trades...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </details>
+            </details>
 
-        <!-- Investor Ledger (collapsible) -->
-        <details class="investor-section">
-            <summary class="investor-toggle">
-                <span class="toggle-title">Investor Ledger</span>
-                <span class="nav-per-unit-badge" id="nav-per-unit-badge">
-                    <span class="nav-per-unit-label">NAV/Unit</span>
-                    <span class="nav-per-unit-value" id="nav-per-unit-value">—</span>
-                </span>
-            </summary>
-            
-            <div class="table-container">
-                <table id="investor-table">
-                    <thead>
-                        <tr>
-                            <th>Investor</th>
-                            <th>Ownership</th>
-                            <th>Basis</th>
-                            <th>Value</th>
-                            <th>P&L</th>
-                            <th>Return</th>
-                        </tr>
-                    </thead>
-                    <tbody id="investor-body">
-                        <tr>
-                            <td colspan="6" class="loading">Loading investor data...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </details>
-        
+            <!-- Market Context Section (Palmer, collapsed) -->
+            <details class="accordion-section">
+                <summary class="accordion-header">
+                    <span class="accordion-title">Market Context</span>
+                    <div class="accordion-badges">
+                        <span class="regime-badge" id="regime-badge">—</span>
+                    </div>
+                </summary>
+                <div class="accordion-content">
+                    <!-- Market Regime Trackers -->
+                    <div class="regime-trackers">
+                        <!-- VIX Tracker -->
+                        <div class="tracker-row">
+                            <div class="tracker-header">
+                                <span class="tracker-label">Volatility</span>
+                                <span class="tracker-value" id="vix-value">—</span>
+                            </div>
+                            <div class="tracker-bar-container">
+                                <div class="tracker-bar">
+                                    <div class="tracker-zone zone-green" style="width: 35%;"></div>
+                                    <div class="tracker-zone zone-yellow" style="width: 25%;"></div>
+                                    <div class="tracker-zone zone-red" style="width: 40%;"></div>
+                                    <div class="tracker-marker" id="vix-marker"></div>
+                                </div>
+                                <div class="tracker-labels">
+                                    <span>10</span>
+                                    <span class="tracker-threshold">18</span>
+                                    <span class="tracker-threshold">25</span>
+                                    <span>40</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- HY Spread / Credit Tracker -->
+                        <div class="tracker-row">
+                            <div class="tracker-header">
+                                <span class="tracker-label">Credit</span>
+                                <span class="tracker-value" id="hy-value">—</span>
+                            </div>
+                            <div class="tracker-bar-container">
+                                <div class="tracker-bar">
+                                    <div class="tracker-zone zone-green" style="width: 40%;"></div>
+                                    <div class="tracker-zone zone-yellow" style="width: 25%;"></div>
+                                    <div class="tracker-zone zone-red" style="width: 35%;"></div>
+                                    <div class="tracker-marker" id="hy-marker"></div>
+                                </div>
+                                <div class="tracker-labels">
+                                    <span>200bp</span>
+                                    <span class="tracker-threshold">325bp</span>
+                                    <span class="tracker-threshold">400bp</span>
+                                    <span>600bp</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 10Y Yield / Rates Tracker -->
+                        <div class="tracker-row">
+                            <div class="tracker-header">
+                                <span class="tracker-label">Rates</span>
+                                <span class="tracker-value" id="rates-value">—</span>
+                            </div>
+                            <div class="tracker-bar-container">
+                                <div class="tracker-bar">
+                                    <div class="tracker-zone zone-green" style="width: 35%;"></div>
+                                    <div class="tracker-zone zone-yellow" style="width: 30%;"></div>
+                                    <div class="tracker-zone zone-red" style="width: 35%;"></div>
+                                    <div class="tracker-marker" id="rates-marker"></div>
+                                </div>
+                                <div class="tracker-labels">
+                                    <span>3.0%</span>
+                                    <span class="tracker-threshold">4.0%</span>
+                                    <span class="tracker-threshold">4.5%</span>
+                                    <span>5.5%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Regime Domain Grid -->
+                    <div class="regime-grid">
+                        <div class="regime-domain" id="regime-funding">
+                            <span class="domain-dot"></span>
+                            <span class="domain-label">Funding</span>
+                            <span class="domain-status">—</span>
+                        </div>
+                        <div class="regime-domain" id="regime-usd">
+                            <span class="domain-dot"></span>
+                            <span class="domain-label">USD</span>
+                            <span class="domain-status">—</span>
+                        </div>
+                        <div class="regime-domain" id="regime-commod">
+                            <span class="domain-dot"></span>
+                            <span class="domain-label">Commodities</span>
+                            <span class="domain-status">—</span>
+                        </div>
+                        <div class="regime-domain" id="regime-volatility">
+                            <span class="domain-dot"></span>
+                            <span class="domain-label">Volatility</span>
+                            <span class="domain-status">—</span>
+                        </div>
+                        <div class="regime-domain" id="regime-housing">
+                            <span class="domain-dot"></span>
+                            <span class="domain-label">Housing</span>
+                            <span class="domain-status">—</span>
+                        </div>
+                        <div class="regime-domain" id="regime-crypto">
+                            <span class="domain-dot"></span>
+                            <span class="domain-label">Crypto</span>
+                            <span class="domain-status">—</span>
+                        </div>
+                    </div>
+                    
+                    <!-- AI Insight (Macro Context) -->
+                    <div class="insight-box" id="insight-box">
+                        <div class="insight-text" id="insight-text">Loading market analysis...</div>
+                        <div class="insight-meta">
+                            <span class="insight-tag">AI</span>
+                            <span class="insight-time" id="insight-time">—</span>
+                        </div>
+                    </div>
+                    
+                    <!-- News & Calendar Accordion -->
+                    <details class="news-accordion">
+                        <summary class="news-accordion-header">
+                            <span class="news-accordion-title">
+                                <span class="news-icon">📰</span>
+                                News & Economic Calendar
+                            </span>
+                            <span class="news-badge" id="news-count"></span>
+                        </summary>
+                        <div class="news-accordion-content">
+                            <!-- Economic Calendar -->
+                            <div class="calendar-section">
+                                <div class="calendar-header">
+                                    <span class="calendar-icon">📅</span>
+                                    <span class="calendar-title">Upcoming Events</span>
+                                </div>
+                                <div class="calendar-items" id="calendar-items">
+                                    <span class="loading-text">Loading...</span>
+                                </div>
+                            </div>
+                            
+                            <!-- News Feed -->
+                            <div class="news-feed-section">
+                                <div class="news-feed-header">
+                                    <span class="news-feed-icon">📈</span>
+                                    <span class="news-feed-title">Portfolio News</span>
+                                </div>
+                                <div class="news-feed" id="news-feed">
+                                    <span class="loading-text">Loading news...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+            </details>
+
+            <!-- Trade Performance Section -->
+            <details class="accordion-section">
+                <summary class="accordion-header">
+                    <span class="accordion-title">Trade Performance</span>
+                    <div class="accordion-badges">
+                        <span class="badge-label" id="trade-stats">—</span>
+                        <span class="badge-pnl" id="realized-pnl">—</span>
+                    </div>
+                </summary>
+                <div class="accordion-content">
+                    <table class="trades-table">
+                        <thead>
+                            <tr>
+                                <th>Trade</th>
+                                <th>Cost</th>
+                                <th>Proceeds</th>
+                                <th>P&L</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trades-body">
+                            <tr><td colspan="4" class="loading">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+
+        </div>
+
         <!-- Footer -->
-        <footer class="dashboard-footer">
-            <div class="footer-content">
-                <span class="footer-brand">LOX FUND</span>
-                <span class="footer-divider">•</span>
-                <span class="footer-updated" id="last-updated"></span>
-            </div>
+        <footer class="footer">
+            <span class="footer-brand">LOX FUND</span>
+            <span class="footer-dot">·</span>
+            <span class="footer-time" id="footer-time">—</span>
         </footer>
     </div>
 
