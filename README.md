@@ -33,14 +33,14 @@ For reviewers and due diligence, comprehensive technical documentation is availa
 
 ### Access
 
+🌐 **Production:** [**https://loxfund.com**](https://loxfund.com)
+
 **Local Development:**
 ```bash
 cd dashboard
 python app.py
 # Navigate to http://localhost:5001
 ```
-
-**Production:** [https://loxfund-284aa251b4f3.herokuapp.com](https://loxfund-284aa251b4f3.herokuapp.com)
 
 ### Core Capabilities
 
@@ -97,14 +97,15 @@ The platform provides:
 
 | Metric | Value |
 |--------|-------|
-| **Inception** | January 2026 |
-| **Initial Capital** | $938 |
-| **Current NAV** | $968 |
-| **TWR (Since Inception)** | **+3.20%** |
-| **Benchmark (SPY)** | +2.1% |
+| **Inception** | January 9, 2026 |
+| **Total Capital** | $1,100 |
+| **Current NAV** | $1,024 |
+| **TWR (Since Inception)** | **-5.60%** |
+| **Benchmark (SPY)** | -0.70% |
+| **Alpha** | -4.9% |
 | **Strategy** | Discretionary macro with tail-risk hedging |
 
-*Last updated: Jan 19, 2026 • Run `lox nav snapshot` for live NAV*
+*Last updated: Jan 24, 2026 • Live at [loxfund.com](https://loxfund.com)*
 
 ---
 
@@ -189,15 +190,34 @@ After completing research, I make the final call:
 
 ## Recent Upgrades
 
-### v1 Dashboard (January 2026)
-- **Palmer Macro Intelligence**: AI-powered regime analysis with real-time traffic light indicators
-- **Monte Carlo Forecast**: 6-month outlook simulation based on current regime persistence
+### v1 Dashboard (January 24, 2026) — Now Live at [loxfund.com](https://loxfund.com)
+
+**Investor Dashboard**
+- **TWR Performance**: GIPS-compliant time-weighted returns as headline metric
+- **Benchmark Comparison**: S&P 500 performance with alpha calculation
+- **Liquidation NAV**: Conservative bid/ask marking for accurate portfolio valuation
+- **Investor Ledger**: Individual investor P&L with unitized returns
+
+**Market Intelligence**
+- **Regime Trackers**: Visual range bars for VIX, HY Spread, 10Y Yield with smart thresholds
+- **Regime Domain Grid**: Six macro domains (Funding, USD, Commodities, Volatility, Housing, Crypto)
+- **Palmer AI Analysis**: LLM-generated macro context with portfolio impact assessment
+- **Traffic Light System**: Real-time RISK-ON / CAUTIOUS / RISK-OFF classification
+
+**News & Economic Calendar**
+- **Portfolio News Feed**: Headlines filtered by active positions (SOFI, TAN, IWM, FXI, VIXM)
+- **Economic Calendar**: Upcoming high-impact events (Fed speeches, PPI, CPI, NFP)
+- **Source Attribution**: News sources with timestamps
+
+**Position Intelligence**
 - **LLM Position Theories**: Macro-aware explanations for each position's profit conditions
-- **Economic Calendar Integration**: Trading Economics API with actual vs estimate analysis
-- **Portfolio-Contextual News**: Dynamic headlines filtered by active positions
-- **Conservative P&L Marking**: Bid/ask liquidation pricing for accurate NAV
-- **Regime Change Detection**: Early alerts for macro regime shifts
-- **Mobile-Responsive Design**: Professional interface optimized for all devices
+- **Monte Carlo Forecast**: 6-month outlook with VaR 95% and win probability
+- **Trade Performance**: Realized P&L history with win rate tracking
+
+**Design**
+- **Collapsed Accordions**: Clean default view with key metrics visible at a glance
+- **Mobile-Responsive**: Professional interface optimized for all devices
+- **Subtle Animations**: Smooth expand/collapse with hover effects
 
 ### Enhanced Research Tools
 - **Standardized CLI Flags**: Uniform `--llm`, `--features`, `--json` across all `lox labs` commands
@@ -273,8 +293,8 @@ lox nav snapshot
 ### Dashboard Access
 | Environment | URL | Command |
 |------------|-----|---------|
+| **Production** | [**loxfund.com**](https://loxfund.com) | Direct browser access |
 | **Local** | http://localhost:5001 | `cd dashboard && python app.py` |
-| **Production** | https://loxfund-284aa251b4f3.herokuapp.com | Direct browser access |
 
 ### Portfolio Commands
 | Command | Purpose |
@@ -414,6 +434,6 @@ lox/
 
 ---
 
-**Lox Capital** | Discretionary Macro | Research-Driven | Since Jan 2026
+**Lox Capital** | [loxfund.com](https://loxfund.com) | Discretionary Macro | Since Jan 2026
 
 *The platform provides research and analysis tools. All investment decisions are made by the portfolio manager after independent evaluation. Not investment advice.*

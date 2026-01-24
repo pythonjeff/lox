@@ -1,6 +1,5 @@
-// LOX FUND Dashboard v1
+// LOX FUND Dashboard v1 - Investor-Focused
 
-// Track dismissed alerts (per session)
 let dismissedAlertTimestamp = null;
 
 function dismissAlert() {
@@ -14,20 +13,15 @@ function dismissAlert() {
 function showRegimeAlert(details) {
     const alert = document.getElementById('regime-alert');
     const alertText = document.getElementById('alert-text');
-    
     if (!alert || !alertText || !details || details.length === 0) return;
     
-    // Build alert message
-    const change = details[0]; // Show first/most important change
-    const direction = change.direction === 'worsening' ? '↗' : '↘';
+    const change = details[0];
     alertText.textContent = `${change.indicator} shifted: ${change.from} → ${change.to}`;
-    
     alert.style.display = 'flex';
 }
 
-function formatCurrency(value, showCents = false) {
-    // Show cents for smaller values or when explicitly requested
-    const decimals = (showCents || Math.abs(value) < 100) ? 2 : 0;
+function formatCurrency(value, decimals = 0) {
+    if (Math.abs(value) < 100) decimals = 2;
     return new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: 'USD',
@@ -36,560 +30,512 @@ function formatCurrency(value, showCents = false) {
     }).format(value);
 }
 
-function formatPercent(value) {
+function formatPercent(value, decimals = 2) {
     const sign = value >= 0 ? '+' : '';
-    return `${sign}${value.toFixed(2)}%`;
+    return `${sign}${value.toFixed(decimals)}%`;
 }
 
-function formatTimestamp(isoString) {
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('en-US', {
-        hour: '2-digit',
+function formatTime() {
+    return new Date().toLocaleTimeString('en-US', { 
+        hour: 'numeric', 
         minute: '2-digit',
-        second: '2-digit',
+        hour12: true 
     });
 }
 
-function formatSymbol(symbol, optInfo) {
-    if (optInfo) {
-        // Handle both 'C'/'P' and 'CALL'/'PUT' formats
-        let type = 'P';
-        if (optInfo.opt_type === 'C' || optInfo.opt_type === 'CALL' || optInfo.opt_type === 'call') {
-            type = 'C';
-        } else if (optInfo.opt_type === 'P' || optInfo.opt_type === 'PUT' || optInfo.opt_type === 'put') {
-            type = 'P';
-        }
-        return `${optInfo.underlying} ${optInfo.strike}${type} ${optInfo.expiry}`;
-    }
-    return symbol;
+function formatDateTime() {
+    return new Date().toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+    });
 }
 
+// ============================================
+// MAIN DATA FETCH
+// ============================================
 function updateDashboard() {
     fetch('/api/positions')
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            return response.json();
-        })
+        .then(r => r.json())
         .then(data => {
-            // Update summary - always show values even if there's an error
-            const navEl = document.getElementById('nav-value');
-            if (data.nav_equity && data.nav_equity > 0) {
-                navEl.textContent = formatCurrency(data.nav_equity);
-            } else if (data.error) {
-                navEl.textContent = 'Error';
-            } else {
-                navEl.textContent = formatCurrency(0);
-            }
-            navEl.className = 'summary-value';
-
-            const pnlEl = document.getElementById('total-pnl');
-            pnlEl.textContent = formatCurrency(data.total_pnl || 0);
-            pnlEl.className = 'summary-value ' + ((data.total_pnl || 0) >= 0 ? 'positive' : 'negative');
-
             if (data.error) {
-                console.error('Error:', data.error);
-                document.getElementById('positions-body').innerHTML = 
-                    `<tr><td colspan="5" class="loading">Error loading positions: ${data.error}</td></tr>`;
-                return;
+                console.error('API Error:', data.error);
             }
-
-            const cashEl = document.getElementById('cash-available');
-            cashEl.textContent = formatCurrency(data.cash_available || 0);
-            cashEl.className = 'summary-value';
-
-            // Update performance comparison with flash animation
-            const fundReturnEl = document.getElementById('fund-return');
+            
+            // Update header timestamp
+            document.getElementById('header-timestamp').textContent = formatDateTime();
+            
+            // HERO: Fund Return
+            const heroReturn = document.getElementById('hero-return');
             if (data.return_pct !== undefined) {
-                const returnVal = data.return_pct;
-                const newText = `${returnVal >= 0 ? '+' : ''}${returnVal.toFixed(2)}%`;
-                if (fundReturnEl.textContent !== newText && fundReturnEl.textContent !== '—') {
-                    fundReturnEl.classList.add('value-updated');
-                    setTimeout(() => fundReturnEl.classList.remove('value-updated'), 500);
-                }
-                fundReturnEl.textContent = newText;
-                fundReturnEl.className = 'perf-value ' + (returnVal >= 0 ? 'positive' : 'negative');
+                const val = data.return_pct;
+                heroReturn.textContent = formatPercent(val);
+                heroReturn.className = 'hero-value ' + (val >= 0 ? 'positive' : 'negative');
             }
             
-            // S&P 500
-            const sp500ReturnEl = document.getElementById('sp500-return');
-            const alphaSp500El = document.getElementById('alpha-sp500');
+            // HERO: Benchmark comparison
+            const heroBenchmark = document.getElementById('hero-benchmark');
             if (data.sp500_return !== undefined && data.sp500_return !== null) {
-                const sp500Val = data.sp500_return;
-                sp500ReturnEl.textContent = `${sp500Val >= 0 ? '+' : ''}${sp500Val.toFixed(2)}%`;
-                sp500ReturnEl.className = 'perf-value ' + (sp500Val >= 0 ? 'positive' : 'negative');
-                
-                // Alpha vs S&P
-                if (data.alpha_sp500 !== undefined && data.alpha_sp500 !== null) {
-                    const alpha = data.alpha_sp500;
-                    alphaSp500El.textContent = `${alpha >= 0 ? '+' : ''}${alpha.toFixed(1)}%`;
-                    alphaSp500El.className = 'perf-alpha ' + (alpha >= 0 ? 'positive' : 'negative');
+                const sp500 = data.sp500_return;
+                const alpha = data.alpha_sp500;
+                let benchmarkHtml = `S&P 500: ${formatPercent(sp500)}`;
+                if (alpha !== undefined && alpha !== null) {
+                    const alphaClass = alpha >= 0 ? 'positive' : 'negative';
+                    benchmarkHtml += ` <span class="alpha ${alphaClass}">${formatPercent(alpha, 1)} alpha</span>`;
                 }
-            } else {
-                sp500ReturnEl.textContent = '—';
-                alphaSp500El.textContent = '';
+                heroBenchmark.innerHTML = benchmarkHtml;
             }
             
-            // BTC/USD
-            const btcReturnEl = document.getElementById('btc-return');
-            const alphaBtcEl = document.getElementById('alpha-btc');
-            if (data.btc_return !== undefined && data.btc_return !== null) {
-                const btcVal = data.btc_return;
-                btcReturnEl.textContent = `${btcVal >= 0 ? '+' : ''}${btcVal.toFixed(2)}%`;
-                btcReturnEl.className = 'perf-value ' + (btcVal >= 0 ? 'positive' : 'negative');
-                
-                // Alpha vs BTC
-                if (data.alpha_btc !== undefined && data.alpha_btc !== null) {
-                    const alpha = data.alpha_btc;
-                    alphaBtcEl.textContent = `${alpha >= 0 ? '+' : ''}${alpha.toFixed(1)}%`;
-                    alphaBtcEl.className = 'perf-alpha ' + (alpha >= 0 ? 'positive' : 'negative');
-                }
-            } else {
-                btcReturnEl.textContent = '—';
-                alphaBtcEl.textContent = '';
-            }
-
-            // Update positions table
-            const tbody = document.getElementById('positions-body');
-            if (data.positions.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="loading">No positions</td></tr>';
-                return;
-            }
-
-            tbody.innerHTML = data.positions.map(pos => {
-                const pnlClass = pos.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
-                let optDetails = '';
-                
-                if (pos.opt_info) {
-                    // Normalize opt_type to C or P for display
-                    let type = 'P';
-                    if (pos.opt_info.opt_type === 'C' || pos.opt_info.opt_type === 'CALL' || pos.opt_info.opt_type === 'call') {
-                        type = 'C';
-                    } else if (pos.opt_info.opt_type === 'P' || pos.opt_info.opt_type === 'PUT' || pos.opt_info.opt_type === 'put') {
-                        type = 'P';
-                    }
-                    optDetails = `<div class="opt-details">${pos.opt_info.expiry} | Strike ${pos.opt_info.strike}${type}</div>`;
-                }
-                
-                // Use LLM-generated theory from API, fallback to simple if missing
-                const theory = pos.theory || (pos.qty > 0 ? '↑ Price appreciation' : '↓ Price decline');
-                
-                // Combined P&L display ($ and % together)
-                const pnlDisplay = `
-                    <div class="pnl-amount ${pnlClass}">${formatCurrency(pos.pnl)}</div>
-                    <div class="pnl-percent ${pnlClass}">${formatPercent(pos.pnl_pct)}</div>
-                `;
-                
-                return `
-                    <tr>
-                        <td>
-                            <div class="symbol">${formatSymbol(pos.symbol, pos.opt_info)}</div>
-                            ${optDetails}
-                        </td>
-                        <td class="qty-cell">${pos.qty > 0 ? '+' : ''}${pos.qty.toFixed(0)}</td>
-                        <td class="value-cell">${formatCurrency(Math.abs(pos.market_value))}</td>
-                        <td class="pnl-cell ${pnlClass}">${pnlDisplay}</td>
-                        <td class="theory-cell">${theory}</td>
-                    </tr>
-                `;
-            }).join('');
+            // METRICS: NAV
+            const navEl = document.getElementById('nav-value');
+            navEl.textContent = data.nav_equity ? formatCurrency(data.nav_equity) : '—';
             
-            // Calculate and display open positions P&L % return
-            const openPnlBadge = document.getElementById('open-pnl-badge');
-            const openPnlValue = document.getElementById('open-pnl-value');
-            const openPnlAmountBadge = document.getElementById('open-pnl-amount-badge');
+            // METRICS: P&L - calculate from NAV minus capital for accuracy
+            const pnlEl = document.getElementById('total-pnl');
+            const navEquity = data.nav_equity || 0;
+            const originalCapital = data.original_capital || 1100;  // Default to 1100 if not provided
+            let pnl = navEquity - originalCapital;
             
+            // Use API total_pnl if it looks more accurate (negative when we expect negative)
+            if (data.total_pnl !== null && data.total_pnl !== undefined) {
+                pnl = data.total_pnl;
+            }
+            
+            pnlEl.textContent = formatCurrency(pnl);
+            pnlEl.className = 'metric-value ' + (pnl < 0 ? 'negative' : 'positive');
+            console.log('[P&L Debug] NAV:', navEquity, 'Capital:', originalCapital, 'P&L:', pnl);
+            
+            // METRICS: Cash
+            const cashEl = document.getElementById('cash-value');
+            cashEl.textContent = data.cash_available ? formatCurrency(data.cash_available) : '—';
+            
+            // POSITIONS: Count badge (label style)
+            const countEl = document.getElementById('positions-count');
+            countEl.textContent = data.positions ? `${data.positions.length} POSITIONS` : '—';
+            
+            // POSITIONS: P&L badge
+            const posPnlEl = document.getElementById('positions-pnl');
             if (data.positions && data.positions.length > 0) {
-                // Calculate total P&L and total cost basis
                 let totalPnl = 0;
                 let totalCost = 0;
-                
-                data.positions.forEach(pos => {
-                    const pnl = pos.pnl || 0;
-                    const marketValue = pos.market_value || 0;
-                    totalPnl += pnl;
-                    
-                    // Calculate entry cost: market_value - pnl (works for both long and short)
-                    // For long: entry = current - profit = what we paid
-                    // For short: entry = current + loss = what we received (proceeds)
-                    const entryCost = marketValue - pnl;
-                    totalCost += Math.abs(entryCost);
+                data.positions.forEach(p => {
+                    totalPnl += p.pnl || 0;
+                    totalCost += Math.abs((p.market_value || 0) - (p.pnl || 0));
                 });
-                
-                // Calculate P&L % return
                 const pnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
-                
-                // Update badges
-                if (openPnlValue) {
-                    openPnlValue.textContent = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%`;
-                    openPnlBadge.classList.toggle('positive', pnlPct >= 0);
-                    openPnlBadge.classList.toggle('negative', pnlPct < 0);
-                }
-                
-                if (openPnlAmountBadge) {
-                    openPnlAmountBadge.textContent = formatCurrency(totalPnl);
-                    openPnlAmountBadge.classList.toggle('positive', totalPnl >= 0);
-                    openPnlAmountBadge.classList.toggle('negative', totalPnl < 0);
-                }
+                posPnlEl.textContent = formatPercent(pnlPct, 1);
+                posPnlEl.className = 'badge-pnl ' + (pnlPct >= 0 ? 'positive' : 'negative');
+            }
+            
+            // POSITIONS: Table
+            const tbody = document.getElementById('positions-body');
+            if (!data.positions || data.positions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="loading">No positions</td></tr>';
             } else {
-                if (openPnlValue) openPnlValue.textContent = '—';
-                if (openPnlAmountBadge) openPnlAmountBadge.textContent = '—';
-            }
-        })
-        .catch(error => {
-            console.error('Fetch error:', error);
-            document.getElementById('nav-value').textContent = 'Error';
-            document.getElementById('total-pnl').textContent = 'Error';
-            document.getElementById('positions-body').innerHTML = 
-                '<tr><td colspan="5" class="loading">Error connecting to server. Please refresh.</td></tr>';
-        });
-}
-
-// Fetch and display Palmer's dashboard (traffic lights, events, headlines, insight)
-function fetchPalmerDashboard() {
-    const trafficLights = document.getElementById('traffic-lights');
-    const eventsContainer = document.getElementById('palmer-events');
-    const headlinesContainer = document.getElementById('palmer-headlines');
-    const insightContainer = document.getElementById('palmer-insight');
-    
-    fetch('/api/regime-analysis')
-        .then(response => response.json())
-        .then(data => {
-            if (data.error && !data.traffic_lights) {
-                insightContainer.innerHTML = `<div class="insight-loading">Error: ${data.error}</div>`;
-                return;
-            }
-            
-            // Update traffic lights
-            if (data.traffic_lights) {
-                const tl = data.traffic_lights;
-                trafficLights.innerHTML = `
-                    <div class="traffic-item" data-status="${tl.regime?.color || 'gray'}">
-                        <span class="traffic-label">REGIME</span>
-                        <span class="traffic-dot">●</span>
-                        <span class="traffic-value">${tl.regime?.label || '—'}</span>
-                    </div>
-                    <div class="traffic-item" data-status="${tl.volatility?.color || 'gray'}">
-                        <span class="traffic-label">VOLATILITY</span>
-                        <span class="traffic-dot">●</span>
-                        <span class="traffic-value">${tl.volatility?.label || '—'} ${tl.volatility?.value ? '(' + tl.volatility.value + ')' : ''}</span>
-                    </div>
-                    <div class="traffic-item" data-status="${tl.credit?.color || 'gray'}">
-                        <span class="traffic-label">CREDIT</span>
-                        <span class="traffic-dot">●</span>
-                        <span class="traffic-value">${tl.credit?.label || '—'} ${tl.credit?.value ? '(' + tl.credit.value + ')' : ''}</span>
-                    </div>
-                    <div class="traffic-item" data-status="${tl.rates?.color || 'gray'}">
-                        <span class="traffic-label">RATES</span>
-                        <span class="traffic-dot">●</span>
-                        <span class="traffic-value">${tl.rates?.label || '—'} ${tl.rates?.value ? '(' + tl.rates.value + ')' : ''}</span>
-                    </div>
-                `;
-            }
-            
-            // Update today's economic releases - clean professional format
-            if (data.events && data.events.releases && data.events.releases.length > 0) {
-                const releases = data.events.releases.slice(0, 3);
-                
-                eventsContainer.innerHTML = releases.map(e => {
-                    const hasActual = e.actual !== null && e.actual !== undefined;
-                    const hasEstimate = e.estimate !== null && e.estimate !== undefined;
-                    const indicatorClass = e.surprise_direction || '';
+                tbody.innerHTML = data.positions.map(pos => {
+                    const pnlClass = pos.pnl >= 0 ? 'positive' : 'negative';
                     
-                    // Format the comparison line
-                    let comparisonHtml = '';
-                    if (hasActual && hasEstimate) {
-                        const beatMiss = indicatorClass === 'beat' ? '▲' : indicatorClass === 'miss' ? '▼' : '';
-                        const beatMissClass = indicatorClass === 'beat' ? 'cal-beat' : indicatorClass === 'miss' ? 'cal-miss' : '';
-                        comparisonHtml = `
-                            <div class="cal-comparison">
-                                <span class="cal-actual ${beatMissClass}">${e.actual} ${beatMiss}</span>
-                                <span class="cal-vs">vs est</span>
-                                <span class="cal-estimate">${e.estimate}</span>
-                            </div>
-                        `;
-                    } else if (hasActual) {
-                        comparisonHtml = `<div class="cal-comparison"><span class="cal-actual">${e.actual}</span></div>`;
-                    } else if (hasEstimate) {
-                        comparisonHtml = `<div class="cal-comparison"><span class="cal-pending">Est: ${e.estimate}</span></div>`;
+                    // Format symbol
+                    let symbol = pos.symbol;
+                    let details = '';
+                    if (pos.opt_info) {
+                        const type = (pos.opt_info.opt_type || '').toUpperCase().startsWith('C') ? 'C' : 'P';
+                        symbol = `${pos.opt_info.underlying} $${pos.opt_info.strike}${type}`;
+                        details = `<div class="position-details">${pos.opt_info.expiry}</div>`;
                     }
                     
                     return `
-                        <div class="cal-item ${indicatorClass}">
-                            <div class="cal-time">${e.time || ''}</div>
-                            <div class="cal-content">
-                                <div class="cal-event">${e.event}</div>
-                                ${comparisonHtml}
-                            </div>
-                        </div>
+                        <tr>
+                            <td>
+                                <div class="position-symbol">${symbol}</div>
+                                ${details}
+                            </td>
+                            <td>${pos.qty > 0 ? '+' : ''}${pos.qty}</td>
+                            <td>${formatCurrency(Math.abs(pos.market_value || 0))}</td>
+                            <td class="pnl-cell ${pnlClass}">
+                                ${formatCurrency(pos.pnl || 0)}
+                                <span class="pnl-percent">${formatPercent(pos.pnl_pct || 0, 1)}</span>
+                            </td>
+                        </tr>
                     `;
                 }).join('');
-            } else {
-                eventsContainer.innerHTML = '<div class="grid-loading">No releases today</div>';
             }
             
-            // Update portfolio headlines (uniform grid items - top 3)
-            if (data.headlines && data.headlines.length > 0) {
-                const headlines = data.headlines.slice(0, 3);
-                
-                headlinesContainer.innerHTML = headlines.map(h => {
-                    const titleEl = h.url 
-                        ? `<a href="${h.url}" target="_blank" rel="noopener" class="grid-item-title">${h.headline}</a>`
-                        : `<span class="grid-item-title">${h.headline}</span>`;
-                    
-                    return `
-                        <div class="grid-item">
-                            <div class="grid-item-left">
-                                ${h.ticker ? `<span class="grid-item-ticker">${h.ticker}</span>` : ''}
-                            </div>
-                            <div class="grid-item-content">
-                                ${titleEl}
-                                <span class="grid-item-meta">${h.source || ''}${h.time ? ' • ' + h.time : ''}</span>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-            } else {
-                headlinesContainer.innerHTML = '<div class="grid-loading">No portfolio news</div>';
-            }
-            
-            // Update Palmer's insight - clean, no quotes
-            if (data.analysis) {
-                const now = new Date();
-                const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-                insightContainer.innerHTML = `
-                    <div class="insight-text">${data.analysis}</div>
-                    <div class="insight-meta">
-                        <span class="insight-timestamp">Updated ${timeStr} ET</span>
-                        <span class="insight-tag">AI</span>
-                    </div>
-                `;
-            } else {
-                insightContainer.innerHTML = '<div class="insight-loading">Palmer is generating analysis...</div>';
-                // Retry in 10 seconds
-                setTimeout(fetchPalmerDashboard, 10000);
-                return;
-            }
-            
-            // Update LOX Forecast card
-            const forecastCard = document.getElementById('forecast-card');
-            if (data.monte_carlo && forecastCard) {
-                const mc = data.monte_carlo;
-                const expectedEl = document.getElementById('forecast-expected');
-                const var95El = document.getElementById('forecast-var95');
-                const winrateEl = document.getElementById('forecast-winrate');
-                const regimeEl = document.getElementById('forecast-regime');
-                const riskDriverEl = document.getElementById('forecast-risk-driver');
-                const worstEl = document.getElementById('forecast-worst');
-                const footerEl = document.getElementById('forecast-footer');
-                
-                if (mc.mean_pnl_pct !== undefined && expectedEl) {
-                    const expectedPct = (mc.mean_pnl_pct * 100).toFixed(1);
-                    expectedEl.textContent = `${expectedPct > 0 ? '+' : ''}${expectedPct}%`;
-                    expectedEl.classList.toggle('positive', mc.mean_pnl_pct > 0);
-                }
-                
-                if (mc.var_95_pct !== undefined && var95El) {
-                    const var95Pct = (mc.var_95_pct * 100).toFixed(1);
-                    var95El.textContent = `${var95Pct}%`;
-                }
-                
-                if (mc.prob_positive !== undefined && winrateEl) {
-                    winrateEl.textContent = `${(mc.prob_positive * 100).toFixed(0)}%`;
-                    winrateEl.classList.toggle('positive', mc.prob_positive > 0.5);
-                }
-                
-                if (mc.regime && regimeEl) {
-                    regimeEl.textContent = mc.regime;
-                    regimeEl.classList.remove('cautious', 'risk-off');
-                    if (mc.regime === 'CAUTIOUS') regimeEl.classList.add('cautious');
-                    if (mc.regime === 'RISK-OFF') regimeEl.classList.add('risk-off');
-                }
-                
-                // Show top risk driver (which position contributes most to tail risk)
-                if (mc.top_risk_driver && riskDriverEl) {
-                    // Clean up the ticker for display
-                    let riskTicker = mc.top_risk_driver;
-                    if (riskTicker.includes('/')) {
-                        riskTicker = riskTicker.split('/')[0];
-                    }
-                    riskDriverEl.textContent = `⚠️ Top risk: ${riskTicker}`;
-                    riskDriverEl.style.display = 'inline';
-                } else if (riskDriverEl) {
-                    riskDriverEl.style.display = 'none';
-                }
-                
-                // Show worst scenario description
-                if (mc.worst_scenario && worstEl) {
-                    worstEl.textContent = `Worst case: ${mc.worst_scenario}`;
-                    worstEl.style.display = 'inline';
-                } else if (worstEl) {
-                    worstEl.style.display = 'none';
-                }
-                
-                // Update footer with scenario count and skewness
-                if (footerEl) {
-                    let footerText = `${mc.n_scenarios || 2000} scenarios`;
-                    if (mc.skewness !== undefined) {
-                        const skewLabel = mc.skewness < -0.5 ? ' • Left tail risk' : 
-                                         mc.skewness > 0.5 ? ' • Right skew' : '';
-                        footerText += skewLabel;
-                    }
-                    footerText += ' • Refreshes hourly';
-                    footerEl.textContent = footerText;
-                }
-            }
-            
-            // Check for regime changes
-            if (data.regime_changed && data.regime_change_details) {
-                // Only show if not already dismissed this session
-                if (!dismissedAlertTimestamp || new Date(data.timestamp) > new Date(dismissedAlertTimestamp)) {
-                    showRegimeAlert(data.regime_change_details);
-                }
-            }
-            
-            // Update footer timestamp
-            updateFooterTimestamp();
+            // Update footer
+            document.getElementById('footer-time').textContent = `Updated ${formatTime()}`;
         })
-        .catch(error => {
-            console.error('Palmer fetch error:', error);
-            insightContainer.innerHTML = '<div class="insight-loading">Unable to load Palmer. Server may be starting up.</div>';
-            // Retry in 10 seconds
-            setTimeout(fetchPalmerDashboard, 10000);
+        .catch(err => {
+            console.error('Fetch error:', err);
+            document.getElementById('hero-return').textContent = 'Error';
         });
 }
 
-// Fetch and display closed trades
-function fetchClosedTrades() {
-    fetch('/api/closed-trades')
-        .then(response => response.json())
-        .then(data => {
-            // Update toggle badges (win rate + realized P&L)
-            const winRateValue = document.getElementById('win-rate-value');
-            const winRateBadge = document.getElementById('win-rate-badge');
-            if (data.win_rate !== undefined) {
-                winRateValue.textContent = `${data.win_rate.toFixed(0)}% W`;
-                winRateBadge.className = 'win-rate-badge ' + (data.win_rate >= 50 ? 'positive' : 'negative');
-            }
-            
-            const realizedPnlBadge = document.getElementById('realized-pnl-badge');
-            if (realizedPnlBadge) {
-                const pnl = data.total_pnl || 0;
-                realizedPnlBadge.textContent = formatCurrency(pnl);
-                realizedPnlBadge.className = 'realized-pnl-badge ' + (pnl >= 0 ? 'positive' : 'negative');
-            }
-            
-            // Update stats inside the expanded section
-            document.getElementById('total-wins').textContent = data.wins || 0;
-            document.getElementById('total-losses').textContent = data.losses || 0;
-            
-            // Update closed trades table
-            const tbody = document.getElementById('closed-trades-body');
-            
-            if (!data.trades || data.trades.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" class="loading">No closed trades yet</td></tr>';
-                return;
-            }
-            
-            tbody.innerHTML = data.trades.map(trade => {
-                const pnlClass = trade.pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
-                const statusIcon = trade.pnl >= 0 ? '✓' : '✗';
-                const statusClass = trade.pnl >= 0 ? 'win-icon' : 'loss-icon';
-                const pnlPct = trade.pnl_pct !== undefined ? trade.pnl_pct : (trade.cost > 0 ? (trade.pnl / trade.cost * 100) : 0);
-                const pnlPctStr = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%`;
-                
-                return `
-                    <tr>
-                        <td>
-                            <span class="${statusClass}">${statusIcon}</span>
-                            <span class="closed-symbol">${trade.symbol}</span>
-                        </td>
-                        <td>${formatCurrency(trade.cost)}</td>
-                        <td>${formatCurrency(trade.proceeds)}</td>
-                        <td class="${pnlClass}">
-                            ${formatCurrency(trade.pnl)}
-                            <span class="pnl-pct">${pnlPctStr}</span>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        })
-        .catch(error => {
-            console.error('Closed trades fetch error:', error);
-            document.getElementById('closed-trades-body').innerHTML = 
-                '<tr><td colspan="4" class="loading">Error loading closed trades</td></tr>';
-        });
-}
-
+// ============================================
+// INVESTORS
+// ============================================
 function fetchInvestors() {
     fetch('/api/investors')
-        .then(response => response.json())
+        .then(r => r.json())
         .then(data => {
-            // Update NAV per unit badge
-            const navPerUnitValue = document.getElementById('nav-per-unit-value');
-            if (navPerUnitValue && data.nav_per_unit) {
-                navPerUnitValue.textContent = `$${data.nav_per_unit.toFixed(4)}`;
+            // NAV per unit badge
+            const navUnit = document.getElementById('nav-per-unit');
+            if (data.nav_per_unit) {
+                navUnit.textContent = `$${data.nav_per_unit.toFixed(4)}`;
             }
             
-            // Update investor table
+            // Table
             const tbody = document.getElementById('investor-body');
-            
             if (!data.investors || data.investors.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="loading">No investor data available</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="loading">No investor data</td></tr>';
                 return;
             }
             
             tbody.innerHTML = data.investors.map(inv => {
                 const pnlClass = inv.pnl >= 0 ? 'positive' : 'negative';
-                const returnClass = inv.return_pct >= 0 ? 'positive' : 'negative';
-                const pnlSign = inv.pnl >= 0 ? '+' : '';
-                const returnSign = inv.return_pct >= 0 ? '+' : '';
-                
+                const retClass = inv.return_pct >= 0 ? 'positive' : 'negative';
                 return `
                     <tr>
                         <td><span class="investor-code">${inv.code}</span></td>
                         <td>${inv.ownership.toFixed(1)}%</td>
                         <td>${formatCurrency(inv.basis)}</td>
                         <td>${formatCurrency(inv.value)}</td>
-                        <td class="investor-pnl ${pnlClass}">${pnlSign}${formatCurrency(inv.pnl, true)}</td>
-                        <td class="investor-return ${returnClass}">${returnSign}${inv.return_pct.toFixed(1)}%</td>
+                        <td class="pnl-cell ${pnlClass}">${formatCurrency(inv.pnl, 2)}</td>
+                        <td class="pnl-cell ${retClass}">${formatPercent(inv.return_pct, 1)}</td>
                     </tr>
                 `;
             }).join('');
         })
-        .catch(error => {
-            console.error('Investors fetch error:', error);
-            document.getElementById('investor-body').innerHTML = 
-                '<tr><td colspan="6" class="loading">Error loading investor data</td></tr>';
+        .catch(err => console.error('Investors error:', err));
+}
+
+// ============================================
+// MARKET CONTEXT
+// ============================================
+
+// Helper: Position marker on tracker bar given value and range
+function positionMarker(markerId, value, min, max) {
+    const marker = document.getElementById(markerId);
+    if (!marker || value === null || value === undefined) return;
+    
+    // Clamp value to range
+    const clamped = Math.max(min, Math.min(max, value));
+    const percent = ((clamped - min) / (max - min)) * 100;
+    marker.style.left = `${percent}%`;
+}
+
+// Extract numeric value from string like "VIX 16.1" or "271bp" or "4.24%"
+function parseTrackerValue(str) {
+    if (!str || str === '—' || str === 'N/A') return null;
+    const match = str.match(/[\d.]+/);
+    return match ? parseFloat(match[0]) : null;
+}
+
+function fetchMarketContext() {
+    fetch('/api/regime-analysis')
+        .then(r => r.json())
+        .then(data => {
+            // Regime badge in header
+            const regimeBadge = document.getElementById('regime-badge');
+            if (data.traffic_lights?.regime) {
+                const regime = data.traffic_lights.regime;
+                regimeBadge.textContent = regime.label || '—';
+                regimeBadge.className = 'regime-badge ' + (regime.label || '').toLowerCase().replace(' ', '-');
+            }
+            
+            // Regime trackers with range bars
+            if (data.traffic_lights) {
+                const tl = data.traffic_lights;
+                
+                // VIX tracker (range: 10-40)
+                const vixVal = document.getElementById('vix-value');
+                if (tl.volatility) {
+                    const vixStr = tl.volatility.value || '—';
+                    vixVal.textContent = vixStr;
+                    const vixNum = parseTrackerValue(vixStr);
+                    if (vixNum !== null) {
+                        positionMarker('vix-marker', vixNum, 10, 40);
+                        // Color the value based on zone
+                        if (vixNum < 18) vixVal.style.color = 'var(--green)';
+                        else if (vixNum < 25) vixVal.style.color = 'var(--yellow)';
+                        else vixVal.style.color = 'var(--red)';
+                    }
+                }
+                
+                // HY Spread tracker (range: 200-600bp)
+                const hyVal = document.getElementById('hy-value');
+                if (tl.credit) {
+                    const hyStr = tl.credit.value || '—';
+                    hyVal.textContent = hyStr;
+                    const hyNum = parseTrackerValue(hyStr);
+                    if (hyNum !== null) {
+                        positionMarker('hy-marker', hyNum, 200, 600);
+                        // Color the value based on zone
+                        if (hyNum < 325) hyVal.style.color = 'var(--green)';
+                        else if (hyNum < 400) hyVal.style.color = 'var(--yellow)';
+                        else hyVal.style.color = 'var(--red)';
+                    }
+                }
+                
+                // 10Y Yield tracker (range: 3.0-5.5%)
+                const ratesVal = document.getElementById('rates-value');
+                if (tl.rates) {
+                    const ratesStr = tl.rates.value || '—';
+                    ratesVal.textContent = ratesStr;
+                    const ratesNum = parseTrackerValue(ratesStr);
+                    if (ratesNum !== null) {
+                        positionMarker('rates-marker', ratesNum, 3.0, 5.5);
+                        // Color the value based on zone
+                        if (ratesNum < 4.0) ratesVal.style.color = 'var(--green)';
+                        else if (ratesNum < 4.5) ratesVal.style.color = 'var(--yellow)';
+                        else ratesVal.style.color = 'var(--red)';
+                    }
+                }
+            }
+            
+            // AI Insight
+            const insightText = document.getElementById('insight-text');
+            const insightTime = document.getElementById('insight-time');
+            if (data.analysis) {
+                insightText.textContent = data.analysis;
+                insightTime.textContent = `Updated ${formatTime()}`;
+            } else {
+                insightText.textContent = 'Loading market analysis...';
+            }
+            
+            // Regime change alert
+            if (data.regime_changed && data.regime_change_details) {
+                if (!dismissedAlertTimestamp || new Date(data.timestamp) > new Date(dismissedAlertTimestamp)) {
+                    showRegimeAlert(data.regime_change_details);
+                }
+            }
+        })
+        .catch(err => {
+            console.error('Market context error:', err);
+            document.getElementById('insight-text').textContent = 'Unable to load market data.';
         });
 }
 
-// Update footer with last updated time
-function updateFooterTimestamp() {
-    const footerEl = document.getElementById('last-updated');
-    if (footerEl) {
-        const now = new Date();
-        footerEl.textContent = `Updated ${now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
-    }
+// ============================================
+// REGIME DOMAINS (Funding, USD, Commodities, etc.)
+// ============================================
+function fetchRegimeDomains() {
+    fetch('/api/regime-domains')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                console.error('Regime domains error:', data.error);
+                return;
+            }
+            
+            const domains = data.domains || {};
+            
+            // Update each domain indicator
+            const domainConfigs = [
+                { id: 'regime-funding', key: 'funding' },
+                { id: 'regime-usd', key: 'usd' },
+                { id: 'regime-commod', key: 'commod' },
+                { id: 'regime-volatility', key: 'volatility' },
+                { id: 'regime-housing', key: 'housing' },
+                { id: 'regime-crypto', key: 'crypto' },
+            ];
+            
+            domainConfigs.forEach(({ id, key }) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                
+                const domain = domains[key];
+                const dot = el.querySelector('.domain-dot');
+                const status = el.querySelector('.domain-status');
+                
+                if (domain) {
+                    if (dot) {
+                        dot.className = 'domain-dot ' + (domain.color || 'gray');
+                    }
+                    if (status) {
+                        status.textContent = domain.label || '—';
+                        // Add sentiment class
+                        const label = (domain.label || '').toLowerCase();
+                        if (label.includes('bull') || label.includes('easy') || label.includes('healthy') || label.includes('weak')) {
+                            status.className = 'domain-status bullish';
+                        } else if (label.includes('bear') || label.includes('stress') || label.includes('tight') || label.includes('strong')) {
+                            status.className = 'domain-status bearish';
+                        } else {
+                            status.className = 'domain-status neutral';
+                        }
+                    }
+                }
+            });
+        })
+        .catch(err => {
+            console.error('Regime domains fetch error:', err);
+        });
 }
 
-// Initial load
+// ============================================
+// TRADE PERFORMANCE (Closed Trades)
+// ============================================
+function fetchClosedTrades() {
+    fetch('/api/closed-trades')
+        .then(r => r.json())
+        .then(data => {
+            // Update header badges
+            const statsEl = document.getElementById('trade-stats');
+            const realizedPnlEl = document.getElementById('realized-pnl');
+            
+            if (data.trades && data.trades.length > 0) {
+                // Stats badge
+                const winRate = data.win_rate || 0;
+                statsEl.textContent = `${data.trades.length} TRADES · ${winRate.toFixed(0)}% WIN`;
+                
+                // Realized P&L badge
+                const totalPnl = data.total_pnl || 0;
+                realizedPnlEl.textContent = formatCurrency(totalPnl);
+                realizedPnlEl.className = 'badge-pnl ' + (totalPnl < 0 ? 'negative' : 'positive');
+            } else {
+                statsEl.textContent = 'NO CLOSED TRADES';
+                realizedPnlEl.textContent = '$0';
+                realizedPnlEl.className = 'badge-pnl';
+            }
+            
+            // Populate table
+            const tbody = document.getElementById('trades-body');
+            if (!data.trades || data.trades.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="loading">No closed trades yet</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = data.trades.map(trade => {
+                const pnlClass = trade.pnl >= 0 ? 'positive' : 'negative';
+                const statusClass = trade.fully_closed ? 'closed' : 'partial';
+                const statusText = trade.fully_closed ? 'CLOSED' : 'PARTIAL';
+                
+                return `
+                    <tr>
+                        <td>
+                            <span class="trade-symbol">${trade.symbol}</span>
+                            <span class="trade-status ${statusClass}">${statusText}</span>
+                        </td>
+                        <td>${formatCurrency(trade.cost)}</td>
+                        <td>${formatCurrency(trade.proceeds)}</td>
+                        <td class="pnl-cell ${pnlClass}">
+                            ${formatCurrency(trade.pnl)}
+                            <span class="pnl-percent">${formatPercent(trade.pnl_pct, 1)}</span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        })
+        .catch(err => {
+            console.error('Closed trades error:', err);
+            document.getElementById('trades-body').innerHTML = 
+                '<tr><td colspan="4" class="loading">Unable to load trades</td></tr>';
+        });
+}
+
+// ============================================
+// MARKET NEWS & CALENDAR
+// ============================================
+function fetchMarketNews() {
+    fetch('/api/market-news')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                console.error('News error:', data.error);
+                return;
+            }
+            
+            // Update news count badge
+            const newsCount = document.getElementById('news-count');
+            const totalItems = (data.news?.length || 0) + (data.calendar?.length || 0);
+            if (totalItems > 0) {
+                newsCount.textContent = `${totalItems} items`;
+            }
+            
+            // Render calendar
+            const calendarEl = document.getElementById('calendar-items');
+            if (data.calendar && data.calendar.length > 0) {
+                calendarEl.innerHTML = data.calendar.map(item => {
+                    const estimate = item.estimate ? `Est: ${item.estimate}` : '';
+                    return `
+                        <div class="calendar-item">
+                            <span class="calendar-date">${formatCalendarDate(item.date)}</span>
+                            <span class="calendar-event">${item.event}</span>
+                            <span class="calendar-estimate">${estimate}</span>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                calendarEl.innerHTML = '<span class="loading-text">No upcoming high-impact events</span>';
+            }
+            
+            // Render news feed
+            const newsFeedEl = document.getElementById('news-feed');
+            if (data.news && data.news.length > 0) {
+                newsFeedEl.innerHTML = data.news.map(item => `
+                    <div class="news-item">
+                        <span class="news-ticker">${item.symbol}</span>
+                        <div class="news-text">
+                            <div class="news-title">
+                                <a href="${item.url}" target="_blank" rel="noopener">${item.title}</a>
+                            </div>
+                            <div class="news-meta">${item.source} · ${formatNewsTime(item.time)}</div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                newsFeedEl.innerHTML = '<span class="loading-text">No recent news</span>';
+            }
+        })
+        .catch(err => {
+            console.error('News fetch error:', err);
+        });
+}
+
+function formatCalendarDate(dateStr) {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === tomorrow.toDateString()) return 'Tmrw';
+    
+    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '');
+}
+
+function formatNewsTime(timeStr) {
+    if (!timeStr) return '';
+    const date = new Date(timeStr);
+    const now = new Date();
+    const diffHours = Math.floor((now - date) / (1000 * 60 * 60));
+    
+    if (diffHours < 1) return 'Just now';
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+
+// ============================================
+// INIT & REFRESH
+// ============================================
 updateDashboard();
-fetchClosedTrades();
 fetchInvestors();
-fetchPalmerDashboard();
-updateFooterTimestamp();
+fetchMarketContext();
+fetchClosedTrades();
+fetchRegimeDomains();
+fetchMarketNews();
 
-// Live refresh for positions/performance (every 60 seconds)
-setInterval(() => {
-    updateDashboard();
-    updateFooterTimestamp();
-}, 60000);
+// Refresh positions every 60 seconds
+setInterval(updateDashboard, 60000);
 
-// Slower refresh for historical data (every 5 minutes)
+// Refresh other data every 5 minutes
 setInterval(() => {
-    fetchClosedTrades();
     fetchInvestors();
-    fetchPalmerDashboard();
+    fetchMarketContext();
+    fetchClosedTrades();
+    fetchRegimeDomains();
+    fetchMarketNews();
 }, 300000);

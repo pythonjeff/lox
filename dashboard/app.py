@@ -39,6 +39,7 @@ PALMER_CACHE = {
     "timestamp": None,
     "last_refresh": None,
     "traffic_lights": None,
+    "portfolio_analysis": None,  # Position categorization and scenario matrix
     "prev_traffic_lights": None,  # For change detection
     "regime_changed": False,
     "regime_change_details": None,
@@ -699,9 +700,12 @@ def get_positions_data():
             pass
         # #endregion
         
-        # For the dashboard we always surface the live simple return so the LOX Fund
-        # performance row reflects current liquidation NAV.
-        return_pct = simple_return_pct
+        # Use TWR (time-weighted return) for headline - industry standard for hedge funds (GIPS compliant).
+        # Fall back to simple return only if TWR isn't available.
+        if twr_pct is not None:
+            return_pct = twr_pct
+        else:
+            return_pct = simple_return_pct
         
         # #region agent log
         try:
@@ -805,6 +809,174 @@ def api_closed_trades():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e), "trades": [], "total_pnl": 0, "win_rate": 0})
+
+
+@app.route('/api/regime-domains')
+def api_regime_domains():
+    """API endpoint for regime domain indicators (funding, USD, commodities, etc.)."""
+    try:
+        return jsonify(get_regime_domains_data())
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "domains": {}})
+
+
+def get_regime_domains_data():
+    """Fetch regime status for each domain using available modules."""
+    domains = {}
+    
+    try:
+        settings = load_settings()
+    except Exception:
+        return {"domains": domains, "error": "Settings not available"}
+    
+    # Funding regime
+    try:
+        from ai_options_trader.funding.signals import build_funding_state
+        from ai_options_trader.funding.regime import classify_funding_regime
+        
+        state = build_funding_state(settings=settings, start_date="2020-01-01", refresh=False)
+        regime = classify_funding_regime(state.inputs)
+        label = regime.label or regime.name
+        color = "green" if "normal" in label.lower() or "easy" in label.lower() or "benign" in label.lower() else \
+                "red" if "stress" in label.lower() or "tight" in label.lower() or "crisis" in label.lower() else "yellow"
+        domains["funding"] = {"label": label.upper(), "color": color}
+    except Exception as e:
+        print(f"[Regimes] Funding error: {e}")
+        domains["funding"] = {"label": "N/A", "color": "gray"}
+    
+    # USD regime (derived from DXY via FMP if available)
+    try:
+        import requests
+        # Get DXY (Dollar Index) for USD strength
+        if settings.FMP_API_KEY:
+            url = f"https://financialmodelingprep.com/api/v3/quote/DX-Y.NYB"
+            resp = requests.get(url, params={"apikey": settings.FMP_API_KEY}, timeout=10)
+            data = resp.json()
+            if isinstance(data, list) and data:
+                dxy = data[0].get("price", 0)
+                change_pct = data[0].get("changesPercentage", 0)
+                # DXY > 105 = strong, < 100 = weak
+                if dxy > 105:
+                    label = "STRONG"
+                    color = "red"  # Strong USD bearish for risk
+                elif dxy < 100:
+                    label = "WEAK"
+                    color = "green"  # Weak USD bullish for risk
+                else:
+                    label = "NEUTRAL"
+                    color = "yellow"
+                domains["usd"] = {"label": f"{label} ({dxy:.1f})", "color": color}
+            else:
+                domains["usd"] = {"label": "N/A", "color": "gray"}
+        else:
+            domains["usd"] = {"label": "N/A", "color": "gray"}
+    except Exception as e:
+        print(f"[Regimes] USD error: {e}")
+        domains["usd"] = {"label": "N/A", "color": "gray"}
+    
+    # Commodities regime
+    try:
+        from ai_options_trader.commodities.signals import build_commodities_state
+        from ai_options_trader.commodities.regime import classify_commodities_regime
+        
+        state = build_commodities_state(settings=settings, start_date="2020-01-01", refresh=False)
+        regime = classify_commodities_regime(state.inputs)
+        label = regime.label or regime.name
+        color = "red" if "spike" in label.lower() or "surge" in label.lower() or "inflation" in label.lower() else \
+                "green" if "calm" in label.lower() or "stable" in label.lower() or "deflation" in label.lower() else "yellow"
+        domains["commod"] = {"label": label.upper(), "color": color}
+    except Exception as e:
+        print(f"[Regimes] Commodities error: {e}")
+        domains["commod"] = {"label": "N/A", "color": "gray"}
+    
+    # Volatility regime
+    try:
+        from ai_options_trader.volatility.signals import build_volatility_state
+        from ai_options_trader.volatility.regime import classify_volatility_regime
+        
+        state = build_volatility_state(settings=settings, start_date="2020-01-01", refresh=False)
+        regime = classify_volatility_regime(state.inputs)
+        label = regime.label or regime.name
+        color = "green" if "low" in label.lower() or "calm" in label.lower() or "complacent" in label.lower() else \
+                "red" if "high" in label.lower() or "stress" in label.lower() or "spike" in label.lower() or "crisis" in label.lower() else "yellow"
+        domains["volatility"] = {"label": label.upper(), "color": color}
+    except Exception as e:
+        print(f"[Regimes] Volatility error: {e}")
+        domains["volatility"] = {"label": "N/A", "color": "gray"}
+    
+    # Housing regime
+    try:
+        from ai_options_trader.housing.signals import build_housing_state
+        from ai_options_trader.housing.regime import classify_housing_regime
+        
+        state = build_housing_state(settings=settings, start_date="2020-01-01", refresh=False)
+        regime = classify_housing_regime(state.inputs)
+        label = regime.label or "unknown"
+        
+        # If unknown, derive from mortgage spread
+        if label.lower() == "unknown" and state.inputs.mortgage_spread is not None:
+            spread = state.inputs.mortgage_spread
+            # Mortgage spread typical range: 1.5-2.5%, stress >3%
+            if spread > 2.5:
+                label = f"STRESSED ({spread:.1f}%)"
+                color = "red"
+            elif spread < 1.8:
+                label = f"HEALTHY ({spread:.1f}%)"
+                color = "green"
+            else:
+                label = f"NORMAL ({spread:.1f}%)"
+                color = "yellow"
+        else:
+            color = "red" if "stress" in label.lower() or "weak" in label.lower() or "crisis" in label.lower() else \
+                    "green" if "healthy" in label.lower() or "strong" in label.lower() or "normal" in label.lower() else "yellow"
+            label = label.upper()
+        
+        domains["housing"] = {"label": label, "color": color}
+    except Exception as e:
+        print(f"[Regimes] Housing error: {e}")
+        domains["housing"] = {"label": "N/A", "color": "gray"}
+    
+    # Crypto regime (derived from BTC price action)
+    try:
+        import requests
+        if settings.FMP_API_KEY:
+            url = f"https://financialmodelingprep.com/api/v3/quote/BTCUSD"
+            resp = requests.get(url, params={"apikey": settings.FMP_API_KEY}, timeout=10)
+            data = resp.json()
+            if isinstance(data, list) and data:
+                btc_price = data[0].get("price", 0)
+                change_pct = data[0].get("changesPercentage", 0)
+                # Simple momentum-based regime
+                if change_pct > 3:
+                    label = "RALLY"
+                    color = "green"
+                elif change_pct < -3:
+                    label = "SELLOFF"
+                    color = "red"
+                elif btc_price > 90000:
+                    label = "BULLISH"
+                    color = "green"
+                elif btc_price < 50000:
+                    label = "BEARISH"
+                    color = "red"
+                else:
+                    label = "RANGE"
+                    color = "yellow"
+                domains["crypto"] = {"label": f"{label} (${btc_price/1000:.0f}K)", "color": color}
+            else:
+                domains["crypto"] = {"label": "N/A", "color": "gray"}
+        else:
+            domains["crypto"] = {"label": "N/A", "color": "gray"}
+    except Exception as e:
+        print(f"[Regimes] Crypto error: {e}")
+        domains["crypto"] = {"label": "N/A", "color": "gray"}
+    
+    return {
+        "domains": domains,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @app.route('/api/investors')
@@ -1644,7 +1816,7 @@ def fetch_fed_fiscal_calendar(settings):
 def _describe_portfolio(positions):
     """Build a concise description of portfolio positioning from actual positions."""
     if not positions:
-        return "No positions"
+        return "No positions", {}
     
     longs = []
     shorts = []
@@ -1657,17 +1829,17 @@ def _describe_portfolio(positions):
         if opt:
             # Option position
             underlying = opt.get("underlying", symbol[:3])
-            opt_type = opt.get("type", "").upper()
+            opt_type = opt.get("opt_type", opt.get("type", "")).upper()
             
             if qty > 0:  # Long options
-                if opt_type == "PUT":
+                if opt_type in ["PUT", "P"]:
                     shorts.append(f"{underlying} (puts)")
-                elif opt_type == "CALL":
+                elif opt_type in ["CALL", "C"]:
                     longs.append(f"{underlying} (calls)")
             else:  # Short options
-                if opt_type == "PUT":
+                if opt_type in ["PUT", "P"]:
                     longs.append(f"{underlying} (short puts)")
-                elif opt_type == "CALL":
+                elif opt_type in ["CALL", "C"]:
                     shorts.append(f"{underlying} (short calls)")
         else:
             # Stock/ETF position
@@ -1684,6 +1856,199 @@ def _describe_portfolio(positions):
         desc_parts.append(f"Short: {', '.join(shorts[:4])}")
     
     return "; ".join(desc_parts) if desc_parts else "No clear directional exposure"
+
+
+def _categorize_portfolio_positions(positions):
+    """
+    Categorize portfolio positions by their macro sensitivity for scenario analysis.
+    
+    Returns dict with structured position breakdown and scenario impacts.
+    """
+    if not positions:
+        return {
+            "summary": "No positions",
+            "by_category": {},
+            "scenario_matrix": {},
+        }
+    
+    # Category buckets
+    categories = {
+        "long_equity_calls": [],      # Bullish equity (profit if market rallies)
+        "long_equity_puts": [],       # Bearish equity (profit if market sells off)
+        "long_vol": [],               # Long volatility (profit if VIX spikes)
+        "long_rates_sensitive": [],   # Rates plays (TLT calls = profit if yields fall)
+        "long_credit_puts": [],       # Credit stress plays (HYG puts = profit if spreads widen)
+        "long_commodity": [],         # Commodity exposure (gold, oil, etc.)
+        "short_equity_calls": [],     # Short calls (profit if market flat/down)
+        "short_equity_puts": [],      # Short puts (profit if market flat/up)
+        "etf_long": [],               # Long ETF shares
+        "etf_short": [],              # Short ETF shares
+    }
+    
+    # Known ETF classifications
+    vol_etfs = ["VIXM", "VXX", "UVXY", "SVXY", "VIXY"]
+    rates_etfs = ["TLT", "IEF", "SHY", "TBT", "TMF", "TMV"]
+    credit_etfs = ["HYG", "JNK", "LQD", "BKLN", "HYGH"]
+    commodity_etfs = ["GLDM", "GLD", "SLV", "USO", "UNG", "DBA", "DBB"]
+    em_etfs = ["FXI", "EEM", "EWZ", "EWY", "EWT", "MCHI"]
+    growth_etfs = ["QQQ", "ARKK", "TAN", "ICLN", "SOXX"]
+    
+    for p in positions:
+        symbol = p.get("symbol", "")
+        qty = p.get("qty", 0)
+        opt = p.get("opt_info")
+        pnl = p.get("pnl", 0)
+        mv = p.get("market_value", 0)
+        
+        if not symbol or qty == 0:
+            continue
+        
+        pos_entry = {
+            "symbol": symbol,
+            "qty": qty,
+            "pnl": pnl,
+            "market_value": mv,
+        }
+        
+        if opt:
+            underlying = opt.get("underlying", symbol[:3]).upper()
+            opt_type = opt.get("opt_type", opt.get("type", "")).upper()
+            strike = opt.get("strike", 0)
+            expiry = opt.get("expiry", "")
+            
+            pos_entry["underlying"] = underlying
+            pos_entry["opt_type"] = opt_type
+            pos_entry["strike"] = strike
+            pos_entry["expiry"] = expiry
+            
+            is_call = opt_type in ["CALL", "C"]
+            is_put = opt_type in ["PUT", "P"]
+            is_long = qty > 0
+            
+            # Categorize by underlying and option type
+            if underlying in vol_etfs:
+                if is_long and is_call:
+                    categories["long_vol"].append(pos_entry)
+                elif is_long and is_put:
+                    categories["short_equity_puts"].append(pos_entry)  # Rare but possible
+            elif underlying in rates_etfs:
+                if is_long and is_call:
+                    categories["long_rates_sensitive"].append(pos_entry)
+                elif is_long and is_put:
+                    categories["long_equity_puts"].append(pos_entry)  # Bearish bonds
+            elif underlying in credit_etfs:
+                if is_long and is_put:
+                    categories["long_credit_puts"].append(pos_entry)
+                elif is_long and is_call:
+                    categories["long_equity_calls"].append(pos_entry)
+            elif underlying in commodity_etfs:
+                if is_long:
+                    categories["long_commodity"].append(pos_entry)
+            else:
+                # General equity/sector ETF
+                if is_long and is_call:
+                    categories["long_equity_calls"].append(pos_entry)
+                elif is_long and is_put:
+                    categories["long_equity_puts"].append(pos_entry)
+                elif not is_long and is_call:
+                    categories["short_equity_calls"].append(pos_entry)
+                elif not is_long and is_put:
+                    categories["short_equity_puts"].append(pos_entry)
+        else:
+            # Stock/ETF shares
+            ticker = symbol.upper()
+            if qty > 0:
+                if ticker in vol_etfs:
+                    categories["long_vol"].append(pos_entry)
+                elif ticker in commodity_etfs:
+                    categories["long_commodity"].append(pos_entry)
+                else:
+                    categories["etf_long"].append(pos_entry)
+            else:
+                categories["etf_short"].append(pos_entry)
+    
+    # Build scenario impact matrix
+    scenario_matrix = {
+        "risk_off_spike": {  # VIX +10pts, HY spreads +100bp, equities -10%
+            "winners": [],
+            "losers": [],
+        },
+        "rates_surge": {  # 10Y +50bp, growth equities -5%
+            "winners": [],
+            "losers": [],
+        },
+        "goldilocks_rally": {  # VIX -5pts, equities +5%
+            "winners": [],
+            "losers": [],
+        },
+        "credit_stress": {  # HY spreads +150bp, HYG -5%
+            "winners": [],
+            "losers": [],
+        },
+    }
+    
+    # Map categories to scenario impacts
+    for pos in categories["long_vol"]:
+        scenario_matrix["risk_off_spike"]["winners"].append(pos["symbol"])
+        scenario_matrix["goldilocks_rally"]["losers"].append(pos["symbol"])
+    
+    for pos in categories["long_equity_puts"]:
+        scenario_matrix["risk_off_spike"]["winners"].append(pos["symbol"])
+        scenario_matrix["goldilocks_rally"]["losers"].append(pos["symbol"])
+    
+    for pos in categories["long_equity_calls"]:
+        scenario_matrix["goldilocks_rally"]["winners"].append(pos["symbol"])
+        scenario_matrix["risk_off_spike"]["losers"].append(pos["symbol"])
+        scenario_matrix["rates_surge"]["losers"].append(pos["symbol"])
+    
+    for pos in categories["long_rates_sensitive"]:
+        scenario_matrix["rates_surge"]["losers"].append(pos["symbol"])
+        # Rates falling = TLT calls win (flight to quality)
+        scenario_matrix["risk_off_spike"]["winners"].append(pos["symbol"])
+    
+    for pos in categories["long_credit_puts"]:
+        scenario_matrix["credit_stress"]["winners"].append(pos["symbol"])
+        scenario_matrix["risk_off_spike"]["winners"].append(pos["symbol"])
+        scenario_matrix["goldilocks_rally"]["losers"].append(pos["symbol"])
+    
+    for pos in categories["long_commodity"]:
+        # Gold typically wins in risk-off
+        if "GLD" in pos["symbol"] or "GLDM" in pos["symbol"]:
+            scenario_matrix["risk_off_spike"]["winners"].append(pos["symbol"])
+    
+    # Build summary string
+    active_categories = {k: v for k, v in categories.items() if v}
+    summary_parts = []
+    
+    if categories["long_vol"]:
+        tickers = [p["underlying"] if "underlying" in p else p["symbol"] for p in categories["long_vol"]]
+        summary_parts.append(f"Long Vol: {', '.join(set(tickers))}")
+    
+    if categories["long_equity_puts"]:
+        tickers = [p.get("underlying", p["symbol"]) for p in categories["long_equity_puts"]]
+        summary_parts.append(f"Long Puts: {', '.join(set(tickers))}")
+    
+    if categories["long_equity_calls"]:
+        tickers = [p.get("underlying", p["symbol"]) for p in categories["long_equity_calls"]]
+        summary_parts.append(f"Long Calls: {', '.join(set(tickers))}")
+    
+    if categories["long_credit_puts"]:
+        tickers = [p.get("underlying", p["symbol"]) for p in categories["long_credit_puts"]]
+        summary_parts.append(f"Credit Puts: {', '.join(set(tickers))}")
+    
+    if categories["long_rates_sensitive"]:
+        tickers = [p.get("underlying", p["symbol"]) for p in categories["long_rates_sensitive"]]
+        summary_parts.append(f"Rates Plays: {', '.join(set(tickers))}")
+    
+    if categories["long_commodity"]:
+        tickers = [p.get("underlying", p["symbol"]) for p in categories["long_commodity"]]
+        summary_parts.append(f"Commodities: {', '.join(set(tickers))}")
+    
+    return {
+        "summary": " | ".join(summary_parts) if summary_parts else "No directional exposure",
+        "by_category": active_categories,
+        "scenario_matrix": scenario_matrix,
+    }
 
 
 def _build_portfolio_from_alpaca(positions_data, cash_available):
@@ -1979,9 +2344,6 @@ def _generate_palmer_analysis():
     # Get macro headlines (with portfolio fallback)
     headlines = fetch_macro_headlines(settings, portfolio_tickers=portfolio_tickers, limit=3)
     
-    # Build dynamic portfolio description from actual positions
-    portfolio_desc = _describe_portfolio(positions_data.get("positions", []))
-    
     # Build regime snapshot for structured output
     regime_snapshot = {
         "hy_oas_bps": hy_oas.get("value") if hy_oas else None,
@@ -2077,152 +2439,170 @@ def _generate_palmer_analysis():
             "url": h.get("url", ""),
         })
     
-    # Generate LLM insight with technical depth
+    # Generate LLM insight with professional macro brief style
     try:
         from openai import OpenAI
         client = OpenAI(api_key=settings.openai_api_key)
         
-        # Build rich context for technical analysis
-        # VIX context: percentile positioning and term structure implications
+        # Get detailed portfolio categorization for scenario analysis
+        portfolio_positions = positions_data.get("positions", []) if positions_data else []
+        portfolio_analysis = _categorize_portfolio_positions(portfolio_positions)
+        scenario_matrix = portfolio_analysis.get("scenario_matrix", {})
+        
+        # Build quantitative regime context
         vix_context = ""
         if vix_val:
             if vix_val < 14:
-                vix_context = f"VIX {vix_val:.1f} (5th-15th percentile, complacency zone—put premium compressed, hedges cheap)"
+                vix_context = f"VIX at {vix_val:.1f} (5th-15th percentile) — implied vol compressed, hedges cheap but portfolio vol positions face theta decay"
             elif vix_val < 18:
-                vix_context = f"VIX {vix_val:.1f} (25th-45th percentile, normal regime—balanced risk/reward on vol)"
+                vix_context = f"VIX at {vix_val:.1f} (25th-45th percentile) — normal regime, balanced convexity vs carry trade-off"
             elif vix_val < 22:
-                vix_context = f"VIX {vix_val:.1f} (50th-70th percentile, elevated—event risk priced, hedges more expensive)"
+                vix_context = f"VIX at {vix_val:.1f} (50th-70th percentile) — elevated regime, event risk priced, vol positions approaching profitability zone"
             elif vix_val < 28:
-                vix_context = f"VIX {vix_val:.1f} (75th-90th percentile, stressed—volatility term structure likely inverted)"
+                vix_context = f"VIX at {vix_val:.1f} (75th-90th percentile) — stressed regime, term structure likely inverted, vol positions should be delta-hedging"
             else:
-                vix_context = f"VIX {vix_val:.1f} (>90th percentile, crisis mode—vol selling opportunities emerging but timing risk high)"
+                vix_context = f"VIX at {vix_val:.1f} (>90th percentile) — crisis regime, vol positions at max vega, consider rolling strikes"
         
-        # HY OAS context: credit cycle positioning
+        # HY spread context
         hy_context = ""
         if hy_val:
             if hy_val < 300:
-                hy_context = f"HY OAS {hy_val:.0f}bp (tight spreads, late-cycle credit optimism—risk/reward unfavorable for HY longs)"
+                hy_context = f"HY OAS at {hy_val:.0f}bp (tight) — credit risk underpriced, HYG put holders waiting for catalyst"
             elif hy_val < 350:
-                hy_context = f"HY OAS {hy_val:.0f}bp (normal range, credit benign—watch for spread compression exhaustion)"
+                hy_context = f"HY OAS at {hy_val:.0f}bp (normal) — credit benign but tightening cycle mature, watching for spread decompression"
             elif hy_val < 450:
-                hy_context = f"HY OAS {hy_val:.0f}bp (widening, early stress signals—correlation to equity rising)"
+                hy_context = f"HY OAS at {hy_val:.0f}bp (widening) — early stress signals, HYG put deltas expanding, equity-credit correlation rising"
             else:
-                hy_context = f"HY OAS {hy_val:.0f}bp (stressed, dislocation zone—credit leading equities lower, contagion risk)"
+                hy_context = f"HY OAS at {hy_val:.0f}bp (stressed) — credit dislocation, HYG puts deep ITM, contagion risk to equity"
         
-        # 10Y context: real rate and duration regime
+        # Rates context
         rate_context = ""
         if yield_val:
             if yield_val < 3.5:
-                rate_context = f"10Y {yield_val:.2f}% (dovish regime, duration tailwind—growth concerns dominating)"
+                rate_context = f"10Y at {yield_val:.2f}% (dovish) — duration tailwind, TLT calls profitable, growth outperforming value"
             elif yield_val < 4.2:
-                rate_context = f"10Y {yield_val:.2f}% (neutral range, Fed at terminal—duration neutral)"
+                rate_context = f"10Y at {yield_val:.2f}% (neutral) — Fed at terminal, duration-sensitive plays range-bound"
             elif yield_val < 4.7:
-                rate_context = f"10Y {yield_val:.2f}% (restrictive, term premium rebuilding—duration drag on growth assets)"
+                rate_context = f"10Y at {yield_val:.2f}% (restrictive) — term premium rebuilding, growth/tech equity multiples under pressure"
             else:
-                rate_context = f"10Y {yield_val:.2f}% (hawkish extreme, fiscal supply pressure—equity multiple compression zone)"
+                rate_context = f"10Y at {yield_val:.2f}% (hawkish extreme) — fiscal supply pressure, equity multiple compression accelerating"
         
-        # Portfolio transmission mechanism (defensive coding)
-        portfolio_positions = positions_data.get("positions", []) if positions_data else []
-        portfolio_greeks = {
-            "delta_pct": positions_data.get("return_pct", 0) if positions_data else 0,
-            "long_vol": any("VIXM" in str(p.get("symbol", "") or "") or "VIX" in str(p.get("symbol", "") or "") for p in portfolio_positions),
-            "short_credit": any("HYG" in str(p.get("symbol", "") or "") and (p.get("qty") or 0) < 0 for p in portfolio_positions) or any("HYG" in str((p.get("opt_info") or {}).get("underlying", "")) for p in portfolio_positions if (p.get("opt_info") or {}).get("opt_type") == "P"),
-            "em_exposure": any(ticker in str(p.get("symbol", "") or "") for p in portfolio_positions for ticker in ["FXI", "EEM", "EWZ", "EWY"]),
-        }
+        # Build scenario impact descriptions
+        scenario_impacts = []
         
-        # Format events with economic significance
+        # Risk-off scenario
+        risk_off_winners = scenario_matrix.get("risk_off_spike", {}).get("winners", [])
+        risk_off_losers = scenario_matrix.get("risk_off_spike", {}).get("losers", [])
+        if risk_off_winners or risk_off_losers:
+            impact = "RISK-OFF SPIKE (VIX +10, SPX -10%): "
+            parts = []
+            if risk_off_winners:
+                parts.append(f"Winners: {', '.join(list(set(risk_off_winners))[:3])}")
+            if risk_off_losers:
+                parts.append(f"Losers: {', '.join(list(set(risk_off_losers))[:3])}")
+            scenario_impacts.append(impact + " | ".join(parts))
+        
+        # Goldilocks rally
+        rally_winners = scenario_matrix.get("goldilocks_rally", {}).get("winners", [])
+        rally_losers = scenario_matrix.get("goldilocks_rally", {}).get("losers", [])
+        if rally_winners or rally_losers:
+            impact = "GOLDILOCKS RALLY (VIX -5, SPX +5%): "
+            parts = []
+            if rally_winners:
+                parts.append(f"Winners: {', '.join(list(set(rally_winners))[:3])}")
+            if rally_losers:
+                parts.append(f"Losers: {', '.join(list(set(rally_losers))[:3])}")
+            scenario_impacts.append(impact + " | ".join(parts))
+        
+        # Credit stress
+        credit_winners = scenario_matrix.get("credit_stress", {}).get("winners", [])
+        if credit_winners:
+            scenario_impacts.append(f"CREDIT STRESS (HY +150bp): Winners: {', '.join(list(set(credit_winners))[:3])}")
+        
+        # Format events with significance
         events_context = ""
         if fed_fiscal_events:
             event_details = []
-            for e in fed_fiscal_events[:5]:
+            for e in fed_fiscal_events[:4]:
                 evt_name = e.get("event", "")
                 actual = e.get("actual")
                 estimate = e.get("estimate")
-                
-                # Determine economic significance
-                if "PCE" in evt_name or "CPI" in evt_name:
-                    sig = "inflation gauge—Fed reaction function driver"
-                elif "Payroll" in evt_name or "Employment" in evt_name or "Jobless" in evt_name:
-                    sig = "labor market—recession probability input"
-                elif "GDP" in evt_name:
-                    sig = "growth confirmation—earnings revision catalyst"
-                elif "ISM" in evt_name or "PMI" in evt_name:
-                    sig = "leading indicator—manufacturing cycle signal"
-                elif "Retail" in evt_name:
-                    sig = "consumer health—consumption resilience"
-                elif "FOMC" in evt_name or "Fed" in evt_name:
-                    sig = "policy signal—rate path recalibration"
-                else:
-                    sig = "macro data point"
                 
                 if actual is not None and estimate is not None:
                     try:
                         diff = float(actual) - float(estimate)
                         direction = "beat" if diff > 0 else "miss"
-                        event_details.append(f"{evt_name}: {actual} vs {estimate} est ({direction}, {sig})")
+                        event_details.append(f"{evt_name}: {actual} vs {estimate} ({direction})")
                     except:
-                        event_details.append(f"{evt_name}: {actual} ({sig})")
+                        event_details.append(f"{evt_name}: {actual}")
                 elif actual is not None:
-                    event_details.append(f"{evt_name}: {actual} ({sig})")
+                    event_details.append(f"{evt_name}: {actual}")
                 else:
-                    event_details.append(f"{evt_name} pending ({sig})")
-            events_context = "; ".join(event_details[:3])
+                    event_details.append(f"{evt_name} (pending)")
+            events_context = " | ".join(event_details)
         
-        # Format headlines with market relevance
+        # Format headlines
         news_context = ""
         if headlines:
-            news_items = []
-            for h in headlines[:3]:
-                headline = h.get("headline", "") if h else ""
-                ticker = h.get("ticker", "") if h else ""
-                # Add relevance tag
-                if ticker and any(ticker in str(p.get("symbol", "") or "") or ticker in str((p.get("opt_info") or {}).get("underlying", "")) for p in portfolio_positions):
-                    news_items.append(f"{headline} [POSITION-RELEVANT: {ticker}]")
-                else:
-                    news_items.append(headline)
+            news_items = [h.get("headline", "")[:80] for h in headlines[:3] if h]
             news_context = " | ".join(news_items)
         
-        # Construct technically rigorous prompt
-        prompt = f"""You are a macro strategist at a systematic hedge fund. Provide a TECHNICAL assessment (not sentiment).
+        # Construct professional macro brief prompt
+        prompt = f"""You are a senior macro trader writing a morning brief for the investment committee. 
+Write a professional market overview that connects macro conditions to our specific portfolio positions.
 
-QUANTITATIVE CONTEXT:
-- {vix_context}
-- {hy_context}
-- {rate_context}
-- Regime: {regime_label} (VIX/HY-based classification)
+═══════════════════════════════════════════════════════════════
+MARKET REGIME: {regime_label}
+═══════════════════════════════════════════════════════════════
 
-ECONOMIC CALENDAR:
-{events_context if events_context else "No releases today"}
+QUANTITATIVE LEVELS:
+• {vix_context or "VIX data unavailable"}
+• {hy_context or "Credit spread data unavailable"}
+• {rate_context or "Rates data unavailable"}
 
-MARKET HEADLINES:
-{news_context if news_context else "No relevant headlines"}
+PORTFOLIO POSITIONING:
+{portfolio_analysis.get("summary", "No positions")}
 
-PORTFOLIO EXPOSURE:
-{portfolio_desc}
-Long vol: {'Yes' if portfolio_greeks['long_vol'] else 'No'} | EM exposure: {'Yes' if portfolio_greeks['em_exposure'] else 'No'}
+SCENARIO P&L ATTRIBUTION:
+{chr(10).join(scenario_impacts) if scenario_impacts else "No scenario analysis available"}
 
-TASK: Write 2-3 sentences maximum. Be precise and technical:
-1. State regime with QUANTITATIVE anchor (VIX percentile, HY spread level)
-2. Name the PRIMARY transmission: [data/event] → [mechanism] → [portfolio impact]
-3. Cite ONE specific threshold or magnitude (e.g., "10Y above 4.50% compresses multiples ~5%")
+TODAY'S CALENDAR:
+{events_context if events_context else "No significant releases"}
 
-Rules:
-- No sentiment language ("confidence", "optimism")
-- No hedging ("could", "might")
-- Use: "→" for causality chains
-- Be direct about portfolio positioning"""
+RELEVANT HEADLINES:
+{news_context if news_context else "None"}
+
+═══════════════════════════════════════════════════════════════
+INSTRUCTIONS: Write a 3-4 sentence macro brief in PROFESSIONAL TONE:
+
+1. REGIME ASSESSMENT: State the current macro regime with quantitative anchors (VIX level, spread levels). Be direct.
+
+2. PORTFOLIO IMPACT: Explain how current conditions affect our specific positions:
+   - For LONG PUTS: Describe what needs to happen for them to pay (underlying decline, vol spike)
+   - For LONG CALLS: Describe the tailwind/headwind they face
+   - For VOL POSITIONS: Comment on whether vol is cheap/expensive relative to realized
+
+3. KEY RISK: Name ONE specific catalyst or threshold that would shift the portfolio P&L materially.
+
+STYLE REQUIREMENTS:
+- Write like a macro PM, not a news anchor
+- Use precise language: "10Y above 4.50% → multiple compression → long puts accelerate"
+- No hedging words ("could", "might", "possibly")
+- No sentiment language ("confident", "optimistic")
+- Reference specific positions by underlying (e.g., "HYG puts", "VIXM calls")
+- Maximum 4 sentences"""
 
         response = client.chat.completions.create(
             model=settings.openai_model or "gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.15,
-            max_tokens=200,
+            temperature=0.2,
+            max_tokens=350,
         )
         
         insight = response.choices[0].message.content.strip()
     except Exception as e:
         print(f"[Palmer] LLM error: {e}")
-        insight = "Analysis temporarily unavailable."
+        insight = "Market analysis temporarily unavailable."
     
     # Use cached Monte Carlo forecast (updated hourly in separate thread)
     with MC_CACHE_LOCK:
@@ -2236,6 +2616,12 @@ Rules:
             cash_available=positions_data.get("cash_available", 0)
         )
     
+    # Get portfolio analysis for return value (may have been generated during LLM call)
+    try:
+        portfolio_analysis_output = _categorize_portfolio_positions(positions_data.get("positions", []))
+    except Exception:
+        portfolio_analysis_output = {"summary": "Analysis unavailable", "scenario_matrix": {}}
+    
     return {
         "analysis": insight,
         "regime_snapshot": regime_snapshot,
@@ -2244,6 +2630,10 @@ Rules:
             "volatility": {"label": vol_label, "color": vol_color, "value": f"VIX {vix_val:.1f}" if vix_val else "N/A"},
             "credit": {"label": credit_label, "color": credit_color, "value": f"{hy_val:.0f}bp" if hy_val else "N/A"},
             "rates": {"label": rates_label, "color": rates_color, "value": f"{yield_val:.2f}%" if yield_val else "N/A"},
+        },
+        "portfolio_analysis": {
+            "summary": portfolio_analysis_output.get("summary", ""),
+            "scenario_matrix": portfolio_analysis_output.get("scenario_matrix", {}),
         },
         "events": events_display,
         "headlines": headlines_display,
@@ -2301,6 +2691,7 @@ def _refresh_palmer_cache():
             PALMER_CACHE["analysis"] = result.get("analysis")
             PALMER_CACHE["regime_snapshot"] = result.get("regime_snapshot")
             PALMER_CACHE["traffic_lights"] = new_lights
+            PALMER_CACHE["portfolio_analysis"] = result.get("portfolio_analysis")
             PALMER_CACHE["events"] = result.get("events")
             PALMER_CACHE["headlines"] = result.get("headlines")
             PALMER_CACHE["monte_carlo"] = result.get("monte_carlo")
@@ -2343,11 +2734,12 @@ def api_regime_analysis():
             # First request - trigger initial refresh
             pass
         
-        # Return cached data including monte_carlo
+        # Return cached data including monte_carlo and portfolio_analysis
         return jsonify({
             "analysis": PALMER_CACHE.get("analysis"),
             "regime_snapshot": PALMER_CACHE.get("regime_snapshot"),
             "traffic_lights": PALMER_CACHE.get("traffic_lights"),
+            "portfolio_analysis": PALMER_CACHE.get("portfolio_analysis"),
             "events": PALMER_CACHE.get("events"),
             "headlines": PALMER_CACHE.get("headlines"),
             "monte_carlo": PALMER_CACHE.get("monte_carlo"),
@@ -2394,6 +2786,116 @@ def api_monte_carlo_force():
     
     _refresh_mc_cache()
     return jsonify({"message": "Monte Carlo refreshed", "timestamp": datetime.now(timezone.utc).isoformat()})
+
+
+# ============ NEWS & CALENDAR API ============
+
+@app.route('/api/market-news')
+def api_market_news():
+    """API endpoint for portfolio ticker news and economic calendar."""
+    try:
+        return jsonify(get_market_news_data())
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "news": [], "calendar": []})
+
+
+def get_market_news_data():
+    """Fetch news for portfolio tickers and upcoming economic events."""
+    import requests
+    
+    news_items = []
+    calendar_items = []
+    
+    try:
+        settings = load_settings()
+    except Exception:
+        return {"news": news_items, "calendar": calendar_items, "error": "Settings not available"}
+    
+    # Get portfolio tickers
+    portfolio_tickers = set()
+    try:
+        positions_data = get_positions_data()
+        for pos in positions_data.get("positions", []):
+            sym = pos.get("symbol", "")
+            # Extract underlying from options (OCC format)
+            if len(sym) > 10:
+                underlying = sym[:6].rstrip("0123456789 ")
+                portfolio_tickers.add(underlying)
+            else:
+                portfolio_tickers.add(sym)
+    except Exception as e:
+        print(f"[News] Error getting portfolio tickers: {e}")
+        portfolio_tickers = {"SPY", "QQQ"}  # Fallback to broad market
+    
+    # Fetch news from FMP
+    if settings.FMP_API_KEY and portfolio_tickers:
+        try:
+            tickers_str = ",".join(list(portfolio_tickers)[:5])  # Limit to 5 tickers
+            url = "https://financialmodelingprep.com/api/v3/stock_news"
+            resp = requests.get(url, params={
+                "tickers": tickers_str,
+                "limit": 8,
+                "apikey": settings.FMP_API_KEY
+            }, timeout=10)
+            data = resp.json()
+            
+            if isinstance(data, list):
+                for item in data[:8]:
+                    news_items.append({
+                        "title": item.get("title", "")[:100],
+                        "symbol": item.get("symbol", ""),
+                        "source": item.get("site", ""),
+                        "url": item.get("url", ""),
+                        "time": item.get("publishedDate", "")[:16],  # Trim to date/time
+                    })
+        except Exception as e:
+            print(f"[News] FMP news error: {e}")
+    
+    # Fetch economic calendar from FMP
+    if settings.FMP_API_KEY:
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+            next_week = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+            url = "https://financialmodelingprep.com/api/v3/economic_calendar"
+            resp = requests.get(url, params={
+                "from": today,
+                "to": next_week,
+                "apikey": settings.FMP_API_KEY
+            }, timeout=10)
+            data = resp.json()
+            
+            # Filter for high-impact US events
+            high_impact_keywords = ["CPI", "PPI", "NFP", "FOMC", "Fed", "GDP", "Unemployment", "Retail Sales", "PCE", "Jobs"]
+            if isinstance(data, list):
+                for item in data:
+                    event_name = item.get("event", "")
+                    country = item.get("country", "")
+                    impact = item.get("impact", "")
+                    
+                    # Only show US high-impact events
+                    if country == "US" and (impact == "High" or any(kw in event_name for kw in high_impact_keywords)):
+                        calendar_items.append({
+                            "event": event_name[:50],
+                            "date": item.get("date", "")[:10],
+                            "time": item.get("date", "")[11:16] if len(item.get("date", "")) > 11 else "",
+                            "previous": item.get("previous", ""),
+                            "estimate": item.get("estimate", ""),
+                            "impact": impact,
+                        })
+                
+                # Limit to 5 events
+                calendar_items = calendar_items[:5]
+        except Exception as e:
+            print(f"[News] FMP calendar error: {e}")
+    
+    return {
+        "news": news_items,
+        "calendar": calendar_items,
+        "tickers": list(portfolio_tickers),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 # Start background refresh threads on app startup
