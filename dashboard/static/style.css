@@ -2025,6 +2025,22 @@ tbody tr:hover {
 .forecast-value.positive { color: #4ade80; }
 .forecast-value.forecast-risk { color: #fbbf24; }
 
+.forecast-details {
+    margin-top: 12px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.forecast-detail {
+    font-size: 11px;
+    color: rgba(255,255,255,0.55);
+    background: rgba(255,255,255,0.05);
+    padding: 4px 10px;
+    border-radius: 4px;
+}
+
 .forecast-footer {
     margin-top: 16px;
     padding-top: 12px;
