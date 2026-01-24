@@ -313,7 +313,18 @@ lox nav snapshot
 | `lox labs vol --llm` | Volatility research brief |
 | `lox labs rates snapshot --llm` | Rates/curve analysis |
 | `lox labs mc-v01 --real` | Monte Carlo scenarios |
-| `lox monetary fedfunds-outlook` | Fed policy outlook |
+| `lox labs ticker outlook -t AAPL` | Ticker outlook with regime context |
+
+### Interactive Chat
+| Command | Purpose |
+|---------|---------|
+| `lox chat` | Interactive research chat (default: portfolio context) |
+| `lox chat -c fiscal` | Chat with fiscal regime data loaded |
+| `lox chat -c funding` | Chat with funding/liquidity context |
+| `lox chat -c macro` | Chat with macro regime context |
+| `lox chat -c regimes` | Chat with all regimes loaded |
+
+When chatting, ask about specific tickers (e.g., "tell me about FXI") for automatic deep-dive analysis with quantitative snapshot, news, and company profile.
 
 ---
 
@@ -360,36 +371,49 @@ The LLM analyst aggregates these sources into research briefs with proper citati
 
 ## Installation
 
+### Requirements
+- **Python 3.10+** (check with `python --version`)
+- API keys for: Alpaca, OpenAI, FRED, FMP (see `.env.example`)
+
+### Quick Start
 ```bash
+# Clone and install
 git clone <repo>
 cd ai-options-trader-starter
 pip install -e .
 
-# Configure API keys
-cat > .env << EOF
-ALPACA_API_KEY=your_key
-ALPACA_API_SECRET=your_secret
-ALPACA_PAPER=true
-FRED_API_KEY=your_fred_key
-FMP_API_KEY=your_fmp_key
-TRADING_ECONOMICS_API_KEY=your_te_key
-OPENAI_API_KEY=your_openai_key
-EOF
+# Configure API keys (copy and edit)
+cp .env.example .env
+# Edit .env with your API keys
 
-# Start web dashboard
-cd dashboard
-python app.py
-# Navigate to http://localhost:5001
-
-# Verify CLI tools
+# Verify CLI installation
+lox --help
 lox status
-lox dashboard
 ```
 
+### API Keys Required
+| Service | Purpose | Get Key |
+|---------|---------|---------|
+| **Alpaca** | Brokerage, positions, market data | [alpaca.markets](https://app.alpaca.markets/) |
+| **OpenAI** | LLM analysis (`--llm`, chat, analyze) | [platform.openai.com](https://platform.openai.com/api-keys) |
+| **FRED** | Macro/economic time series | [fred.stlouisfed.org](https://fred.stlouisfed.org/docs/api/api_key.html) |
+| **FMP** | News, calendar, quotes, company data | [financialmodelingprep.com](https://financialmodelingprep.com/developer/docs/) |
+| Trading Economics | Economic calendar (optional) | [tradingeconomics.com](https://tradingeconomics.com/api/) |
+
 ### Dashboard Setup
+```bash
+# Install dashboard dependencies
+cd dashboard
+pip install -r requirements.txt
+
+# Run locally
+python app.py
+# Navigate to http://localhost:5001
+```
+
 The dashboard requires:
-- All API keys configured in `.env`
-- Python dependencies: `flask`, `requests`, `openai`
+- All API keys configured in `.env` (in project root)
+- `FUND_TOTAL_CAPITAL` set for accurate P&L (defaults to $1000)
 - Background refresh runs automatically (30-minute intervals)
 - Force refresh: `curl "http://localhost:5001/api/regime-analysis/force-refresh?secret=YOUR_ADMIN_SECRET"`
 
