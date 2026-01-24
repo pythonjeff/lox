@@ -47,6 +47,16 @@ PALMER_CACHE_LOCK = threading.Lock()
 PALMER_REFRESH_INTERVAL = 30 * 60  # 30 minutes in seconds
 ADMIN_SECRET = os.environ.get("PALMER_ADMIN_SECRET", "lox-admin-2026")  # Set in env for production
 
+# ============ MONTE CARLO CACHE ============
+# Separate cache for MC simulation - refreshes hourly
+MC_CACHE = {
+    "forecast": None,
+    "timestamp": None,
+    "last_refresh": None,
+}
+MC_CACHE_LOCK = threading.Lock()
+MC_REFRESH_INTERVAL = 60 * 60  # 1 hour in seconds
+
 
 def get_hy_oas():
     """Get HY OAS (credit spreads) - key for HYG puts."""
@@ -1676,13 +1686,173 @@ def _describe_portfolio(positions):
     return "; ".join(desc_parts) if desc_parts else "No clear directional exposure"
 
 
-def _calculate_monte_carlo_forecast(vix_val, hy_val, regime_label):
+def _build_portfolio_from_alpaca(positions_data, cash_available):
     """
-    Calculate simplified Monte Carlo forecast based on current regime.
+    Build a Portfolio object from Alpaca positions for Monte Carlo simulation.
     
-    This is a regime-conditional estimate, not a full MC simulation.
-    The actual MC simulation runs separately via the CLI.
+    Returns a Portfolio with Position objects including calculated greeks.
     """
+    from ai_options_trader.portfolio.positions import Portfolio, Position
+    from datetime import datetime
+    
+    portfolio_positions = []
+    
+    for p in positions_data:
+        symbol = p.get("symbol", "")
+        qty = p.get("qty", 0)
+        current_price = p.get("current_price", 0) or 0
+        market_value = abs(p.get("market_value", 0) or 0)
+        opt_info = p.get("opt_info")
+        
+        if not symbol or qty == 0:
+            continue
+        
+        if opt_info:
+            # Option position
+            underlying = opt_info.get("underlying", symbol[:3])
+            strike = opt_info.get("strike", 0)
+            expiry_str = opt_info.get("expiry", "")
+            opt_type = opt_info.get("opt_type", "P").upper()
+            
+            # Parse expiry
+            try:
+                expiry = datetime.strptime(expiry_str, "%Y-%m-%d") if expiry_str else None
+            except:
+                expiry = None
+            
+            # Estimate underlying price from strike proximity
+            # (In production, fetch live underlying price)
+            underlying_price = strike * 1.05 if opt_type in ["P", "PUT"] else strike * 0.95
+            
+            # Entry IV estimate based on position type
+            entry_iv = 0.25  # Default
+            if "VIX" in underlying.upper():
+                entry_iv = 0.90
+            elif "HYG" in underlying.upper():
+                entry_iv = 0.18
+            elif "TAN" in underlying.upper():
+                entry_iv = 0.35
+            
+            pos = Position(
+                ticker=symbol,
+                quantity=qty,
+                position_type="put" if opt_type in ["P", "PUT"] else "call",
+                strike=strike,
+                expiry=expiry,
+                entry_price=current_price if current_price > 0 else (market_value / (abs(qty) * 100) if qty != 0 else 1),
+                entry_underlying_price=underlying_price,
+                entry_iv=entry_iv,
+            )
+            
+            # Calculate greeks
+            pos.calculate_greeks(underlying_price, entry_iv)
+            portfolio_positions.append(pos)
+        else:
+            # Stock/ETF position
+            pos = Position(
+                ticker=symbol,
+                quantity=qty,
+                position_type="etf" if len(symbol) <= 5 else "stock",
+                entry_price=current_price if current_price > 0 else (market_value / abs(qty) if qty != 0 else 1),
+            )
+            pos.calculate_greeks(pos.entry_price, 0.20)
+            portfolio_positions.append(pos)
+    
+    return Portfolio(positions=portfolio_positions, cash=cash_available)
+
+
+def _run_monte_carlo_simulation(portfolio, vix_val, hy_val, regime_label, n_scenarios=2000):
+    """
+    Run actual Monte Carlo simulation using the v01 engine.
+    
+    Returns rich metrics including attribution and tail risk analysis.
+    """
+    import numpy as np
+    from ai_options_trader.llm.monte_carlo_v01 import MonteCarloV01, ScenarioAssumptions
+    
+    # Map dashboard regime to MC regime
+    regime_map = {
+        "RISK-ON": "GOLDILOCKS",
+        "CAUTIOUS": "ALL",  # Neutral
+        "RISK-OFF": "RISK_OFF",
+        "UNKNOWN": "ALL",
+    }
+    mc_regime = regime_map.get(regime_label, "ALL")
+    
+    # Adjust regime based on VIX level for more dynamic behavior
+    if vix_val:
+        if vix_val > 30:
+            mc_regime = "RISK_OFF"
+        elif vix_val > 25:
+            mc_regime = "CREDIT_STRESS" if (hy_val and hy_val > 400) else "RATES_SHOCK"
+        elif vix_val < 14:
+            mc_regime = "VOL_CRUSH"
+    
+    # Get regime-conditional assumptions
+    assumptions = ScenarioAssumptions.for_regime(mc_regime, horizon_months=6)
+    
+    # Run simulation
+    mc = MonteCarloV01(portfolio, assumptions)
+    results = mc.generate_scenarios(n_scenarios=n_scenarios)
+    analysis = mc.analyze_results(results)
+    
+    # Extract top risk driver from CVaR attribution
+    cvar_attr = analysis.get("cvar_attribution", {})
+    top_risk_driver = None
+    if cvar_attr:
+        # Most negative contributor in tail scenarios
+        sorted_attr = sorted(cvar_attr.items(), key=lambda x: x[1])
+        if sorted_attr:
+            top_risk_driver = sorted_attr[0][0]  # Ticker with most negative attribution
+    
+    # Format worst scenario for display
+    worst_scenarios = analysis.get("top_3_losers", [])
+    worst_scenario_desc = None
+    if worst_scenarios:
+        worst = worst_scenarios[0]
+        moves = worst.get("equity_moves", {})
+        if moves:
+            # Find the biggest mover
+            biggest_move = max(moves.items(), key=lambda x: abs(x[1]))
+            worst_scenario_desc = f"{biggest_move[0]} {biggest_move[1]*100:+.0f}%"
+            if worst.get("had_jump"):
+                worst_scenario_desc += " (crash)"
+    
+    return {
+        "mean_pnl_pct": round(analysis.get("mean_pnl_pct", 0), 4),
+        "median_pnl_pct": round(analysis.get("median_pnl_pct", 0), 4),
+        "var_95_pct": round(analysis.get("var_95_pct", 0), 4),
+        "cvar_95_pct": round(analysis.get("cvar_95_pct", 0), 4),
+        "prob_positive": round(analysis.get("prob_positive", 0.5), 3),
+        "prob_loss_gt_10pct": round(analysis.get("prob_loss_gt_10pct", 0), 3),
+        "prob_loss_gt_20pct": round(analysis.get("prob_loss_gt_20pct", 0), 3),
+        "skewness": round(analysis.get("skewness", 0), 2),
+        "max_loss_pct": round(analysis.get("max_loss_pct", 0), 4),
+        "max_gain_pct": round(analysis.get("max_gain_pct", 0), 4),
+        "top_risk_driver": top_risk_driver,
+        "worst_scenario": worst_scenario_desc,
+        "regime": regime_label,
+        "mc_regime": mc_regime,
+        "horizon_months": 6,
+        "n_scenarios": n_scenarios,
+    }
+
+
+def _calculate_monte_carlo_forecast(vix_val, hy_val, regime_label, positions_data=None, cash_available=0):
+    """
+    Calculate Monte Carlo forecast - uses real simulation if positions available,
+    falls back to simplified estimate otherwise.
+    """
+    # Try to run real Monte Carlo if we have positions
+    if positions_data and len(positions_data) > 0:
+        try:
+            portfolio = _build_portfolio_from_alpaca(positions_data, cash_available)
+            if portfolio.positions:
+                return _run_monte_carlo_simulation(portfolio, vix_val, hy_val, regime_label)
+        except Exception as e:
+            print(f"[MC] Real simulation failed, using fallback: {e}")
+    
+    # Fallback to simplified estimate (for empty portfolios or errors)
     import numpy as np
     
     # Base assumptions by regime (6-month horizon)
@@ -1697,7 +1867,7 @@ def _calculate_monte_carlo_forecast(vix_val, hy_val, regime_label):
     
     # Adjust for current VIX (higher VIX = more tail risk)
     if vix_val and vix_val > 20:
-        vol_mult = 1 + (vix_val - 20) / 30  # Scale up volatility
+        vol_mult = 1 + (vix_val - 20) / 30
         params["var95"] *= vol_mult
         params["vol"] *= min(vol_mult, 1.5)
     
@@ -1713,6 +1883,66 @@ def _calculate_monte_carlo_forecast(vix_val, hy_val, regime_label):
         "regime": regime_label,
         "horizon_months": 6,
     }
+
+
+def _refresh_mc_cache():
+    """Refresh Monte Carlo simulation cache."""
+    global MC_CACHE
+    print(f"[MC] Refreshing simulation at {datetime.now(timezone.utc).isoformat()}")
+    
+    try:
+        # Get current regime data
+        vix = get_vix()
+        hy_oas = get_hy_oas()
+        vix_val = vix.get("value") if vix else None
+        hy_val = hy_oas.get("value") if hy_oas else None
+        
+        # Determine regime
+        def get_regime_label(vix_val, hy_val):
+            if vix_val is None:
+                return "UNKNOWN"
+            if vix_val > 25 or (hy_val and hy_val > 400):
+                return "RISK-OFF"
+            elif vix_val > 18 or (hy_val and hy_val > 350):
+                return "CAUTIOUS"
+            else:
+                return "RISK-ON"
+        
+        regime_label = get_regime_label(vix_val, hy_val)
+        
+        # Get positions data
+        positions_data = get_positions_data()
+        positions_list = positions_data.get("positions", [])
+        cash_available = positions_data.get("cash_available", 0)
+        
+        # Run Monte Carlo
+        forecast = _calculate_monte_carlo_forecast(
+            vix_val, hy_val, regime_label,
+            positions_data=positions_list,
+            cash_available=cash_available
+        )
+        
+        with MC_CACHE_LOCK:
+            MC_CACHE["forecast"] = forecast
+            MC_CACHE["timestamp"] = datetime.now(timezone.utc).isoformat()
+            MC_CACHE["last_refresh"] = datetime.now(timezone.utc)
+        
+        print(f"[MC] Cache refreshed: mean={forecast.get('mean_pnl_pct')}, VaR95={forecast.get('var_95_pct')}")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[MC] Cache refresh failed: {e}")
+
+
+def _mc_background_refresh():
+    """Background thread that refreshes MC simulation every hour."""
+    while True:
+        try:
+            time.sleep(MC_REFRESH_INTERVAL)
+            _refresh_mc_cache()
+        except Exception as e:
+            print(f"[MC] Background refresh error: {e}")
+            time.sleep(60)  # Wait a minute before retrying
 
 
 def _generate_palmer_analysis():
@@ -1994,8 +2224,17 @@ Rules:
         print(f"[Palmer] LLM error: {e}")
         insight = "Analysis temporarily unavailable."
     
-    # Generate simple Monte Carlo forecast based on current regime
-    mc_forecast = _calculate_monte_carlo_forecast(vix_val, hy_val, regime_label)
+    # Use cached Monte Carlo forecast (updated hourly in separate thread)
+    with MC_CACHE_LOCK:
+        mc_forecast = MC_CACHE.get("forecast")
+    
+    # Fallback if MC cache not ready yet
+    if mc_forecast is None:
+        mc_forecast = _calculate_monte_carlo_forecast(
+            vix_val, hy_val, regime_label,
+            positions_data=positions_data.get("positions", []),
+            cash_available=positions_data.get("cash_available", 0)
+        )
     
     return {
         "analysis": insight,
@@ -2130,33 +2369,70 @@ def api_regime_analysis_force():
     return jsonify({"message": "Palmer analysis refreshed", "timestamp": datetime.now(timezone.utc).isoformat()})
 
 
-# Start background refresh thread on app startup
-_palmer_thread_started = False
+@app.route('/api/monte-carlo')
+def api_monte_carlo():
+    """Monte Carlo simulation results. Refreshes automatically every hour."""
+    with MC_CACHE_LOCK:
+        forecast = MC_CACHE.get("forecast")
+        timestamp = MC_CACHE.get("timestamp")
+    
+    if forecast is None:
+        return jsonify({"error": "Monte Carlo simulation not ready yet. Please wait.", "timestamp": None})
+    
+    return jsonify({
+        "forecast": forecast,
+        "timestamp": timestamp,
+    })
 
-def start_palmer_background():
-    """Initialize Palmer's cache and start background refresh."""
-    global _palmer_thread_started
-    if _palmer_thread_started:
+
+@app.route('/api/monte-carlo/force-refresh')
+def api_monte_carlo_force():
+    """Admin-only: Force refresh Monte Carlo simulation. Requires secret."""
+    secret = request.args.get("secret", "")
+    if secret != ADMIN_SECRET:
+        return jsonify({"error": "Unauthorized. Admin secret required."}), 403
+    
+    _refresh_mc_cache()
+    return jsonify({"message": "Monte Carlo refreshed", "timestamp": datetime.now(timezone.utc).isoformat()})
+
+
+# Start background refresh threads on app startup
+_background_threads_started = False
+
+def start_background_threads():
+    """Initialize Palmer and Monte Carlo caches and start background refresh threads."""
+    global _background_threads_started
+    if _background_threads_started:
         return
-    _palmer_thread_started = True
+    _background_threads_started = True
     
     print(f"[Palmer] Starting background refresh thread (interval: {PALMER_REFRESH_INTERVAL}s)")
+    print(f"[MC] Starting background refresh thread (interval: {MC_REFRESH_INTERVAL}s = 1 hour)")
     
-    # Do initial refresh immediately in background
+    # Do initial refreshes in background
     def initial_refresh():
+        _refresh_mc_cache()  # MC first (Palmer uses cached MC)
         _refresh_palmer_cache()
     
     init_thread = threading.Thread(target=initial_refresh, daemon=True)
     init_thread.start()
     
-    # Start background refresh thread
-    thread = threading.Thread(target=_palmer_background_refresh, daemon=True)
-    thread.start()
+    # Start Palmer background refresh thread (every 30 min)
+    palmer_thread = threading.Thread(target=_palmer_background_refresh, daemon=True)
+    palmer_thread.start()
+    
+    # Start Monte Carlo background refresh thread (every 1 hour)
+    mc_thread = threading.Thread(target=_mc_background_refresh, daemon=True)
+    mc_thread.start()
 
 
-# Auto-start Palmer when module loads (works with gunicorn)
+# Alias for backward compatibility
+start_palmer_background = start_background_threads
+
+
+# Auto-start background threads when module loads (works with gunicorn)
 # Only start once per worker process
-start_palmer_background()
+start_background_threads()
 
 
 if __name__ == '__main__':

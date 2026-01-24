@@ -380,6 +380,9 @@ function fetchPalmerDashboard() {
                 const var95El = document.getElementById('forecast-var95');
                 const winrateEl = document.getElementById('forecast-winrate');
                 const regimeEl = document.getElementById('forecast-regime');
+                const riskDriverEl = document.getElementById('forecast-risk-driver');
+                const worstEl = document.getElementById('forecast-worst');
+                const footerEl = document.getElementById('forecast-footer');
                 
                 if (mc.mean_pnl_pct !== undefined && expectedEl) {
                     const expectedPct = (mc.mean_pnl_pct * 100).toFixed(1);
@@ -402,6 +405,39 @@ function fetchPalmerDashboard() {
                     regimeEl.classList.remove('cautious', 'risk-off');
                     if (mc.regime === 'CAUTIOUS') regimeEl.classList.add('cautious');
                     if (mc.regime === 'RISK-OFF') regimeEl.classList.add('risk-off');
+                }
+                
+                // Show top risk driver (which position contributes most to tail risk)
+                if (mc.top_risk_driver && riskDriverEl) {
+                    // Clean up the ticker for display
+                    let riskTicker = mc.top_risk_driver;
+                    if (riskTicker.includes('/')) {
+                        riskTicker = riskTicker.split('/')[0];
+                    }
+                    riskDriverEl.textContent = `⚠️ Top risk: ${riskTicker}`;
+                    riskDriverEl.style.display = 'inline';
+                } else if (riskDriverEl) {
+                    riskDriverEl.style.display = 'none';
+                }
+                
+                // Show worst scenario description
+                if (mc.worst_scenario && worstEl) {
+                    worstEl.textContent = `Worst case: ${mc.worst_scenario}`;
+                    worstEl.style.display = 'inline';
+                } else if (worstEl) {
+                    worstEl.style.display = 'none';
+                }
+                
+                // Update footer with scenario count and skewness
+                if (footerEl) {
+                    let footerText = `${mc.n_scenarios || 2000} scenarios`;
+                    if (mc.skewness !== undefined) {
+                        const skewLabel = mc.skewness < -0.5 ? ' • Left tail risk' : 
+                                         mc.skewness > 0.5 ? ' • Right skew' : '';
+                        footerText += skewLabel;
+                    }
+                    footerText += ' • Refreshes hourly';
+                    footerEl.textContent = footerText;
                 }
             }
             
