@@ -640,12 +640,14 @@ body {
 
 .regime-domain {
     display: flex;
-    align-items: center;
+    flex-direction: row;
+    align-items: flex-start;
     gap: 8px;
-    padding: 10px 12px;
+    padding: 12px;
     background: var(--bg-muted);
     border-radius: 8px;
     transition: background 0.15s;
+    min-width: 0; /* Allow flex items to shrink */
 }
 
 .regime-domain:hover {
@@ -658,11 +660,20 @@ body {
     border-radius: 50%;
     background: var(--text-muted);
     flex-shrink: 0;
+    margin-top: 3px;
 }
 
 .domain-dot.green { background: var(--green); }
 .domain-dot.yellow { background: var(--yellow); }
 .domain-dot.red { background: var(--red); }
+
+.domain-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
 
 .domain-label {
     font-size: 11px;
@@ -670,22 +681,56 @@ body {
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.3px;
-    flex: 1;
+    flex-shrink: 0;
 }
 
 .domain-status {
     font-size: 11px;
     font-weight: 600;
     color: var(--text-secondary);
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    line-height: 1.3;
 }
 
 .domain-status.bullish { color: var(--green); }
 .domain-status.bearish { color: var(--red); }
 .domain-status.neutral { color: var(--text-muted); }
 
-@media (max-width: 640px) {
+/* Tablet: 2 columns */
+@media (max-width: 768px) {
     .regime-grid {
         grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+}
+
+/* Mobile: single column for full readability */
+@media (max-width: 480px) {
+    .regime-grid {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+    
+    .regime-domain {
+        flex-direction: row;
+        align-items: center;
+        padding: 10px 12px;
+    }
+    
+    .domain-dot {
+        margin-top: 0;
+    }
+    
+    .domain-info {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .domain-status {
+        text-align: right;
     }
 }
 
@@ -870,6 +915,13 @@ body {
     
     .hero-benchmark {
         font-size: 14px;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    .hero-benchmark .alpha {
+        margin-left: 0;
+        margin-top: 8px;
     }
     
     .metrics-row {
@@ -913,6 +965,85 @@ body {
     .positions-table td,
     .investor-table td {
         padding: 10px 8px;
+    }
+    
+    /* Accordion header on mobile */
+    .accordion-header {
+        padding: 14px 16px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .accordion-badges {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    
+    .badge-pnl,
+    .badge-value,
+    .regime-badge {
+        font-size: 11px;
+        padding: 3px 8px;
+    }
+    
+    /* Insight box on mobile */
+    .insight-box {
+        padding: 16px;
+    }
+    
+    .insight-text {
+        font-size: 13px;
+        line-height: 1.5;
+    }
+    
+    /* Tracker labels on mobile */
+    .tracker-labels {
+        font-size: 8px;
+    }
+    
+    .tracker-value {
+        font-size: 14px;
+    }
+    
+    /* Tables overflow on mobile */
+    .accordion-content {
+        overflow-x: auto;
+        padding: 0 16px 16px;
+    }
+    
+    .positions-table,
+    .investor-table,
+    .trades-table {
+        min-width: 500px;
+    }
+    
+    /* News section mobile */
+    .calendar-date {
+        min-width: 60px;
+        font-size: 10px;
+    }
+    
+    .news-title {
+        font-size: 11px;
+    }
+}
+
+/* Extra small screens */
+@media (max-width: 380px) {
+    .hero-value {
+        font-size: 40px;
+    }
+    
+    .metric-value {
+        font-size: 20px;
+    }
+    
+    .logo-text {
+        font-size: 24px;
+    }
+    
+    .header-timestamp {
+        display: none;
     }
 }
 
