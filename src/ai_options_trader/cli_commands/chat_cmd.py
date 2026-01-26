@@ -430,15 +430,27 @@ def _fetch_ticker_deep_data(settings, ticker: str, console: Console) -> dict:
         data["snapshot_error"] = str(e)
     
     try:
-        # Recent news
-        from ai_options_trader.data.news import fetch_ticker_news
-        news = fetch_ticker_news(settings=settings, ticker=ticker, limit=5)
-        if news:
+        # Recent news via FMP stock news
+        from ai_options_trader.llm.outlooks.ticker_news import fetch_fmp_stock_news
+        from datetime import datetime, timedelta, timezone
+        
+        now = datetime.now(timezone.utc).date()
+        from_date = (now - timedelta(days=7)).isoformat()
+        to_date = now.isoformat()
+        
+        items = fetch_fmp_stock_news(
+            settings=settings,
+            tickers=[ticker],
+            from_date=from_date,
+            to_date=to_date,
+            max_pages=2,
+        )
+        if items:
             data["recent_news"] = [
-                {"headline": n.get("headline") or n.get("title", ""), 
-                 "source": n.get("source", ""),
-                 "created_at": str(n.get("created_at", ""))}
-                for n in news[:5]
+                {"headline": item.title or "", 
+                 "source": item.source or "",
+                 "created_at": str(item.published_at or "")}
+                for item in items[:5]
             ]
     except Exception as e:
         data["news_error"] = str(e)
