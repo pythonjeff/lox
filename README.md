@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-Lox Capital operates a **discretionary macro portfolio** with systematic research infrastructure. The platform combines real-time web analytics, AI-powered macro intelligence, and quantitative research tools to support regime-aware portfolio management and tail-risk hedging.
+Lox Capital is operated by Jeff Larson and is a **discretionary macro portfolio** with systematic research infrastructure. The platform combines real-time web analytics, AI-powered macro intelligence, and quantitative research tools to support regime-aware portfolio management and tail-risk hedging.
 
 **Primary Interface**: Live web dashboard providing real-time portfolio analytics, regime monitoring, and position-level intelligence.
 
