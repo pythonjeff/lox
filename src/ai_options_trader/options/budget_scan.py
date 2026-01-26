@@ -28,6 +28,8 @@ class AffordableOption:
     theta: float | None
     vega: float | None
     iv: float | None
+    oi: int | None = None  # Open interest
+    volume: int | None = None  # Daily volume
 
 
 def _spread_pct(bid: float | None, ask: float | None, mid: float | None) -> float | None:
@@ -131,6 +133,8 @@ def affordable_options_for_ticker(
                 theta=float(c.theta) if c.theta is not None else None,
                 vega=float(c.vega) if c.vega is not None else None,
                 iv=float(c.iv) if c.iv is not None else None,
+                oi=int(c.oi) if c.oi is not None else None,
+                volume=int(c.volume) if c.volume is not None else None,
             )
         )
 
@@ -162,6 +166,94 @@ def pick_best_affordable(
         return (-sp_ok, -has_delta, delta_dist, o.premium_usd + 10.0 * spread)
 
     return sorted(opts, key=_key)[0]
+
+
+def score_delta_theta(
+    opt: AffordableOption,
+    *,
+    target_abs_delta: float = 0.30,
+    delta_weight: float = 1.0,
+    theta_weight: float = 1.0,
+) -> float:
+    """
+    Score a single option by delta/theta quality (higher is better).
+    
+    Used for display/ranking purposes.
+    """
+    # Delta score: how close to target (0-1 scale, 1 is perfect)
+    if opt.delta is not None:
+        delta_diff = abs(abs(float(opt.delta)) - float(target_abs_delta))
+        delta_score = max(0.0, 1.0 - delta_diff * 2.0)  # Perfect at target, 0 at ±0.5 away
+    else:
+        delta_score = 0.0
+    
+    # Theta score: smaller magnitude is better (0-1 scale)
+    if opt.theta is not None:
+        theta_mag = abs(float(opt.theta))
+        theta_score = max(0.0, 1.0 - theta_mag * 10.0)  # Penalize high theta decay
+    else:
+        theta_score = 0.0
+    
+    # Weighted combination
+    total_weight = float(delta_weight) + float(theta_weight)
+    if total_weight <= 0:
+        return 0.0
+    
+    return (float(delta_weight) * delta_score + float(theta_weight) * theta_score) / total_weight
+
+
+def score_delta_oi(
+    opt: AffordableOption,
+    *,
+    target_abs_delta: float = 0.30,
+    delta_weight: float = 1.0,
+    oi_weight: float = 1.0,
+    theta_weight: float = 0.3,  # Still factor in theta but lower weight
+    oi_baseline: int = 1000,  # OI above this gets full score
+) -> float:
+    """
+    Score an option by delta (proximity to target) and open interest (liquidity).
+    
+    Higher score is better.
+    
+    - Delta: Score 1.0 when |delta| == target_abs_delta, decays toward 0 as delta deviates
+    - OI: Score 1.0 when OI >= oi_baseline, scales linearly below
+    - Theta: Small bonus for lower time decay (closer to 0)
+    """
+    # Delta score: 1.0 at target, decaying as deviation increases
+    if opt.delta is not None:
+        abs_delta = abs(float(opt.delta))
+        delta_diff = abs(abs_delta - float(target_abs_delta))
+        # Max deviation is ~0.30 (from 0 or 0.60 to 0.30), so we scale
+        delta_score = max(0.0, 1.0 - delta_diff / 0.30)
+    else:
+        delta_score = 0.0
+    
+    # OI score: 1.0 at baseline, linear scale below
+    if opt.oi is not None and opt.oi > 0:
+        oi_score = min(1.0, float(opt.oi) / float(oi_baseline))
+    else:
+        oi_score = 0.0  # No OI = low liquidity signal
+    
+    # Theta score: prefer closer to 0 (less decay)
+    # Theta is typically negative for long options; we want small magnitude
+    if opt.theta is not None:
+        theta_mag = abs(float(opt.theta))
+        # Typical theta might range 0.01 to 0.50; normalize
+        theta_score = max(0.0, 1.0 - theta_mag / 0.50)
+    else:
+        theta_score = 0.5  # Neutral if missing
+    
+    # Weighted combination
+    total_weight = float(delta_weight) + float(oi_weight) + float(theta_weight)
+    if total_weight <= 0:
+        return 0.0
+    
+    return (
+        float(delta_weight) * delta_score +
+        float(oi_weight) * oi_score +
+        float(theta_weight) * theta_score
+    ) / total_weight
 
 
 def pick_best_delta_theta(
