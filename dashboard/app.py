@@ -85,7 +85,7 @@ POSITIONS_CACHE_TTL = 30  # 30 seconds - balance between freshness and performan
 # Short-lived caches for other frequently requested data
 INVESTORS_CACHE = {"data": None, "timestamp": None}
 INVESTORS_CACHE_LOCK = threading.Lock()
-INVESTORS_CACHE_TTL = 60  # 1 minute
+INVESTORS_CACHE_TTL = 30  # 30 seconds - matches positions for live updates
 
 TRADES_CACHE = {"data": None, "timestamp": None}
 TRADES_CACHE_LOCK = threading.Lock()
@@ -754,18 +754,24 @@ def api_investors():
 
 
 def get_investor_data():
-    """Fetch investor ledger with unitized returns."""
+    """
+    Fetch investor ledger with unitized returns using LIVE Alpaca NAV.
+    
+    This combines:
+    - Static investor flows (contributions) from nav_investor_flows.csv
+    - Historical NAV snapshots from nav_sheet.csv (for unit price history)
+    - LIVE current equity from Alpaca (for real-time values)
+    """
     try:
-        # Try to read from local investor flows file
+        # Paths to data files
         nav_sheet_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_sheet.csv")
         investor_flows_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_investor_flows.csv")
         
         if not os.path.exists(investor_flows_path):
             return {"error": "Investor flows file not found", "investors": [], "nav_per_unit": 1.0, "total_units": 0}
         
-        # Read investor flows
+        # Read investor flows (contributions)
         import csv
-        from datetime import datetime as dt
         
         flows = []
         with open(investor_flows_path, "r") as f:
@@ -777,29 +783,40 @@ def get_investor_data():
                     "amount": float(row.get("amount", 0)),
                 })
         
-        # Read nav sheet for equity
+        # Read historical NAV snapshots (for unit price calculation at each flow)
         nav_rows = []
         if os.path.exists(nav_sheet_path):
             with open(nav_sheet_path, "r") as f:
                 reader = csv.DictReader(f)
                 nav_rows = list(reader)
         
-        # Get current equity from Alpaca if nav sheet not available
-        current_equity = 0.0
-        if nav_rows:
-            current_equity = float(nav_rows[-1].get("equity", 0))
-        else:
-            try:
+        # ============================================
+        # LIVE: Get current equity from positions API
+        # This ensures investor values reflect real-time NAV
+        # ============================================
+        live_equity = None
+        try:
+            positions_data = get_positions_data()
+            live_equity = positions_data.get("nav_equity")
+            if not live_equity or live_equity <= 0:
+                # Fallback to direct Alpaca call
                 settings = load_settings()
                 trading, _ = make_clients(settings)
                 account = trading.get_account()
                 if account:
-                    current_equity = float(getattr(account, 'equity', 0) or 0)
-            except:
-                pass
+                    live_equity = float(getattr(account, 'equity', 0) or 0)
+        except Exception as e:
+            print(f"[Investors] Live equity fetch error: {e}")
         
-        # Compute unitization (simplified version)
-        # Merge flows and nav snapshots chronologically
+        # Final fallback to last CSV snapshot
+        if not live_equity or live_equity <= 0:
+            if nav_rows:
+                live_equity = float(nav_rows[-1].get("equity", 0))
+        
+        # ============================================
+        # Compute unitization from historical events
+        # Units are assigned at the NAV/unit price when each flow occurred
+        # ============================================
         events = []
         for f in flows:
             events.append((f["ts"], "flow", f))
@@ -813,6 +830,7 @@ def get_investor_data():
         
         for ts, kind, obj in events:
             if kind == "flow":
+                # Issue units at current NAV/unit price
                 if nav_per_unit <= 0:
                     nav_per_unit = 1.0
                 du = float(obj["amount"]) / float(nav_per_unit)
@@ -820,13 +838,19 @@ def get_investor_data():
                 units_by[code] = float(units_by.get(code, 0.0)) + du
                 total_units += du
             else:
-                # NAV snapshot
+                # NAV snapshot updates the unit price
                 if total_units > 0:
                     equity = float(obj.get("equity", 0))
                     if equity > 0:
                         nav_per_unit = equity / total_units
         
-        # Calculate investor values
+        # ============================================
+        # LIVE: Calculate current NAV/unit from live equity
+        # ============================================
+        if total_units > 0 and live_equity and live_equity > 0:
+            nav_per_unit = live_equity / total_units
+        
+        # Calculate investor values based on LIVE NAV/unit
         basis_by = {}
         for f in flows:
             code = f["code"]
@@ -853,8 +877,9 @@ def get_investor_data():
             "investors": investors,
             "nav_per_unit": round(nav_per_unit, 6),
             "total_units": round(total_units, 2),
-            "equity": round(current_equity, 2),
+            "equity": round(live_equity, 2) if live_equity else 0,
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "live": True,  # Flag indicating this uses live data
         }
     except Exception as e:
         import traceback

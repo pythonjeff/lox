@@ -938,13 +938,21 @@ function processMarketNewsData(data) {
 // Initialize with parallel loading for fast initial render
 initDashboardParallel();
 
-// Refresh positions every 60 seconds (uses original function)
-setInterval(updateDashboard, 60000);
+// ============================================
+// REFRESH INTERVALS
+// ============================================
 
-// Refresh other data every 5 minutes (parallel)
+// Live data: Positions + Investors refresh every 60 seconds
+// (Both use live Alpaca NAV for real-time values)
+setInterval(() => {
+    updateDashboard();
+    fetch('/api/investors').then(r => r.json()).then(processInvestorsData).catch(console.error);
+}, 60000);
+
+// Market context data: Refresh every 5 minutes
+// (These are slower-moving indicators)
 setInterval(() => {
     Promise.all([
-        fetch('/api/investors').then(r => r.json()).then(processInvestorsData).catch(console.error),
         fetch('/api/regime-analysis').then(r => r.json()).then(processMarketContextData).catch(console.error),
         fetch('/api/closed-trades').then(r => r.json()).then(processClosedTradesData).catch(console.error),
         fetch('/api/regime-domains').then(r => r.json()).then(processRegimeDomainsData).catch(console.error),
