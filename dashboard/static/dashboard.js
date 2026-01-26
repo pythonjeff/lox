@@ -942,12 +942,14 @@ initDashboardParallel();
 // REFRESH INTERVALS
 // ============================================
 
-// Live data: Positions + Investors refresh every 60 seconds
-// (Both use live Alpaca NAV for real-time values)
+// LIVE data: Fund Return + Your Investment refresh every 10 seconds
+// (Real-time NAV from Alpaca for instant updates)
 setInterval(() => {
-    updateDashboard();
-    fetch('/api/investors').then(r => r.json()).then(processInvestorsData).catch(console.error);
-}, 60000);
+    Promise.all([
+        fetch('/api/positions').then(r => r.json()).then(processPositionsData).catch(console.error),
+        fetch('/api/investors').then(r => r.json()).then(processInvestorsData).catch(console.error),
+    ]);
+}, 10000);
 
 // Market context data: Refresh every 5 minutes
 // (These are slower-moving indicators)

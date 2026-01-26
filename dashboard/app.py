@@ -79,13 +79,13 @@ POSITIONS_CACHE = {
     "timestamp": None,
 }
 POSITIONS_CACHE_LOCK = threading.Lock()
-POSITIONS_CACHE_TTL = 30  # 30 seconds - balance between freshness and performance
+POSITIONS_CACHE_TTL = 10  # 10 seconds - live updates
 
 # ============ OTHER DATA CACHES ============
 # Short-lived caches for other frequently requested data
 INVESTORS_CACHE = {"data": None, "timestamp": None}
 INVESTORS_CACHE_LOCK = threading.Lock()
-INVESTORS_CACHE_TTL = 30  # 30 seconds - matches positions for live updates
+INVESTORS_CACHE_TTL = 10  # 10 seconds - live updates
 
 TRADES_CACHE = {"data": None, "timestamp": None}
 TRADES_CACHE_LOCK = threading.Lock()
@@ -663,11 +663,11 @@ def index():
 
 @app.route('/api/positions')
 def api_positions():
-    """API endpoint for positions data with caching."""
+    """API endpoint for positions data - LIVE updates."""
     data = get_positions_data()
     response = jsonify(data)
-    # Cache for 30 seconds (positions change frequently)
-    response.headers['Cache-Control'] = 'public, max-age=30'
+    # Short cache for live updates
+    response.headers['Cache-Control'] = 'public, max-age=10'
     return response
 
 
@@ -728,14 +728,14 @@ def api_regime_domains():
 
 @app.route('/api/investors')
 def api_investors():
-    """API endpoint for investor ledger with caching."""
+    """API endpoint for investor ledger - LIVE updates."""
     # Check cache
     with INVESTORS_CACHE_LOCK:
         if INVESTORS_CACHE["data"] and INVESTORS_CACHE["timestamp"]:
             cache_age = (datetime.now(timezone.utc) - INVESTORS_CACHE["timestamp"]).total_seconds()
             if cache_age < INVESTORS_CACHE_TTL:
                 response = jsonify(INVESTORS_CACHE["data"])
-                response.headers['Cache-Control'] = 'public, max-age=60'
+                response.headers['Cache-Control'] = 'public, max-age=10'
                 return response
     
     try:
@@ -745,7 +745,7 @@ def api_investors():
             INVESTORS_CACHE["data"] = data
             INVESTORS_CACHE["timestamp"] = datetime.now(timezone.utc)
         response = jsonify(data)
-        response.headers['Cache-Control'] = 'public, max-age=60'
+        response.headers['Cache-Control'] = 'public, max-age=10'
         return response
     except Exception as e:
         import traceback
