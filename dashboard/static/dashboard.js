@@ -684,34 +684,31 @@ function processPositionsData(data) {
 function processInvestorsData(data) {
     // NAV per unit badge
     const navUnit = document.getElementById('nav-per-unit');
-    if (data.nav_per_unit) {
+    if (navUnit && data.nav_per_unit) {
         navUnit.textContent = `$${data.nav_per_unit.toFixed(4)}`;
     }
     
-    // Total units
-    const totalUnits = document.getElementById('total-units');
-    if (totalUnits && data.total_units) {
-        totalUnits.textContent = data.total_units.toFixed(4);
-    }
-    
-    // Investors table
-    const tbody = document.getElementById('investors-body');
+    // Investors table (note: ID is 'investor-body' not 'investors-body')
+    const tbody = document.getElementById('investor-body');
     if (!tbody) return;
     
     if (!data.investors || data.investors.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="loading">No investor data</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="loading">No investor data</td></tr>';
     } else {
-        tbody.innerHTML = data.investors.map(inv => `
-            <tr>
-                <td><span class="investor-code">${inv.code}</span></td>
-                <td>${formatCurrency(inv.invested)}</td>
-                <td>${formatCurrency(inv.value)}</td>
-                <td class="pnl-cell ${inv.pnl >= 0 ? 'positive' : 'negative'}">
-                    ${formatCurrency(inv.pnl)}
-                    <span class="pnl-percent">${formatPercent(inv.return_pct, 1)}</span>
-                </td>
-            </tr>
-        `).join('');
+        tbody.innerHTML = data.investors.map(inv => {
+            const pnlClass = inv.pnl >= 0 ? 'positive' : 'negative';
+            const retClass = inv.return_pct >= 0 ? 'positive' : 'negative';
+            return `
+                <tr>
+                    <td><span class="investor-code">${inv.code}</span></td>
+                    <td>${inv.ownership.toFixed(1)}%</td>
+                    <td>${formatCurrency(inv.basis)}</td>
+                    <td>${formatCurrency(inv.value)}</td>
+                    <td class="pnl-cell ${pnlClass}">${formatCurrency(inv.pnl, 2)}</td>
+                    <td class="pnl-cell ${retClass}">${formatPercent(inv.return_pct, 1)}</td>
+                </tr>
+            `;
+        }).join('');
     }
 }
 
@@ -792,35 +789,52 @@ function processMarketContextData(data) {
 }
 
 function processClosedTradesData(data) {
-    // Summary stats
-    const totalPnlEl = document.getElementById('total-realized-pnl');
-    const winRateEl = document.getElementById('win-rate');
-    const tradeCountEl = document.getElementById('trade-count');
+    // Update header badges (matches fetchClosedTrades)
+    const statsEl = document.getElementById('trade-stats');
+    const realizedPnlEl = document.getElementById('realized-pnl');
     
-    if (totalPnlEl) {
-        totalPnlEl.textContent = formatCurrency(data.total_pnl || 0);
-        totalPnlEl.className = 'metric-value ' + ((data.total_pnl || 0) >= 0 ? 'positive' : 'negative');
+    if (data.trades && data.trades.length > 0) {
+        // Stats badge
+        const winRate = data.win_rate || 0;
+        if (statsEl) statsEl.textContent = `${data.trades.length} TRADES · ${winRate.toFixed(0)}% WIN`;
+        
+        // Realized P&L badge
+        const totalPnl = data.total_pnl || 0;
+        if (realizedPnlEl) {
+            realizedPnlEl.textContent = formatCurrency(totalPnl);
+            realizedPnlEl.className = 'badge-pnl ' + (totalPnl < 0 ? 'negative' : 'positive');
+        }
+    } else {
+        if (statsEl) statsEl.textContent = 'NO CLOSED TRADES';
+        if (realizedPnlEl) {
+            realizedPnlEl.textContent = '$0';
+            realizedPnlEl.className = 'badge-pnl';
+        }
     }
-    if (winRateEl) winRateEl.textContent = `${(data.win_rate || 0).toFixed(0)}%`;
-    if (tradeCountEl) tradeCountEl.textContent = (data.trades?.length || 0).toString();
     
     // Trades table
     const tbody = document.getElementById('trades-body');
     if (!tbody) return;
     
     if (!data.trades || data.trades.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="loading">No closed trades</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="loading">No closed trades yet</td></tr>';
     } else {
-        tbody.innerHTML = data.trades.slice(0, 10).map(t => {
-            const pnlClass = t.pnl >= 0 ? 'positive' : 'negative';
+        tbody.innerHTML = data.trades.map(trade => {
+            const pnlClass = trade.pnl >= 0 ? 'positive' : 'negative';
+            const statusClass = trade.fully_closed ? 'closed' : 'partial';
+            const statusText = trade.fully_closed ? 'CLOSED' : 'PARTIAL';
+            
             return `
                 <tr>
-                    <td>${t.display_symbol || t.symbol}</td>
-                    <td>${t.close_date}</td>
-                    <td>${t.hold_days || '—'}</td>
+                    <td>
+                        <span class="trade-symbol">${trade.symbol}</span>
+                        <span class="trade-status ${statusClass}">${statusText}</span>
+                    </td>
+                    <td>${formatCurrency(trade.cost)}</td>
+                    <td>${formatCurrency(trade.proceeds)}</td>
                     <td class="pnl-cell ${pnlClass}">
-                        ${formatCurrency(t.pnl)}
-                        <span class="pnl-percent">${formatPercent(t.pnl_pct || 0, 1)}</span>
+                        ${formatCurrency(trade.pnl)}
+                        <span class="pnl-percent">${formatPercent(trade.pnl_pct, 1)}</span>
                     </td>
                 </tr>
             `;
