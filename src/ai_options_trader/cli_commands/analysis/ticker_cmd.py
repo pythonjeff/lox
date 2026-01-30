@@ -403,6 +403,7 @@ def register(ticker_app: typer.Typer) -> None:
         ticker: str = typer.Option(..., "--ticker", "-t", help="Ticker symbol"),
         llm: bool = typer.Option(True, "--llm/--no-llm", help="Include LLM analysis"),
         llm_model: str = typer.Option("", "--llm-model", help="Override LLM model"),
+        history: int = typer.Option(8, "--history", help="Number of historical earnings quarters to fetch"),
     ):
         """
         Deep dive on a ticker: profile, filings, earnings, news, sentiment.
@@ -736,7 +737,7 @@ def register(ticker_app: typer.Typer) -> None:
         from ai_options_trader.altdata.earnings import fetch_earnings_surprises, fetch_upcoming_earnings, analyze_earnings_history
         import requests
         
-        surprises = fetch_earnings_surprises(settings=settings, ticker=t, limit=8)
+        surprises = fetch_earnings_surprises(settings=settings, ticker=t, limit=history)
         upcoming = fetch_upcoming_earnings(settings=settings, tickers=[t], days_ahead=90)
         
         # Fetch analyst price targets

@@ -116,6 +116,8 @@ news_app = typer.Typer(add_completion=False, help="News sentiment regime (aggreg
 labs_app.add_typer(news_app, name="news")
 solar_app = typer.Typer(add_completion=False, help="Solar / silver regime (solar basket vs SLV)")
 labs_app.add_typer(solar_app, name="solar")
+silver_app = typer.Typer(add_completion=False, help="Silver / SLV regime (price, technicals, GSR)")
+labs_app.add_typer(silver_app, name="silver")
 track_app = typer.Typer(add_completion=False, help="Track recommendations, executions, and performance")
 labs_app.add_typer(track_app, name="track")
 
@@ -153,6 +155,7 @@ def _register_commands() -> None:
     from ai_options_trader.cli_commands.regimes.household_cmd import register as register_household
     from ai_options_trader.cli_commands.regimes.news_cmd import register as register_news
     from ai_options_trader.cli_commands.regimes.solar_cmd import register as register_solar
+    from ai_options_trader.cli_commands.regimes.silver_cmd import register as register_silver
     from ai_options_trader.cli_commands.regimes.regimes_cmd import register as register_regimes
     from ai_options_trader.cli_commands.regimes.fedfunds_cmd import register as register_fedfunds
     
@@ -232,6 +235,7 @@ def _register_commands() -> None:
     register_household(household_app)
     register_news(news_app)
     register_solar(solar_app)
+    register_silver(silver_app)
     
     # Quick pillar access under labs
     register_pillar_commands(labs_app)
