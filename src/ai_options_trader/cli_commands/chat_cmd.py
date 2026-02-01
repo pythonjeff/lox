@@ -423,7 +423,7 @@ def _fetch_ticker_deep_data(settings, ticker: str, console: Console) -> dict:
     
     try:
         # Ticker quantitative snapshot
-        from ai_options_trader.data.snapshots import build_ticker_snapshot
+        from ai_options_trader.ticker.snapshot import build_ticker_snapshot
         snap = build_ticker_snapshot(settings=settings, ticker=ticker, benchmark="SPY", start="2020-01-01")
         data["snapshot"] = snap
     except Exception as e:
@@ -624,7 +624,7 @@ def _fetch_ticker_context(settings, ticker: str, console: Console) -> tuple[str,
     
     # Quantitative snapshot
     try:
-        from ai_options_trader.data.snapshots import build_ticker_snapshot
+        from ai_options_trader.ticker.snapshot import build_ticker_snapshot
         snap = build_ticker_snapshot(settings=settings, ticker=t, benchmark="SPY", start="2020-01-01")
         data["snapshot"] = str(snap)
     except Exception as e:
