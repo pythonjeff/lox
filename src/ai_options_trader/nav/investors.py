@@ -26,9 +26,11 @@ class InvestorFlow:
     code: str
     amount: float
     note: str
+    nav_per_unit: float = 1.0  # NAV/unit at time of deposit (for proper unit pricing)
+    units: float = 0.0  # Units purchased = amount / nav_per_unit
 
 
-_FIELDS = ["ts", "code", "amount", "note"]
+_FIELDS = ["ts", "code", "amount", "note", "nav_per_unit", "units"]
 
 
 def append_investor_flow(
@@ -37,12 +39,32 @@ def append_investor_flow(
     amount: float,
     note: str = "",
     ts: str | None = None,
+    nav_per_unit: float = 1.0,
+    units: float | None = None,
     path: str | None = None,
 ) -> str:
+    """
+    Append an investor flow with unit pricing.
+    
+    If nav_per_unit is provided, units are calculated as amount / nav_per_unit.
+    This ensures deposits are properly priced at the NAV when they occur.
+    """
     path = path or default_investor_flows_path()
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     ts = ts or _utc_now_iso()
-    row = {"ts": ts, "code": str(code).strip().upper(), "amount": f"{float(amount):.6f}", "note": note}
+    
+    # Calculate units if not provided
+    if units is None:
+        units = float(amount) / float(nav_per_unit) if nav_per_unit > 0 else float(amount)
+    
+    row = {
+        "ts": ts,
+        "code": str(code).strip().upper(),
+        "amount": f"{float(amount):.6f}",
+        "note": note,
+        "nav_per_unit": f"{float(nav_per_unit):.6f}",
+        "units": f"{float(units):.6f}",
+    }
     file_exists = Path(path).exists()
     with open(path, "a", newline="") as f:
         w = csv.DictWriter(f, fieldnames=_FIELDS)
@@ -53,6 +75,7 @@ def append_investor_flow(
 
 
 def read_investor_flows(*, path: str | None = None) -> list[InvestorFlow]:
+    """Read investor flows with backward compatibility for old format."""
     path = path or default_investor_flows_path()
     if not Path(path).exists():
         return []
@@ -60,12 +83,21 @@ def read_investor_flows(*, path: str | None = None) -> list[InvestorFlow]:
         r = csv.DictReader(f)
         out: list[InvestorFlow] = []
         for row in r:
+            amount = float(row.get("amount") or 0.0)
+            # Backward compatibility: old records don't have nav_per_unit/units
+            nav_per_unit = float(row.get("nav_per_unit") or 1.0)
+            units = float(row.get("units") or 0.0)
+            if units == 0.0:
+                # Old record without units - assume bought at $1.00
+                units = amount / nav_per_unit if nav_per_unit > 0 else amount
             out.append(
                 InvestorFlow(
                     ts=str(row.get("ts") or ""),
                     code=str(row.get("code") or "").strip().upper(),
-                    amount=float(row.get("amount") or 0.0),
+                    amount=amount,
                     note=str(row.get("note") or ""),
+                    nav_per_unit=nav_per_unit,
+                    units=units,
                 )
             )
     out.sort(key=lambda x: _parse_ts(x.ts))
@@ -301,29 +333,61 @@ def investor_report(
     *,
     nav_sheet_path: str | None = None,
     investor_flows_path: str | None = None,
+    live_equity: float | None = None,
 ) -> dict:
+    """
+    Unitized NAV investor report (hedge fund style).
+    
+    - Each deposit purchases units at the NAV/unit price when deposited
+    - Current value = units × current NAV/unit
+    - Properly accounts for deposit timing
+    
+    Uses live_equity if provided, otherwise falls back to last snapshot.
+    """
     nav_rows = read_nav_sheet(path=nav_sheet_path)
-    last_equity = float(nav_rows[-1].equity) if nav_rows else 0.0
-    nav_per_unit, units_by = compute_unitization(
-        nav_sheet_path=nav_sheet_path,
-        investor_flows_path=investor_flows_path,
-    )
-    total_units = sum(units_by.values()) if units_by else 0.0
+    
+    # Get equity: prefer live, fallback to last snapshot
+    if live_equity and live_equity > 0:
+        current_equity = live_equity
+    else:
+        current_equity = float(nav_rows[-1].equity) if nav_rows else 0.0
 
-    # Cost basis per investor is simply sum of their flows (signed).
+    # Read flows - each has units recorded at deposit time
     flows = read_investor_flows(path=investor_flows_path)
+    
+    # Sum units and basis per investor
+    units_by: dict[str, float] = {}
     basis_by: dict[str, float] = {}
     for f in flows:
+        units_by[f.code] = float(units_by.get(f.code, 0.0)) + float(f.units)
         basis_by[f.code] = float(basis_by.get(f.code, 0.0)) + float(f.amount)
+    
+    total_units = sum(units_by.values())
+    total_capital = sum(b for b in basis_by.values() if b > 0)
+    
+    # Current NAV per unit
+    nav_per_unit = current_equity / total_units if total_units > 0 else 1.0
+    
+    # Fund-level return based on total capital vs equity
+    fund_return = ((current_equity - total_capital) / total_capital) if total_capital > 0 else 0.0
 
     out_rows = []
     for code in sorted(units_by.keys()):
         units = float(units_by.get(code, 0.0))
-        value = units * float(nav_per_unit)
         basis = float(basis_by.get(code, 0.0))
+        if units <= 0:
+            continue
+        
+        # Value = units × current NAV/unit
+        value = units * nav_per_unit
+        
+        # P&L and individual return
         pnl = value - basis
-        ret = (pnl / basis) if basis != 0 else None
-        ownership = (units / total_units) if total_units > 0 else None
+        ret = (pnl / basis) if basis > 0 else 0.0
+        
+        # Ownership = investor's units / total units
+        ownership = units / total_units if total_units > 0 else 0.0
+        
         out_rows.append(
             {
                 "code": code,
@@ -338,9 +402,11 @@ def investor_report(
 
     return {
         "asof": nav_rows[-1].ts if nav_rows else None,
-        "equity": last_equity,
+        "equity": current_equity,
         "nav_per_unit": nav_per_unit,
         "total_units": total_units,
+        "total_capital": total_capital,
+        "fund_return": fund_return,
         "rows": out_rows,
     }
 

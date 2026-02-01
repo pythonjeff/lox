@@ -775,56 +775,63 @@ def api_investors():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e), "investors": [], "nav_per_unit": 1.0, "total_units": 0})
+        return jsonify({"error": str(e), "investors": [], "fund_return": 0, "total_capital": 0})
 
 
 def get_investor_data():
     """
-    Fetch investor ledger with unitized returns using LIVE Alpaca NAV.
+    Unitized NAV investor ledger (hedge fund style) using LIVE Alpaca equity.
     
-    This combines:
-    - Static investor flows (contributions) from nav_investor_flows.csv
-    - Historical NAV snapshots from nav_sheet.csv (for unit price history)
-    - LIVE current equity from Alpaca (for real-time values)
+    - Each deposit records units purchased at the NAV/unit price when deposited
+    - Current value = units × current NAV/unit (from live equity)
+    - Properly accounts for deposit timing
+    - No manual snapshots needed
     """
     try:
-        # Paths to data files
-        nav_sheet_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_sheet.csv")
+        import csv
+        
+        # Path to investor flows
         investor_flows_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_investor_flows.csv")
         
         if not os.path.exists(investor_flows_path):
-            return {"error": "Investor flows file not found", "investors": [], "nav_per_unit": 1.0, "total_units": 0}
+            return {"error": "Investor flows file not found", "investors": [], "fund_return": 0, "total_capital": 0}
         
-        # Read investor flows (contributions)
-        import csv
-        
+        # Read investor flows with units
         flows = []
         with open(investor_flows_path, "r") as f:
             reader = csv.DictReader(f)
             for row in reader:
+                amount = float(row.get("amount", 0))
+                nav_per_unit = float(row.get("nav_per_unit", 1.0) or 1.0)
+                units = float(row.get("units", 0) or 0)
+                # Backward compatibility: if no units, calculate from amount
+                if units == 0:
+                    units = amount / nav_per_unit if nav_per_unit > 0 else amount
                 flows.append({
-                    "ts": row.get("ts", ""),
                     "code": row.get("code", ""),
-                    "amount": float(row.get("amount", 0)),
+                    "amount": amount,
+                    "units": units,
                 })
         
-        # Read historical NAV snapshots (for unit price calculation at each flow)
-        nav_rows = []
-        if os.path.exists(nav_sheet_path):
-            with open(nav_sheet_path, "r") as f:
-                reader = csv.DictReader(f)
-                nav_rows = list(reader)
+        # Sum units and deposits per investor
+        units_by = {}
+        basis_by = {}
+        for f in flows:
+            code = f["code"]
+            units_by[code] = float(units_by.get(code, 0.0)) + float(f["units"])
+            basis_by[code] = float(basis_by.get(code, 0.0)) + float(f["amount"])
+        
+        total_units = sum(units_by.values())
+        total_capital = sum(b for b in basis_by.values() if b > 0)
         
         # ============================================
-        # LIVE: Get current equity from positions API
-        # This ensures investor values reflect real-time NAV
+        # LIVE: Get current equity from Alpaca
         # ============================================
         live_equity = None
         try:
             positions_data = get_positions_data()
             live_equity = positions_data.get("nav_equity")
             if not live_equity or live_equity <= 0:
-                # Fallback to direct Alpaca call
                 settings = load_settings()
                 trading, _ = make_clients(settings)
                 account = trading.get_account()
@@ -833,65 +840,45 @@ def get_investor_data():
         except Exception as e:
             print(f"[Investors] Live equity fetch error: {e}")
         
-        # Final fallback to last CSV snapshot
+        # Fallback to nav_sheet if live fails
         if not live_equity or live_equity <= 0:
-            if nav_rows:
-                live_equity = float(nav_rows[-1].get("equity", 0))
+            nav_sheet_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_sheet.csv")
+            if os.path.exists(nav_sheet_path):
+                with open(nav_sheet_path, "r") as f:
+                    reader = csv.DictReader(f)
+                    rows = list(reader)
+                    if rows:
+                        live_equity = float(rows[-1].get("equity", 0))
         
-        # ============================================
-        # Compute unitization from historical events
-        # Units are assigned at the NAV/unit price when each flow occurred
-        # ============================================
-        events = []
-        for f in flows:
-            events.append((f["ts"], "flow", f))
-        for r in nav_rows:
-            events.append((r.get("ts", ""), "nav", r))
-        events.sort(key=lambda x: x[0])
+        # Current NAV per unit
+        nav_per_unit = live_equity / total_units if total_units > 0 and live_equity else 1.0
         
-        nav_per_unit = 1.0
-        units_by = {}
-        total_units = 0.0
+        # Fund-level return
+        fund_return = ((live_equity - total_capital) / total_capital * 100) if total_capital > 0 else 0.0
+        fund_pnl = live_equity - total_capital if live_equity else 0
         
-        for ts, kind, obj in events:
-            if kind == "flow":
-                # Issue units at current NAV/unit price
-                if nav_per_unit <= 0:
-                    nav_per_unit = 1.0
-                du = float(obj["amount"]) / float(nav_per_unit)
-                code = obj["code"]
-                units_by[code] = float(units_by.get(code, 0.0)) + du
-                total_units += du
-            else:
-                # NAV snapshot updates the unit price
-                if total_units > 0:
-                    equity = float(obj.get("equity", 0))
-                    if equity > 0:
-                        nav_per_unit = equity / total_units
-        
-        # ============================================
-        # LIVE: Calculate current NAV/unit from live equity
-        # ============================================
-        if total_units > 0 and live_equity and live_equity > 0:
-            nav_per_unit = live_equity / total_units
-        
-        # Calculate investor values based on LIVE NAV/unit
-        basis_by = {}
-        for f in flows:
-            code = f["code"]
-            basis_by[code] = float(basis_by.get(code, 0.0)) + float(f["amount"])
-        
+        # Calculate unitized values for each investor
         investors = []
         for code in sorted(units_by.keys()):
             units = float(units_by.get(code, 0.0))
-            value = units * float(nav_per_unit)
             basis = float(basis_by.get(code, 0.0))
+            if units <= 0:
+                continue
+            
+            # Value = units × current NAV/unit
+            value = units * nav_per_unit
+            
+            # P&L and individual return
             pnl = value - basis
-            ret = (pnl / basis * 100) if basis != 0 else 0
-            ownership = (units / total_units * 100) if total_units > 0 else 0
+            ret = (pnl / basis * 100) if basis > 0 else 0.0
+            
+            # Ownership = investor's units / total units
+            ownership = (units / total_units * 100) if total_units > 0 else 0.0
+            
             investors.append({
                 "code": code,
                 "ownership": round(ownership, 1),
+                "units": round(units, 2),
                 "basis": round(basis, 2),
                 "value": round(value, 2),
                 "pnl": round(pnl, 2),
@@ -900,16 +887,19 @@ def get_investor_data():
         
         return {
             "investors": investors,
-            "nav_per_unit": round(nav_per_unit, 6),
+            "nav_per_unit": round(nav_per_unit, 4),
             "total_units": round(total_units, 2),
+            "fund_return": round(fund_return, 2),
+            "total_capital": round(total_capital, 2),
             "equity": round(live_equity, 2) if live_equity else 0,
+            "fund_pnl": round(fund_pnl, 2),
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "live": True,  # Flag indicating this uses live data
+            "live": True,
         }
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return {"error": str(e), "investors": [], "nav_per_unit": 1.0, "total_units": 0}
+        return {"error": str(e), "investors": [], "fund_return": 0, "total_capital": 0}
 
 
 def get_closed_trades_data():

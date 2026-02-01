@@ -1,11 +1,11 @@
 """
 Options CLI - streamlined option scanning and analysis.
 
-All options commands consolidated here:
-- best, scan, most-traded, high-oi, deep, sample (core commands)
-- pick (single contract selector)
-- sp500-under-budget, etf-under-budget (bulk scanners)
-- moonshot (high-variance extreme-move scanner)
+Commands split across modules:
+- options_cmd.py: scan, most-traded (this file)
+- options_pick_cmd.py: pick
+- options_scanner_cmd.py: sp500-under-budget, etf-under-budget
+- options_moonshot_cmd.py: moonshot
 """
 from __future__ import annotations
 
@@ -23,11 +23,6 @@ from ai_options_trader.options.historical import fetch_option_bar_volumes
 from ai_options_trader.options.most_traded import most_traded_options
 from ai_options_trader.utils.occ import parse_occ_option_symbol
 
-# Import registration functions from submodules (will be consolidated)
-from ai_options_trader.cli_commands.options.options_pick_cmd import register_pick
-from ai_options_trader.cli_commands.options.options_scanner_cmd import register_scanners
-from ai_options_trader.cli_commands.options.options_moonshot_cmd import register_moonshot
-
 
 def _fmt_int(x: int | None) -> str:
     return f"{int(x):,}" if isinstance(x, int) else "n/a"
@@ -42,18 +37,7 @@ def _fmt_pct(x: float | None) -> str:
 
 
 def register(options_app: typer.Typer) -> None:
-    """Register all options commands (consolidated)."""
-    # Register core commands
-    _register_core_commands(options_app)
-    
-    # Register commands from submodules
-    register_pick(options_app)
-    register_scanners(options_app)
-    register_moonshot(options_app)
-
-
-def _register_core_commands(options_app: typer.Typer) -> None:
-    """Register core options commands (best, scan, most-traded, high-oi, deep, sample)."""
+    """Register core options commands."""
 
     @options_app.command("best")
     def options_best(
@@ -190,66 +174,67 @@ def _register_core_commands(options_app: typer.Typer) -> None:
     @options_app.command("scan")
     def options_scan(
         ticker: str = typer.Option(..., "--ticker", "-t", help="Underlying ticker"),
-        want: str = typer.Option("put", "--want", "-w", help="call|put"),
-        show: int = typer.Option(30, "--show", "-n", help="Number of results"),
+        want: str = typer.Option("call", "--want", help="call|put"),
+        show_top: int = typer.Option(20, "--show-top", "-n"),
+        target_delta: float = typer.Option(0.30, "--delta", "-d", help="Target delta (e.g. 0.30)"),
         min_days: int = typer.Option(30, "--min-days", help="Min DTE"),
-        max_days: int = typer.Option(365, "--max-days", help="Max DTE"),
+        max_days: int = typer.Option(120, "--max-days", help="Max DTE"),
     ):
-        """
-        Simple options chain scanner from Alpaca.
+        """Options scanner - sorted by best delta. Auto-expands range if needed."""
+        from datetime import date
         
-        Examples:
-            lox options scan -t CRWV --want put
-            lox options scan -t CRWV --want put --min-days 100 --max-days 400
-        """
         settings = load_settings()
         _, data = make_clients(settings)
 
-        w = (want or "put").strip().lower()
+        w = (want or "call").strip().lower()
         if w not in {"call", "put"}:
-            w = "put"
+            w = "call"
 
         console = Console()
-        t = ticker.upper()
-        today = date.today()
+        console.print(f"\n[bold cyan]{ticker.upper()} {w.upper()}s[/bold cyan] (target Δ={target_delta:.2f})\n")
 
-        console.print(f"\n[bold cyan]{t} {w.upper()}s[/bold cyan] | DTE: {min_days}-{max_days}\n")
-
-        chain = fetch_option_chain(data, t, feed=settings.alpaca_options_feed)
+        chain = fetch_option_chain(data, ticker, feed=settings.alpaca_options_feed)
         if not chain:
             console.print("[yellow]No options data[/yellow]")
             return
 
-        # Parse and filter
-        opts = []
+        console.print(f"[dim]Total contracts: {len(chain)}[/dim]")
+        today = date.today()
+
+        # Parse ALL options of the right type first
+        all_opts = []
         for opt in chain.values():
             symbol = str(getattr(opt, "symbol", ""))
             if not symbol:
                 continue
             try:
-                expiry, opt_type, strike = parse_occ_option_symbol(symbol, t)
+                expiry, opt_type, strike = parse_occ_option_symbol(symbol, ticker)
                 if opt_type != w:
                     continue
                 
                 dte = (expiry - today).days
-                if dte < min_days or dte > max_days:
+                if dte < 1:  # Skip expired
                     continue
                 
+                # Get greeks
                 greeks = getattr(opt, "greeks", None)
-                opt_delta = getattr(greeks, "delta", None) if greeks else None
+                delta = getattr(greeks, "delta", None) if greeks else None
                 
+                # Get bid/ask from latest_quote
                 quote = getattr(opt, "latest_quote", None)
                 bid = getattr(quote, "bid_price", None) if quote else None
                 ask = getattr(quote, "ask_price", None) if quote else None
                 
+                # Get last from latest_trade
                 trade = getattr(opt, "latest_trade", None)
                 last = getattr(trade, "price", None) if trade else None
                 
-                opts.append({
+                all_opts.append({
                     "symbol": symbol,
                     "strike": strike,
+                    "expiry": expiry,
                     "dte": dte,
-                    "delta": float(opt_delta) if opt_delta is not None else None,
+                    "delta": float(delta) if delta is not None else None,
                     "bid": float(bid) if bid is not None else None,
                     "ask": float(ask) if ask is not None else None,
                     "last": float(last) if last is not None else None,
@@ -257,34 +242,66 @@ def _register_core_commands(options_app: typer.Typer) -> None:
             except Exception:
                 continue
 
-        if not opts:
-            console.print(f"[yellow]No {w}s in {min_days}-{max_days} DTE[/yellow]")
+        if not all_opts:
+            console.print(f"[yellow]No {w}s available for {ticker.upper()}[/yellow]")
             return
 
-        # Sort by strike
-        opts.sort(key=lambda x: (x["strike"], x["dte"]))
-        opts = opts[:show]
+        # Try requested range first, then expand if empty
+        filtered = [o for o in all_opts if min_days <= o["dte"] <= max_days]
+        range_note = f"{min_days}-{max_days} DTE"
+        
+        # Fallback: expand to nearest available expiries
+        if not filtered:
+            # Find the closest expiry to requested range
+            min_dte_available = min(o["dte"] for o in all_opts)
+            max_dte_available = max(o["dte"] for o in all_opts)
+            
+            # Expand to include nearest 60-day window
+            fallback_min = max(1, min(min_days, min_dte_available))
+            fallback_max = min(max(max_days, min_dte_available + 60), max_dte_available)
+            
+            filtered = [o for o in all_opts if fallback_min <= o["dte"] <= fallback_max]
+            range_note = f"{fallback_min}-{fallback_max} DTE [auto-expanded]"
+            
+            # If still empty, just take nearest expiries
+            if not filtered:
+                unique_dtes = sorted(set(o["dte"] for o in all_opts))[:3]  # Nearest 3 expiries
+                filtered = [o for o in all_opts if o["dte"] in unique_dtes]
+                range_note = f"nearest expiries: {', '.join(str(d) for d in unique_dtes)} DTE"
 
-        console.print(f"[dim]Found {len(opts)} contracts[/dim]\n")
+        console.print(f"[dim]Found {len(filtered)} {w}s in {range_note}[/dim]\n")
+        
+        # Sort by: 1) has delta, 2) closest to target delta
+        abs_target = abs(target_delta)
+        filtered.sort(key=lambda x: (
+            0 if x["delta"] is not None else 1,  # Has delta first
+            abs(abs(x["delta"] or 0) - abs_target) if x["delta"] is not None else 999,
+        ))
+        filtered = filtered[:show_top]
 
-        table = Table(show_header=True, expand=False)
+        table = Table(show_header=True)
         table.add_column("Symbol", style="cyan")
         table.add_column("Strike", justify="right")
         table.add_column("DTE", justify="right")
-        table.add_column("Delta", justify="right")
+        table.add_column("Delta", justify="right", style="bold green")
         table.add_column("Bid", justify="right")
         table.add_column("Ask", justify="right", style="yellow")
         table.add_column("Last", justify="right")
 
-        for o in opts:
+        for item in filtered:
+            delta = item["delta"]
+            bid = item["bid"]
+            ask = item["ask"]
+            last = item["last"]
+
             table.add_row(
-                o["symbol"],
-                f"${o['strike']:.2f}",
-                str(o["dte"]),
-                f"{o['delta']:+.3f}" if o["delta"] else "—",
-                f"${o['bid']:.2f}" if o["bid"] else "—",
-                f"${o['ask']:.2f}" if o["ask"] else "—",
-                f"${o['last']:.2f}" if o["last"] else "—",
+                item["symbol"][:22],
+                f"${item['strike']:.2f}",
+                str(item["dte"]),
+                f"{delta:+.3f}" if delta is not None else "—",
+                f"${bid:.2f}" if bid else "—",
+                f"${ask:.2f}" if ask else "—",
+                f"${last:.2f}" if last else "—",
             )
 
         console.print(table)
@@ -504,159 +521,6 @@ def _register_core_commands(options_app: typer.Typer) -> None:
         
         console.print(table)
         console.print(f"\n[dim]Data source: Polygon.io/Massive | Sorted by Open Interest[/dim]")
-
-    @options_app.command("deep")
-    def options_deep(
-        ticker: str = typer.Option(..., "--ticker", "-t", help="Underlying ticker"),
-        want: str = typer.Option("put", "--want", "-w", help="call|put"),
-        min_dte: int = typer.Option(30, "--min-dte", help="Min days to expiration"),
-        max_dte: int = typer.Option(365, "--max-dte", help="Max days to expiration"),
-        min_premium: float = typer.Option(0, "--min-premium", help="Min premium in USD"),
-        max_premium: float = typer.Option(10000, "--max-premium", help="Max premium in USD"),
-        min_oi: int = typer.Option(0, "--min-oi", help="Minimum open interest"),
-        sort: str = typer.Option("oi", "--sort", "-s", help="oi|volume|delta|iv|premium|strike"),
-        show: int = typer.Option(25, "--show", "-n", help="Number of results"),
-    ):
-        """
-        Deep options scan with OI, greeks, and flexible filtering.
-        
-        Uses Polygon/Massive API for complete data including Open Interest.
-        
-        Examples:
-            lox options deep -t CRWV --want put --min-dte 200
-            lox options deep -t NVDA --want put --min-oi 1000 --sort oi
-            lox options deep -t SPY --sort delta --max-premium 500
-        """
-        from datetime import timedelta
-        
-        settings = load_settings()
-        console = Console()
-        
-        if not settings.massive_api_key:
-            console.print("[red]MASSIVE_API_KEY not set in .env[/red]")
-            console.print("[dim]Add MASSIVE_API_KEY=your_polygon_key to .env file[/dim]")
-            console.print("[dim]Sign up at polygon.io for options data with OI[/dim]")
-            return
-        
-        t = ticker.upper()
-        w = want.lower() if want else "put"
-        if w not in {"call", "put"}:
-            w = "put"
-        
-        console.print(f"\n[bold cyan]{t} {w.upper()}s[/bold cyan] | DTE: {min_dte}-{max_dte} | Sort: {sort}")
-        console.print(f"[dim]Premium: ${min_premium:.0f}-${max_premium:.0f} | Min OI: {min_oi:,}[/dim]\n")
-        
-        # Calculate date range
-        today = date.today()
-        exp_gte = (today + timedelta(days=min_dte)).strftime("%Y-%m-%d")
-        exp_lte = (today + timedelta(days=max_dte)).strftime("%Y-%m-%d")
-        
-        console.print("[dim]Fetching from Polygon...[/dim]")
-        
-        # Fetch from Polygon
-        candidates = fetch_options_chain_polygon(
-            settings,
-            t,
-            contract_type=w,
-            expiration_date_gte=exp_gte,
-            expiration_date_lte=exp_lte,
-            limit=250,
-        )
-        
-        if not candidates:
-            console.print("[yellow]No options data returned[/yellow]")
-            console.print("[dim]Check ticker symbol and date range[/dim]")
-            return
-        
-        console.print(f"[dim]Fetched {len(candidates)} contracts[/dim]")
-        
-        # Filter by premium
-        filtered = []
-        for c in candidates:
-            # Calculate premium in USD (per contract)
-            # Try mid, then ask, then last, then allow None
-            mid = c.mid
-            if mid is None and c.ask:
-                mid = c.ask
-            if mid is None and c.last:
-                mid = c.last
-            
-            premium_usd = mid * 100 if mid else None
-            
-            # Only filter by premium if we have a price
-            if premium_usd is not None:
-                if premium_usd < min_premium or premium_usd > max_premium:
-                    continue
-            
-            # Filter by OI
-            if min_oi > 0 and (c.oi is None or c.oi < min_oi):
-                continue
-            
-            filtered.append((c, premium_usd))
-        
-        if not filtered:
-            console.print("[yellow]No options match filters[/yellow]")
-            console.print("[dim]Try widening premium range or lowering min-oi[/dim]")
-            return
-        
-        console.print(f"[dim]{len(filtered)} contracts after filtering[/dim]\n")
-        
-        # Sort
-        sort_key = sort.lower()
-        if sort_key == "oi":
-            filtered.sort(key=lambda x: x[0].oi or 0, reverse=True)
-        elif sort_key == "volume":
-            filtered.sort(key=lambda x: x[0].volume or 0, reverse=True)
-        elif sort_key == "delta":
-            filtered.sort(key=lambda x: abs(x[0].delta or 0), reverse=True)
-        elif sort_key == "iv":
-            filtered.sort(key=lambda x: x[0].iv or 0, reverse=True)
-        elif sort_key == "premium":
-            filtered.sort(key=lambda x: x[1])
-        elif sort_key == "strike":
-            filtered.sort(key=lambda x: x[0].strike)
-        else:
-            filtered.sort(key=lambda x: x[0].oi or 0, reverse=True)
-        
-        # Limit results
-        filtered = filtered[:show]
-        
-        # Display
-        table = Table(title=f"{t} {w.upper()}s ({len(filtered)} shown)", show_header=True, expand=False)
-        table.add_column("#", justify="right")
-        table.add_column("Strike", justify="right")
-        table.add_column("Expiry", justify="center")
-        table.add_column("DTE", justify="right")
-        table.add_column("OI", justify="right", style="bold green")
-        table.add_column("Vol", justify="right")
-        table.add_column("Delta", justify="right")
-        table.add_column("IV", justify="right")
-        table.add_column("Bid", justify="right")
-        table.add_column("Ask", justify="right")
-        table.add_column("Est Cost", justify="right", style="yellow")
-        
-        for i, (opt, premium_usd) in enumerate(filtered, 1):
-            table.add_row(
-                str(i),
-                f"${opt.strike:.0f}",
-                opt.expiry.strftime("%b %d '%y"),
-                str(opt.dte_days),
-                f"{opt.oi:,}" if opt.oi else "—",
-                f"{opt.volume:,}" if opt.volume else "—",
-                f"{opt.delta:+.2f}" if opt.delta else "—",
-                f"{opt.iv*100:.0f}%" if opt.iv else "—",
-                f"${opt.bid:.2f}" if opt.bid else "—",
-                f"${opt.ask:.2f}" if opt.ask else "—",
-                f"${premium_usd:.0f}" if premium_usd else "—",
-            )
-        
-        console.print(table)
-        
-        # Summary stats
-        total_oi = sum(c.oi or 0 for c, _ in filtered)
-        avg_iv = sum(c.iv or 0 for c, _ in filtered) / len(filtered) if filtered else 0
-        console.print(f"\n[dim]Total OI shown: {total_oi:,} | Avg IV: {avg_iv*100:.0f}%[/dim]")
-        console.print(f"[dim]Data source: Polygon.io | Sorted by: {sort}[/dim]")
 
     @options_app.command("sample")
     def options_sample(

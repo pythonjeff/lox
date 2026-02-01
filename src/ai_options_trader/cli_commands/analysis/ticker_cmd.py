@@ -38,7 +38,7 @@ def register(ticker_app: typer.Typer) -> None:
     ):
         """Print a quantitative snapshot for a ticker (returns, vol, drawdown, rel strength)."""
         settings = load_settings()
-        from ai_options_trader.data.snapshots import build_ticker_snapshot
+        from ai_options_trader.ticker.snapshot import build_ticker_snapshot
 
         snap = build_ticker_snapshot(settings=settings, ticker=ticker, benchmark=benchmark, start=start)
         print(snap)
@@ -61,7 +61,7 @@ def register(ticker_app: typer.Typer) -> None:
         settings = load_settings()
 
         # --- Ticker snapshot ---
-        from ai_options_trader.data.snapshots import build_ticker_snapshot
+        from ai_options_trader.ticker.snapshot import build_ticker_snapshot
 
         snap = build_ticker_snapshot(settings=settings, ticker=ticker, benchmark=benchmark, start=start)
 
@@ -403,7 +403,6 @@ def register(ticker_app: typer.Typer) -> None:
         ticker: str = typer.Option(..., "--ticker", "-t", help="Ticker symbol"),
         llm: bool = typer.Option(True, "--llm/--no-llm", help="Include LLM analysis"),
         llm_model: str = typer.Option("", "--llm-model", help="Override LLM model"),
-        history: int = typer.Option(8, "--history", help="Number of historical earnings quarters to fetch"),
     ):
         """
         Deep dive on a ticker: profile, filings, earnings, news, sentiment.
@@ -692,7 +691,7 @@ def register(ticker_app: typer.Typer) -> None:
         
         # 4. Quantitative snapshot (price behavior)
         try:
-            from ai_options_trader.data.snapshots import build_ticker_snapshot
+            from ai_options_trader.ticker.snapshot import build_ticker_snapshot
             snap = build_ticker_snapshot(settings=settings, ticker=t, benchmark="SPY", start="2020-01-01")
             
             # Format nicely instead of raw dataclass
@@ -737,7 +736,7 @@ def register(ticker_app: typer.Typer) -> None:
         from ai_options_trader.altdata.earnings import fetch_earnings_surprises, fetch_upcoming_earnings, analyze_earnings_history
         import requests
         
-        surprises = fetch_earnings_surprises(settings=settings, ticker=t, limit=history)
+        surprises = fetch_earnings_surprises(settings=settings, ticker=t, limit=8)
         upcoming = fetch_upcoming_earnings(settings=settings, tickers=[t], days_ahead=90)
         
         # Fetch analyst price targets

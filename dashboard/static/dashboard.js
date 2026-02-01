@@ -173,16 +173,18 @@ function updateDashboard() {
 }
 
 // ============================================
-// INVESTORS
+// INVESTORS (Simple Pro-Rata Model)
 // ============================================
 function fetchInvestors() {
     fetch('/api/investors')
         .then(r => r.json())
         .then(data => {
-            // NAV per unit badge
-            const navUnit = document.getElementById('nav-per-unit');
-            if (data.nav_per_unit) {
-                navUnit.textContent = `$${data.nav_per_unit.toFixed(4)}`;
+            // Fund return badge (same for all investors)
+            const fundReturnEl = document.getElementById('fund-return');
+            if (fundReturnEl && data.fund_return !== undefined) {
+                const retClass = data.fund_return >= 0 ? 'positive' : 'negative';
+                fundReturnEl.textContent = `${data.fund_return >= 0 ? '+' : ''}${data.fund_return.toFixed(1)}%`;
+                fundReturnEl.className = `badge-value ${retClass}`;
             }
             
             // Table
@@ -682,10 +684,12 @@ function processPositionsData(data) {
 // This ensures the parallel initializer updates the UI correctly
 
 function processInvestorsData(data) {
-    // NAV per unit badge
-    const navUnit = document.getElementById('nav-per-unit');
-    if (navUnit && data.nav_per_unit) {
-        navUnit.textContent = `$${data.nav_per_unit.toFixed(4)}`;
+    // Fund return badge (same for all investors)
+    const fundReturnEl = document.getElementById('fund-return');
+    if (fundReturnEl && data.fund_return !== undefined) {
+        const retClass = data.fund_return >= 0 ? 'positive' : 'negative';
+        fundReturnEl.textContent = `${data.fund_return >= 0 ? '+' : ''}${data.fund_return.toFixed(1)}%`;
+        fundReturnEl.className = `badge-value ${retClass}`;
     }
     
     // Investors table (note: ID is 'investor-body' not 'investors-body')

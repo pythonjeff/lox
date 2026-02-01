@@ -24,7 +24,7 @@ def run_crypto_snapshot(
 ) -> None:
     """Shared implementation for crypto snapshot."""
     from ai_options_trader.cli_commands.shared.labs_utils import handle_output_flags
-    from ai_options_trader.data.snapshots import build_crypto_quant_snapshot
+    from ai_options_trader.crypto.snapshot import build_crypto_quant_snapshot
     from ai_options_trader.crypto.models import CryptoQuantSnapshot
 
     settings = load_settings()
@@ -168,7 +168,7 @@ def register(crypto_app: typer.Typer) -> None:
 
         # --- Crypto quant snapshot ---
         try:
-            from ai_options_trader.data.snapshots import build_crypto_quant_snapshot
+            from ai_options_trader.crypto.snapshot import build_crypto_quant_snapshot
 
             px = fetch_crypto_daily_closes(
                 api_key=settings.alpaca_data_key or settings.alpaca_api_key,

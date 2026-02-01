@@ -273,67 +273,74 @@ def register(nav_app: typer.Typer) -> None:
         from ai_options_trader.nav.store import default_nav_sheet_path
         from ai_options_trader.nav.store import _parse_ts
 
+        from ai_options_trader.config import load_settings
+        from ai_options_trader.data.alpaca import make_clients
+        
         path_sheet = sheet_path or default_nav_sheet_path()
         path_inv = investor_flows_path or default_investor_flows_path()
-        rep = investor_report(nav_sheet_path=path_sheet, investor_flows_path=path_inv)
+        
+        # Fetch LIVE equity from Alpaca for real-time values
+        live_equity = None
+        try:
+            settings = load_settings()
+            trading, _ = make_clients(settings)
+            account = trading.get_account()
+            if account:
+                live_equity = float(getattr(account, 'equity', 0) or 0)
+        except Exception:
+            pass
+        
+        rep = investor_report(nav_sheet_path=path_sheet, investor_flows_path=path_inv, live_equity=live_equity)
 
         c = Console()
+        equity = float(rep.get('equity') or 0.0)
+        total_capital = float(rep.get('total_capital') or 0.0)
+        nav_per_unit = float(rep.get('nav_per_unit') or 1.0)
+        total_units = float(rep.get('total_units') or 0.0)
+        fund_return = float(rep.get('fund_return') or 0.0)
+        fund_pnl = equity - total_capital
+        
+        ret_style = "green" if fund_return >= 0 else "red"
+        
         c.print(
             Panel(
-                f"asof: {rep.get('asof')}\n"
-                f"equity=${float(rep.get('equity') or 0.0):,.2f}\n"
-                f"nav_per_unit={float(rep.get('nav_per_unit') or 0.0):.6f}  total_units={float(rep.get('total_units') or 0.0):.6f}\n"
-                f"sheet: {path_sheet}\n"
+                f"[bold]Live Equity:[/bold] ${equity:,.2f}  |  [bold]Capital:[/bold] ${total_capital:,.2f}  |  [bold]P&L:[/bold] ${fund_pnl:+,.2f}\n"
+                f"[bold]NAV/Unit:[/bold] ${nav_per_unit:.4f}  |  [bold]Total Units:[/bold] {total_units:,.2f}\n"
+                f"[{ret_style}][bold]Fund Return: {fund_return*100:+.2f}%[/bold][/{ret_style}]\n"
                 f"investor_flows: {path_inv}",
-                title="NAV investor report",
+                title="NAV investor report (unitized)",
                 expand=False,
             )
         )
 
         rows = rep.get("rows") or []
         if not rows:
-            c.print(Panel("No investor flows yet. Use `lox nav investor seed ...`", title="NAV", expand=False))
+            c.print(Panel("No investor flows yet. Use `lox nav investor contribute ...`", title="NAV", expand=False))
             raise typer.Exit(code=0)
 
-        # Show investor flows since the latest NAV snapshot (these should not affect other investors' PnL if timestamped properly).
-        try:
-            asof = rep.get("asof")
-            if asof:
-                t0 = _parse_ts(str(asof))
-                flows = read_investor_flows(path=path_inv)
-                recent = [f for f in flows if _parse_ts(f.ts) > t0]
-                if recent:
-                    lines = []
-                    for f in recent[-10:]:
-                        lines.append(f"- {f.ts[:19]}  {f.code}  {float(f.amount):+,.2f}  {f.note or ''}".rstrip())
-                    c.print(
-                        Panel(
-                            "Recent investor flows since last NAV snapshot (priced at the last NAV-per-unit once you run the next `lox nav snapshot`):\n"
-                            + "\n".join(lines),
-                            title="Recent investor flows (since NAV asof)",
-                            expand=False,
-                        )
-                    )
-        except Exception:
-            pass
-
-        tbl = Table(title="Investor ledger (unitized)")
+        tbl = Table(title="Investor ledger (hedge fund style)")
         tbl.add_column("code", style="bold")
         tbl.add_column("ownership", justify="right")
-        tbl.add_column("basis", justify="right")
+        tbl.add_column("units", justify="right")
+        tbl.add_column("deposits", justify="right")
         tbl.add_column("value", justify="right")
         tbl.add_column("pnl", justify="right")
         tbl.add_column("return", justify="right")
         for r in rows:
             own = r.get("ownership")
             ret = r.get("return")
+            units = r.get("units", 0)
+            pnl = float(r.get('pnl') or 0.0)
+            pnl_style = "green" if pnl >= 0 else "red"
+            ret_style = "green" if (ret or 0) >= 0 else "red"
             tbl.add_row(
                 str(r.get("code") or ""),
                 "—" if own is None else f"{float(own)*100:.1f}%",
-                f"{float(r.get('basis') or 0.0):,.2f}",
-                f"{float(r.get('value') or 0.0):,.2f}",
-                f"{float(r.get('pnl') or 0.0):+,.2f}",
-                "—" if ret is None else f"{float(ret)*100:+.1f}%",
+                f"{float(units):,.2f}",
+                f"${float(r.get('basis') or 0.0):,.2f}",
+                f"${float(r.get('value') or 0.0):,.2f}",
+                f"[{pnl_style}]${pnl:+,.2f}[/{pnl_style}]",
+                "—" if ret is None else f"[{ret_style}]{float(ret)*100:+.1f}%[/{ret_style}]",
             )
         c.print(tbl)
 
@@ -892,39 +899,67 @@ def register(nav_app: typer.Typer) -> None:
         amount: float = typer.Argument(..., help="Signed USD amount. Deposit=positive, withdrawal=negative."),
         note: str = typer.Option("", "--note"),
         ts: str = typer.Option("", "--ts", help="Optional ISO timestamp (defaults to now UTC)."),
-        after_latest_nav: bool = typer.Option(
-            True,
-            "--after-latest-nav/--at-time",
-            help="If true (default), timestamp the contribution just AFTER the latest NAV snapshot so it is priced at the latest NAV per unit (prevents flow timing from distorting investor PnL). Ignored when --ts is provided.",
-        ),
         flows_path: str = typer.Option("", "--flows-path", help="Override AOT_NAV_FLOWS (CSV)."),
         investor_flows_path: str = typer.Option("", "--investor-flows-path", help="Override AOT_NAV_INVESTOR_FLOWS (CSV)."),
     ):
-        """Log a contribution that updates BOTH the fund cashflow ledger and the investor ledger (same timestamp)."""
+        """
+        Log a contribution with LIVE unit pricing (hedge fund style).
+        
+        - Fetches current equity from Alpaca
+        - Calculates NAV/unit from existing investor units
+        - Issues new units at current price
+        - No manual snapshots needed for accurate accounting
+        """
         from ai_options_trader.nav.store import append_cashflow
-        from ai_options_trader.nav.investors import append_investor_flow
-        from ai_options_trader.nav.store import read_nav_sheet, _parse_ts
-        from datetime import timedelta
-
+        from ai_options_trader.nav.investors import append_investor_flow, read_investor_flows
+        from ai_options_trader.config import load_settings
+        from ai_options_trader.data.alpaca import make_clients
+        
         ts_use: str | None = ts.strip() or None
-        if ts_use is None and bool(after_latest_nav):
-            # Use the latest NAV snapshot timestamp as the pricing anchor (unitization).
-            # If there are no NAV snapshots yet, fall back to "now".
-            rows = read_nav_sheet()
-            if rows:
-                try:
-                    last_ts = _parse_ts(rows[-1].ts) + timedelta(seconds=1)
-                    ts_use = last_ts.isoformat()
-                except Exception:
-                    ts_use = None
-
+        
+        # Fetch LIVE equity from Alpaca
+        live_equity = 0.0
+        try:
+            settings = load_settings()
+            trading, _ = make_clients(settings)
+            account = trading.get_account()
+            if account:
+                live_equity = float(getattr(account, 'equity', 0) or 0)
+        except Exception as e:
+            Console().print(f"[yellow]Warning: Could not fetch live equity: {e}[/yellow]")
+        
+        # Get existing total units from investor flows
+        existing_flows = read_investor_flows(path=investor_flows_path or None)
+        total_units = sum(float(f.units) for f in existing_flows) if existing_flows else 0.0
+        
+        # Calculate current NAV/unit
+        if total_units > 0 and live_equity > 0:
+            nav_per_unit = live_equity / total_units
+        else:
+            # First deposit - start at $1.00 per unit
+            nav_per_unit = 1.0
+        
+        # Calculate units for this deposit
+        units = float(amount) / nav_per_unit if nav_per_unit > 0 else float(amount)
+        
+        # Log to both ledgers
         path_fund = append_cashflow(ts=ts_use, amount=float(amount), note=note, path=flows_path or None)
         path_inv = append_investor_flow(
-            code=code, amount=float(amount), note=note, ts=ts_use, path=investor_flows_path or None
+            code=code,
+            amount=float(amount),
+            note=note,
+            ts=ts_use,
+            nav_per_unit=nav_per_unit,
+            units=units,
+            path=investor_flows_path or None,
         )
+        
         Console().print(
             Panel(
                 f"Logged contribution: {code.upper()} {amount:+.2f}\n"
+                f"[bold]Live equity:[/bold] ${live_equity:,.2f}\n"
+                f"[bold]NAV/unit:[/bold] ${nav_per_unit:.4f}\n"
+                f"[bold]Units purchased:[/bold] {units:,.2f}\n"
                 f"ts: {ts_use or '(now UTC)'}\n"
                 f"fund_flows: {path_fund}\n"
                 f"investor_flows: {path_inv}",
