@@ -1,11 +1,11 @@
 """
 Options CLI - streamlined option scanning and analysis.
 
-Commands split across modules:
-- options_cmd.py: scan, most-traded (this file)
-- options_pick_cmd.py: pick
-- options_scanner_cmd.py: sp500-under-budget, etf-under-budget
-- options_moonshot_cmd.py: moonshot
+All options commands consolidated here:
+- best, scan, most-traded, high-oi, deep, sample (core commands)
+- pick (single contract selector)
+- sp500-under-budget, etf-under-budget (bulk scanners)
+- moonshot (high-variance extreme-move scanner)
 """
 from __future__ import annotations
 
@@ -23,6 +23,11 @@ from ai_options_trader.options.historical import fetch_option_bar_volumes
 from ai_options_trader.options.most_traded import most_traded_options
 from ai_options_trader.utils.occ import parse_occ_option_symbol
 
+# Import registration functions from submodules (will be consolidated)
+from ai_options_trader.cli_commands.options.options_pick_cmd import register_pick
+from ai_options_trader.cli_commands.options.options_scanner_cmd import register_scanners
+from ai_options_trader.cli_commands.options.options_moonshot_cmd import register_moonshot
+
 
 def _fmt_int(x: int | None) -> str:
     return f"{int(x):,}" if isinstance(x, int) else "n/a"
@@ -37,7 +42,18 @@ def _fmt_pct(x: float | None) -> str:
 
 
 def register(options_app: typer.Typer) -> None:
-    """Register core options commands."""
+    """Register all options commands (consolidated)."""
+    # Register core commands
+    _register_core_commands(options_app)
+    
+    # Register commands from submodules
+    register_pick(options_app)
+    register_scanners(options_app)
+    register_moonshot(options_app)
+
+
+def _register_core_commands(options_app: typer.Typer) -> None:
+    """Register core options commands (best, scan, most-traded, high-oi, deep, sample)."""
 
     @options_app.command("best")
     def options_best(
