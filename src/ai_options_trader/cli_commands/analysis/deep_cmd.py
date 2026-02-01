@@ -24,6 +24,7 @@ def register(app: typer.Typer) -> None:
         refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
         llm: bool = typer.Option(False, "--llm", help="Add geopolitical macro analysis"),
         thesis: str = typer.Option("", "--thesis", help="Your directional thesis (e.g., 'bearish due to tariffs')"),
+        debt: bool = typer.Option(False, "--debt", help="Focus on debt analysis (leverage, maturities, risks)"),
     ):
         """
         Hedge fund grade deep dive on a ticker.
@@ -32,11 +33,22 @@ def register(app: typer.Typer) -> None:
         For ETFs: profile, flows, holdings exposure, performance
         
         Use --llm for geopolitical macro context and trade thesis.
+        Use --debt for detailed debt/leverage analysis.
+        
+        Examples:
+            lox labs deep AAPL              # Standard deep dive
+            lox labs deep NVDA --debt       # Debt-focused analysis
+            lox labs deep CRWV --debt       # CoreWeave debt structure
         """
         from rich.markdown import Markdown
         
         settings = load_settings()
         t = ticker.strip().upper()
+        
+        # If debt flag is set, show debt-focused analysis
+        if debt:
+            _debt_analysis(t, settings)
+            return
         
         console.print(f"\n[bold cyan]Deep Dive: {t}[/bold cyan]")
         console.print("[dim]Loading...[/dim]\n")
@@ -263,16 +275,9 @@ def _fetch_company_profile(ticker: str, settings) -> dict:
 
 
 def _fetch_key_metrics(ticker: str, settings) -> dict:
-    """Fetch key metrics TTM from FMP."""
-    try:
-        import requests
-        url = f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{ticker}"
-        resp = requests.get(url, params={"apikey": settings.FMP_API_KEY}, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        return data[0] if data else {}
-    except Exception:
-        return {}
+    """Fetch key metrics TTM from FMP (using centralized client)."""
+    from ai_options_trader.altdata.fmp import fetch_key_metrics
+    return fetch_key_metrics(settings=settings, ticker=ticker)
 
 
 def _fetch_earnings(ticker: str, settings) -> dict:
@@ -756,3 +761,239 @@ Primary Risk: [One sentence on what kills this trade]"""
         return (resp.choices[0].message.content or "").strip()
     except Exception as e:
         return f"LLM error: {e}"
+
+
+def _debt_analysis(ticker: str, settings):
+    """
+    Comprehensive debt analysis for a ticker.
+    Includes balance sheet data, leverage ratios, and GPU-specific exposure if applicable.
+    """
+    from rich.table import Table
+    from rich.panel import Panel
+    from ai_options_trader.altdata.fmp import (
+        fetch_profile, fetch_balance_sheet, fetch_income_statement,
+        fetch_key_metrics, fetch_ratios,
+    )
+    
+    console.print(f"\n[bold cyan]DEBT ANALYSIS: {ticker}[/bold cyan]")
+    console.print("[dim]Comprehensive leverage and debt structure analysis[/dim]\n")
+    
+    try:
+        # Use centralized FMP client
+        profile_obj = fetch_profile(settings=settings, ticker=ticker)
+        profile = profile_obj.__dict__ if profile_obj else {}
+        balance_sheets = fetch_balance_sheet(settings=settings, ticker=ticker, periods=4)
+        income_statements = fetch_income_statement(settings=settings, ticker=ticker, periods=4)
+        key_metrics = fetch_key_metrics(settings=settings, ticker=ticker)
+        ratios = fetch_ratios(settings=settings, ticker=ticker)
+        
+    except Exception as e:
+        console.print(f"[red]Error fetching data: {e}[/red]")
+        return
+    
+    if not balance_sheets:
+        console.print(f"[yellow]No balance sheet data available for {ticker}[/yellow]")
+        return
+    
+    bs_latest = balance_sheets[0]
+    is_latest = income_statements[0] if income_statements else {}
+    
+    # Company header
+    company_name = profile.get("companyName", ticker)
+    sector = profile.get("sector", "N/A")
+    market_cap = profile.get("mktCap", 0)
+    
+    header_lines = [
+        f"[bold]{company_name}[/bold]",
+        f"Sector: {sector}",
+        f"Market Cap: {_fmt_large_num(market_cap)}",
+    ]
+    console.print(Panel("\n".join(header_lines), title="Company", border_style="cyan", expand=False))
+    
+    # Debt Structure Table
+    total_debt = float(bs_latest.get("totalDebt", 0) or 0)
+    short_debt = float(bs_latest.get("shortTermDebt", 0) or 0)
+    long_debt = float(bs_latest.get("longTermDebt", 0) or 0)
+    cash = float(bs_latest.get("cashAndCashEquivalents", 0) or 0)
+    total_equity = float(bs_latest.get("totalStockholdersEquity", 0) or 0)
+    total_assets = float(bs_latest.get("totalAssets", 0) or 0)
+    
+    net_debt = total_debt - cash
+    
+    debt_table = Table(title="Debt Structure", expand=False)
+    debt_table.add_column("Item", style="bold")
+    debt_table.add_column("Amount", justify="right", style="cyan")
+    debt_table.add_column("% of Assets", justify="right")
+    
+    debt_table.add_row(
+        "Short-Term Debt",
+        _fmt_large_num(short_debt),
+        f"{short_debt/total_assets*100:.1f}%" if total_assets > 0 else "N/A",
+    )
+    debt_table.add_row(
+        "Long-Term Debt",
+        _fmt_large_num(long_debt),
+        f"{long_debt/total_assets*100:.1f}%" if total_assets > 0 else "N/A",
+    )
+    debt_table.add_row(
+        "[bold]Total Debt[/bold]",
+        f"[bold]{_fmt_large_num(total_debt)}[/bold]",
+        f"[bold]{total_debt/total_assets*100:.1f}%[/bold]" if total_assets > 0 else "N/A",
+    )
+    debt_table.add_row(
+        "Cash & Equivalents",
+        f"[green]{_fmt_large_num(cash)}[/green]",
+        "",
+    )
+    debt_table.add_row(
+        "[bold]Net Debt[/bold]",
+        f"[bold {'red' if net_debt > 0 else 'green'}]{_fmt_large_num(net_debt)}[/bold {'red' if net_debt > 0 else 'green'}]",
+        "",
+    )
+    
+    console.print()
+    console.print(debt_table)
+    
+    # Leverage Ratios Table
+    debt_to_equity = float(ratios.get("debtEquityRatioTTM", 0) or 0)
+    debt_to_assets = total_debt / total_assets if total_assets > 0 else 0
+    current_ratio = float(ratios.get("currentRatioTTM", 0) or 0)
+    quick_ratio = float(ratios.get("quickRatioTTM", 0) or 0)
+    
+    # Interest coverage
+    ebit = float(is_latest.get("operatingIncome", 0) or 0)
+    interest_expense = float(is_latest.get("interestExpense", 0) or 0)
+    interest_coverage = ebit / abs(interest_expense) if interest_expense != 0 else 999
+    
+    ratios_table = Table(title="Leverage Ratios", expand=False)
+    ratios_table.add_column("Ratio", style="bold")
+    ratios_table.add_column("Value", justify="right")
+    ratios_table.add_column("Assessment")
+    
+    # Debt/Equity
+    de_color = "red" if debt_to_equity > 2 else "yellow" if debt_to_equity > 1 else "green"
+    de_assess = "HIGH LEVERAGE" if debt_to_equity > 2 else "ELEVATED" if debt_to_equity > 1 else "HEALTHY"
+    ratios_table.add_row(
+        "Debt/Equity",
+        f"[{de_color}]{debt_to_equity:.2f}x[/{de_color}]",
+        f"[{de_color}]{de_assess}[/{de_color}]",
+    )
+    
+    # Debt/Assets
+    da_color = "red" if debt_to_assets > 0.6 else "yellow" if debt_to_assets > 0.4 else "green"
+    ratios_table.add_row(
+        "Debt/Assets",
+        f"[{da_color}]{debt_to_assets:.1%}[/{da_color}]",
+        "",
+    )
+    
+    # Interest Coverage
+    ic_color = "red" if interest_coverage < 2 else "yellow" if interest_coverage < 4 else "green"
+    ic_assess = "WEAK" if interest_coverage < 2 else "ADEQUATE" if interest_coverage < 4 else "STRONG"
+    ic_display = f"{interest_coverage:.1f}x" if interest_coverage < 100 else ">100x"
+    ratios_table.add_row(
+        "Interest Coverage",
+        f"[{ic_color}]{ic_display}[/{ic_color}]",
+        f"[{ic_color}]{ic_assess}[/{ic_color}]",
+    )
+    
+    # Current Ratio
+    cr_color = "red" if current_ratio < 1 else "yellow" if current_ratio < 1.5 else "green"
+    ratios_table.add_row(
+        "Current Ratio",
+        f"[{cr_color}]{current_ratio:.2f}x[/{cr_color}]",
+        "LIQUIDITY RISK" if current_ratio < 1 else "",
+    )
+    
+    # Quick Ratio
+    qr_color = "red" if quick_ratio < 0.5 else "yellow" if quick_ratio < 1 else "green"
+    ratios_table.add_row(
+        "Quick Ratio",
+        f"[{qr_color}]{quick_ratio:.2f}x[/{qr_color}]",
+        "",
+    )
+    
+    console.print()
+    console.print(ratios_table)
+    
+    # Historical Debt Trend
+    if len(balance_sheets) > 1:
+        console.print()
+        trend_table = Table(title="Debt Trend (Last 4 Periods)", expand=False)
+        trend_table.add_column("Period", style="bold")
+        trend_table.add_column("Total Debt", justify="right")
+        trend_table.add_column("D/E Ratio", justify="right")
+        trend_table.add_column("Cash", justify="right", style="green")
+        
+        for bs in balance_sheets[:4]:
+            period = bs.get("date", "N/A")[:10]
+            t_debt = float(bs.get("totalDebt", 0) or 0)
+            t_equity = float(bs.get("totalStockholdersEquity", 0) or 0)
+            t_cash = float(bs.get("cashAndCashEquivalents", 0) or 0)
+            de = t_debt / t_equity if t_equity > 0 else 0
+            
+            trend_table.add_row(
+                period,
+                _fmt_large_num(t_debt),
+                f"{de:.2f}x",
+                _fmt_large_num(t_cash),
+            )
+        
+        console.print(trend_table)
+    
+    # Check for GPU-specific debt exposure
+    try:
+        from ai_options_trader.gpu.debt_analysis import GPU_DEBT_COMPANIES, fetch_ticker_debt_analysis
+        
+        if ticker in GPU_DEBT_COMPANIES:
+            gpu_data = GPU_DEBT_COMPANIES[ticker]
+            
+            gpu_lines = [
+                "[bold yellow]GPU-RELATED DEBT EXPOSURE[/bold yellow]",
+                "",
+            ]
+            
+            if gpu_data.get("gpu_backed_debt_b", 0) > 0:
+                gpu_lines.append(f"[bold]GPU-Backed Debt:[/bold] [red]${gpu_data['gpu_backed_debt_b']:.1f}B[/red]")
+                gpu_lines.append(f"[bold]GPU Collateral:[/bold] ${gpu_data.get('gpu_collateral_value_b', 0):.1f}B")
+                gpu_lines.append(f"[bold]LTV Ratio:[/bold] [red]{gpu_data.get('ltv_ratio', 0):.1f}x[/red]")
+            
+            if gpu_data.get("gpu_capex_b", 0) > 0:
+                gpu_lines.append(f"[bold]GPU CapEx:[/bold] [yellow]${gpu_data['gpu_capex_b']:.0f}B[/yellow]")
+            
+            gpu_lines.append("")
+            gpu_lines.append(f"[bold]Key Risk:[/bold] {gpu_data.get('key_risk', 'N/A')}")
+            
+            console.print()
+            console.print(Panel("\n".join(gpu_lines), title="GPU Exposure", border_style="yellow", expand=False))
+    except ImportError:
+        pass
+    
+    # Risk Assessment Summary
+    risks = []
+    if debt_to_equity > 2:
+        risks.append(f"High leverage: D/E ratio {debt_to_equity:.1f}x")
+    if interest_coverage < 3 and interest_coverage > 0:
+        risks.append(f"Weak interest coverage: {interest_coverage:.1f}x")
+    if current_ratio < 1:
+        risks.append(f"Liquidity concern: Current ratio {current_ratio:.2f}x")
+    if net_debt > market_cap * 0.5 and market_cap > 0:
+        risks.append(f"Net debt exceeds 50% of market cap")
+    
+    if risks:
+        console.print()
+        risk_lines = ["[bold red]KEY RISKS IDENTIFIED[/bold red]", ""]
+        for r in risks:
+            risk_lines.append(f"  • {r}")
+        console.print(Panel("\n".join(risk_lines), title="Risk Factors", border_style="red", expand=False))
+    else:
+        console.print()
+        console.print(Panel(
+            "[green]No major debt-related risks identified[/green]\n\n"
+            "The company appears to have a healthy balance sheet.",
+            title="Risk Assessment",
+            border_style="green",
+            expand=False,
+        ))
+    
+    console.print()

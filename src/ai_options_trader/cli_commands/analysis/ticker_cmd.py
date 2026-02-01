@@ -38,7 +38,7 @@ def register(ticker_app: typer.Typer) -> None:
     ):
         """Print a quantitative snapshot for a ticker (returns, vol, drawdown, rel strength)."""
         settings = load_settings()
-        from ai_options_trader.ticker.snapshot import build_ticker_snapshot
+        from ai_options_trader.data.snapshots import build_ticker_snapshot
 
         snap = build_ticker_snapshot(settings=settings, ticker=ticker, benchmark=benchmark, start=start)
         print(snap)
@@ -61,7 +61,7 @@ def register(ticker_app: typer.Typer) -> None:
         settings = load_settings()
 
         # --- Ticker snapshot ---
-        from ai_options_trader.ticker.snapshot import build_ticker_snapshot
+        from ai_options_trader.data.snapshots import build_ticker_snapshot
 
         snap = build_ticker_snapshot(settings=settings, ticker=ticker, benchmark=benchmark, start=start)
 
@@ -692,7 +692,7 @@ def register(ticker_app: typer.Typer) -> None:
         
         # 4. Quantitative snapshot (price behavior)
         try:
-            from ai_options_trader.ticker.snapshot import build_ticker_snapshot
+            from ai_options_trader.data.snapshots import build_ticker_snapshot
             snap = build_ticker_snapshot(settings=settings, ticker=t, benchmark="SPY", start="2020-01-01")
             
             # Format nicely instead of raw dataclass
