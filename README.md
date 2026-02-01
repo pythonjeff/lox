@@ -24,15 +24,17 @@ lox status                    # Portfolio health
 lox dashboard                 # All regimes at a glance
 
 # Research a ticker
-lox research -t NVDA          # Deep research
+lox research -t NVDA          # Full research report (momentum, HF metrics, SEC filings)
+lox research -t SPY --quick   # Quick momentum-only view
 lox scan -t NVDA --want put   # Options chain
 
 # Check regimes
 lox regime vol                # Volatility regime
 lox regime fiscal             # Fiscal regime
 
-# Scenarios
+# Scenarios & Analysis
 lox scenario monte-carlo      # Monte Carlo simulation
+lox gpu-debt -t CRWV          # GPU company debt analysis
 ```
 
 ---
@@ -285,6 +287,40 @@ Loads deep research data (profile, earnings, news, SEC filings) into chat for fo
 
 This research forms the foundation for every trade decision — understanding who's investing, what the fund/company does, and how it fits our macro thesis.
 
+### v3 Architecture Consolidation (January 25, 2026)
+
+**5-Pillar CLI Architecture**
+- **Fund Info**: NAV, investors, portfolio health
+- **Macro & Regimes**: Dashboard, regime analysis with subcommands
+- **Portfolio Analysis**: Monte Carlo, ML-enhanced scenarios
+- **Ideas Generation**: Trade ideas based on overbought/oversold extremes
+- **Research**: Deep ticker/sector research with LLM integration
+
+**Enhanced Research Command**
+```bash
+lox research -t NVDA          # Full report: momentum, HF metrics, SEC filings, fundamentals
+lox research -t SPY --quick   # Quick momentum-only view
+lox research -t AAPL --llm    # With LLM synthesis
+```
+- **Momentum Metrics**: 1W/1M/3M/6M/1Y returns, RSI, SMA crossovers
+- **Hedge Fund Metrics**: Sharpe, Sortino, Calmar, VaR, CVaR, Max Drawdown, Skewness, Kurtosis
+- **SEC Filings**: Recent 8-K, 10-K, 10-Q, Form 4 insider activity
+- **Asset-Type Aware**: Different reports for ETFs vs stocks
+
+**GPU Debt Analysis**
+```bash
+lox gpu-debt -t CRWV          # Analyze CoreWeave debt structure
+lox gpu-debt -t NVDA          # Any ticker's debt metrics
+lox gpu                       # GPU sector put scanner
+```
+
+**Code Consolidation**
+- Reduced `cli.py` from ~1,800 to ~1,000 lines
+- Centralized FMP API calls to single `altdata/fmp.py` client
+- Merged scenario commands (basic + ML) into single module
+- Created `cli_commands/utils/formatting.py` for reusable display helpers
+- Consolidated snapshot builders into `data/snapshots.py`
+
 ### v2 Regime System (January 25, 2026)
 
 **Unified Regime Framework**
@@ -357,31 +393,44 @@ lox labs unified                       # All 10 regimes
 
 ## Quick Reference
 
-### CLI Structure
+### CLI Structure (5 Pillars)
 
 ```
 lox                           # Help with examples
-├── scan -t TICKER            # Options chain scanner
-├── research -t TICKER        # Deep ticker research
-├── status                    # Portfolio health
-├── dashboard                 # All regimes at a glance
 │
-├── regime                    # Economic regime analysis
-│   ├── vol                   # Volatility (VIX)
-│   ├── fiscal                # Fiscal (deficits, TGA)
-│   ├── funding               # Funding markets (SOFR)
-│   ├── rates                 # Yield curve
-│   └── macro                 # Macro overview
+├── [1] Fund Information
+│   ├── status                # Portfolio health
+│   └── nav                   # NAV management
 │
-├── scenario                  # Portfolio scenarios
-│   ├── monte-carlo           # Monte Carlo simulation
-│   └── stress                # Stress testing
+├── [2] Macro & Regimes
+│   ├── dashboard             # All regimes at a glance
+│   └── regime                # Economic regime analysis
+│       ├── vol               # Volatility (VIX)
+│       ├── fiscal            # Fiscal (deficits, TGA)
+│       ├── funding           # Funding markets (SOFR)
+│       ├── rates             # Yield curve
+│       └── macro             # Macro overview
+│
+├── [3] Portfolio Analysis
+│   └── scenario              # Portfolio scenarios
+│       ├── monte-carlo       # Monte Carlo simulation
+│       ├── stress            # Stress testing
+│       ├── forward           # Forward-looking scenarios
+│       └── custom            # Custom scenario builder
+│
+├── [4] Ideas Generation
+│   ├── scan-extremes         # Overbought/oversold scanner
+│   ├── ideas                 # Trade ideas
+│   └── scan -t TICKER        # Options chain scanner
+│
+├── [5] Research
+│   ├── research -t TICKER    # Deep ticker research
+│   ├── chat                  # Interactive research chat
+│   ├── gpu-debt -t TICKER    # GPU company debt analysis
+│   └── labs                  # Advanced tools (power users)
 │
 ├── trade                     # Trade execution
-├── ideas                     # Trade ideas
-├── chat                      # Interactive research chat
-├── options                   # Full options toolset
-└── labs                      # Advanced tools (power users)
+└── options                   # Full options toolset
 ```
 
 ### Daily Workflow
@@ -391,7 +440,8 @@ lox status                    # Portfolio health
 lox dashboard                 # All regimes at a glance
 
 # Research (as needed)
-lox research -t NVDA          # Deep ticker research
+lox research -t NVDA          # Full research report
+lox research -t SPY --quick   # Quick momentum check
 lox regime vol                # Volatility regime
 lox regime fiscal             # Fiscal regime
 
@@ -400,8 +450,12 @@ lox scan -t CRWV --want put   # Options chain
 lox scan -t NVDA --min-days 60 --max-days 180
 
 # Ideas and scenarios
-lox suggest                   # Trade ideas
+lox scan-extremes             # Find overbought/oversold tickers
+lox ideas                     # Trade ideas
 lox scenario monte-carlo      # Monte Carlo simulation
+
+# GPU analysis (sector-specific)
+lox gpu-debt -t CRWV          # Debt structure analysis
 
 # EOD: Record NAV
 lox nav snapshot
@@ -419,7 +473,7 @@ lox nav snapshot
 | `lox status` | Portfolio health at a glance |
 | `lox dashboard` | All regime pillars |
 | `lox scan -t TICKER` | Options chain scanner |
-| `lox research -t TICKER` | Deep ticker research |
+| `lox research -t TICKER` | Deep ticker research (momentum, HF metrics, SEC filings) |
 | `lox regime vol` | Volatility regime |
 | `lox regime fiscal` | Fiscal regime |
 | `lox scenario monte-carlo` | Monte Carlo simulation |
@@ -427,11 +481,13 @@ lox nav snapshot
 ### Research Commands
 | Command | Purpose |
 |---------|---------|
-| `lox research -t AAPL` | Deep ticker research |
-| `lox research -t NVDA --llm` | With LLM analysis |
+| `lox research -t AAPL` | Full research: momentum, HF metrics, fundamentals |
+| `lox research -t NVDA --llm` | With LLM synthesis |
+| `lox research -t SPY --quick` | Quick momentum-only view |
+| `lox gpu-debt -t CRWV` | GPU company debt analysis |
 | `lox regime vol --llm` | Volatility with LLM |
 | `lox regime rates` | Rates/curve analysis |
-| `lox labs ticker deep -t AAPL` | Full ticker deep dive (legacy) |
+| `lox scan-extremes` | Find overbought/oversold tickers |
 
 ### Options Commands
 | Command | Purpose |
@@ -542,15 +598,47 @@ The dashboard requires:
 
 ## Architecture
 
+The CLI is organized around **5 core pillars**:
+
+| Pillar | Purpose | Key Commands |
+|--------|---------|--------------|
+| **1. Fund Info** | NAV, investors, portfolio health | `lox status`, `lox nav` |
+| **2. Macro & Regimes** | Dashboard, regime analysis | `lox dashboard`, `lox regime *` |
+| **3. Portfolio Analysis** | Monte Carlo, ML scenarios | `lox scenario *` |
+| **4. Ideas Generation** | Trade ideas, extreme scanners | `lox scan-extremes`, `lox ideas` |
+| **5. Research** | Deep ticker/sector research | `lox research`, `lox chat` |
+
 ```
 lox/
-├── Top-Level Commands (Daily Use)
-│   ├── scan           → Options chain scanner
-│   ├── research       → Deep ticker research
-│   ├── status         → Portfolio health
-│   ├── dashboard      → All regimes at a glance
-│   ├── regime *       → Economic regime analysis
-│   └── scenario *     → Portfolio scenarios
+├── Pillar 1: Fund Information
+│   ├── status         → Portfolio health at a glance
+│   └── nav            → NAV management
+│
+├── Pillar 2: Macro Dashboard & Regimes
+│   ├── dashboard      → All regimes overview
+│   └── regime *       → Individual regime analysis
+│       ├── vol        → Volatility (VIX)
+│       ├── fiscal     → Fiscal (deficits, TGA)
+│       ├── funding    → Funding markets (SOFR)
+│       ├── rates      → Yield curve
+│       └── macro      → Macro overview
+│
+├── Pillar 3: Portfolio Analysis
+│   └── scenario *     → Scenario analysis
+│       ├── monte-carlo    → Monte Carlo simulation
+│       ├── stress         → Stress testing
+│       └── forward/custom → ML-enhanced scenarios
+│
+├── Pillar 4: Ideas Generation
+│   ├── scan-extremes  → Find overbought/oversold tickers
+│   ├── ideas          → Trade idea generation
+│   └── scan           → Options chain scanner
+│
+├── Pillar 5: Research
+│   ├── research       → Deep ticker research (momentum, HF metrics, SEC filings)
+│   ├── chat           → Interactive research chat
+│   ├── gpu-debt       → GPU company debt analysis
+│   └── labs           → Advanced tools (power users)
 │
 ├── Web Dashboard (Primary Interface)
 │   ├── Real-time portfolio analytics
@@ -559,23 +647,16 @@ lox/
 │   ├── Position-level LLM theories
 │   └── Economic calendar integration
 │
-├── Subgroups
-│   ├── options        → Full options toolset
-│   ├── trade          → Trade execution
-│   ├── ideas          → Trade idea generation
-│   ├── chat           → Interactive research
-│   └── labs           → Advanced tools (power users)
-│
 ├── Data Layer
 │   ├── FRED           → Macro time series
 │   ├── Alpaca         → Market data + positions
-│   ├── FMP            → News + calendar + quotes
+│   ├── FMP            → News, calendar, quotes, fundamentals (centralized client)
 │   └── Polygon        → Options data (OI, greeks)
 │
 └── Analysis Layer
-    ├── Regime pillars → Vol, fiscal, funding, rates, macro
-    ├── LLM analyst    → Research synthesis
-    └── Scenarios      → Monte Carlo, stress testing
+    ├── research/      → Momentum, HF metrics, ticker reports
+    ├── fundamentals/  → DCF, sensitivity, ecosystem analysis
+    └── gpu/           → GPU securities tracking, debt analysis
 ```
 
 ---
