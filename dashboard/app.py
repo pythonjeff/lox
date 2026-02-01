@@ -340,7 +340,9 @@ def _get_original_capital():
     """Get original capital from investor flows (preferred) or env var fallback."""
     # Prefer investor flows as source of truth - auto-updates with deposits
     try:
-        flows = read_investor_flows()
+        # Use absolute path to handle dashboard running from different directories
+        investor_flows_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_investor_flows.csv")
+        flows = read_investor_flows(path=investor_flows_path)
         capital_sum = sum(float(f.amount) for f in flows if float(f.amount) > 0)
         if capital_sum > 0:
             return capital_sum
@@ -657,7 +659,8 @@ def get_positions_data(force_refresh: bool = False):
             pass
         
         try:
-            flows = read_investor_flows()
+            investor_flows_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_investor_flows.csv")
+            flows = read_investor_flows(path=investor_flows_path)
             capital_sum = sum(float(f.amount) for f in flows if float(f.amount) > 0)
             if capital_sum > 0:
                 original_capital = capital_sum
