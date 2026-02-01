@@ -337,18 +337,18 @@ def _get_nav_equity(account):
 
 
 def _get_original_capital():
-    """Get original capital from env var or investor flows."""
-    original_capital = float(os.environ.get("FUND_TOTAL_CAPITAL", "0")) or 950.0
-    if original_capital == 950.0:
-        # Try reading from investor flows if env var not set
-        try:
-            flows = read_investor_flows()
-            capital_sum = sum(float(f.amount) for f in flows if float(f.amount) > 0)
-            if capital_sum > 0:
-                original_capital = capital_sum
-        except Exception as flow_error:
-            print(f"Warning: Could not read investor flows: {flow_error}")
-    return original_capital
+    """Get original capital from investor flows (preferred) or env var fallback."""
+    # Prefer investor flows as source of truth - auto-updates with deposits
+    try:
+        flows = read_investor_flows()
+        capital_sum = sum(float(f.amount) for f in flows if float(f.amount) > 0)
+        if capital_sum > 0:
+            return capital_sum
+    except Exception as flow_error:
+        print(f"Warning: Could not read investor flows: {flow_error}")
+    
+    # Fallback to env var if investor flows unavailable
+    return float(os.environ.get("FUND_TOTAL_CAPITAL", "0")) or 950.0
 
 
 def _get_regime_context(settings):
