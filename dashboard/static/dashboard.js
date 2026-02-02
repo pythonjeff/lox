@@ -220,42 +220,132 @@ function processMarketContextData(data) {
         regimeBadge.className = 'regime-badge ' + (regimeLabel).toLowerCase().replace(' ', '-');
     }
     
-    // Key metrics
+    // Key metrics with context
     if (data.traffic_lights) {
         const tl = data.traffic_lights;
         
-        // VIX
+        // VIX - Fear Gauge
         const vixEl = document.getElementById('vix-value');
+        const vixContext = document.getElementById('vix-context');
         if (vixEl && tl.volatility) {
             const vixStr = tl.volatility.value || '—';
-            vixEl.textContent = vixStr;
-            // Color based on level
+            // Extract just the number for display
             const vixNum = parseFloat(vixStr.replace(/[^0-9.]/g, ''));
-            if (vixNum < 18) vixEl.className = 'regime-metric-value green';
-            else if (vixNum < 25) vixEl.className = 'regime-metric-value yellow';
-            else vixEl.className = 'regime-metric-value red';
+            vixEl.textContent = vixNum ? vixNum.toFixed(1) : '—';
+            
+            // Color and context based on level
+            if (vixNum < 15) {
+                vixEl.className = 'regime-metric-value green';
+                if (vixContext) vixContext.textContent = 'Complacent (<15)';
+            } else if (vixNum < 20) {
+                vixEl.className = 'regime-metric-value green';
+                if (vixContext) vixContext.textContent = 'Calm (15-20)';
+            } else if (vixNum < 25) {
+                vixEl.className = 'regime-metric-value yellow';
+                if (vixContext) vixContext.textContent = 'Elevated (20-25)';
+            } else if (vixNum < 30) {
+                vixEl.className = 'regime-metric-value yellow';
+                if (vixContext) vixContext.textContent = 'Fear (25-30)';
+            } else {
+                vixEl.className = 'regime-metric-value red';
+                if (vixContext) vixContext.textContent = 'Panic (>30)';
+            }
         }
         
-        // Credit (HY Spread)
+        // HY Spread - Credit Stress (basis points)
         const creditEl = document.getElementById('credit-value');
+        const creditContext = document.getElementById('credit-context');
         if (creditEl && tl.credit) {
             const creditStr = tl.credit.value || '—';
-            creditEl.textContent = creditStr;
             const creditNum = parseFloat(creditStr.replace(/[^0-9.]/g, ''));
-            if (creditNum < 325) creditEl.className = 'regime-metric-value green';
-            else if (creditNum < 400) creditEl.className = 'regime-metric-value yellow';
-            else creditEl.className = 'regime-metric-value red';
+            creditEl.textContent = creditNum ? `${Math.round(creditNum)}bp` : '—';
+            
+            // Color and context based on level
+            if (creditNum < 300) {
+                creditEl.className = 'regime-metric-value green';
+                if (creditContext) creditContext.textContent = 'Tight (<300bp)';
+            } else if (creditNum < 400) {
+                creditEl.className = 'regime-metric-value yellow';
+                if (creditContext) creditContext.textContent = 'Normal (300-400bp)';
+            } else if (creditNum < 500) {
+                creditEl.className = 'regime-metric-value yellow';
+                if (creditContext) creditContext.textContent = 'Wide (400-500bp)';
+            } else {
+                creditEl.className = 'regime-metric-value red';
+                if (creditContext) creditContext.textContent = 'Stress (>500bp)';
+            }
         }
         
-        // 10Y Yield
+        // 10Y Yield - Rate Pressure
         const ratesEl = document.getElementById('rates-value');
+        const ratesContext = document.getElementById('rates-context');
         if (ratesEl && tl.rates) {
             const ratesStr = tl.rates.value || '—';
-            ratesEl.textContent = ratesStr;
             const ratesNum = parseFloat(ratesStr.replace(/[^0-9.]/g, ''));
-            if (ratesNum < 4.0) ratesEl.className = 'regime-metric-value green';
-            else if (ratesNum < 4.5) ratesEl.className = 'regime-metric-value yellow';
-            else ratesEl.className = 'regime-metric-value red';
+            ratesEl.textContent = ratesNum ? `${ratesNum.toFixed(2)}%` : '—';
+            
+            // Color and context based on level
+            if (ratesNum < 3.5) {
+                ratesEl.className = 'regime-metric-value green';
+                if (ratesContext) ratesContext.textContent = 'Accommodative (<3.5%)';
+            } else if (ratesNum < 4.25) {
+                ratesEl.className = 'regime-metric-value yellow';
+                if (ratesContext) ratesContext.textContent = 'Neutral (3.5-4.25%)';
+            } else if (ratesNum < 4.75) {
+                ratesEl.className = 'regime-metric-value yellow';
+                if (ratesContext) ratesContext.textContent = 'Tight (4.25-4.75%)';
+            } else {
+                ratesEl.className = 'regime-metric-value red';
+                if (ratesContext) ratesContext.textContent = 'Restrictive (>4.75%)';
+            }
+        }
+        
+        // CPI YoY - Inflation
+        const cpiEl = document.getElementById('cpi-value');
+        const cpiContext = document.getElementById('cpi-context');
+        if (cpiEl && tl.inflation) {
+            const cpiStr = tl.inflation.value || '—';
+            const cpiNum = parseFloat(cpiStr.replace(/[^0-9.]/g, ''));
+            cpiEl.textContent = cpiNum ? `${cpiNum.toFixed(1)}%` : '—';
+            
+            // Color and context based on level
+            if (cpiNum > 4.0) {
+                cpiEl.className = 'regime-metric-value red';
+                if (cpiContext) cpiContext.textContent = 'Hot (>4%)';
+            } else if (cpiNum > 3.0) {
+                cpiEl.className = 'regime-metric-value yellow';
+                if (cpiContext) cpiContext.textContent = 'Sticky (3-4%)';
+            } else if (cpiNum > 2.0) {
+                cpiEl.className = 'regime-metric-value green';
+                if (cpiContext) cpiContext.textContent = 'Target (2-3%)';
+            } else {
+                cpiEl.className = 'regime-metric-value green';
+                if (cpiContext) cpiContext.textContent = 'Cool (<2%)';
+            }
+        }
+        
+        // 2s10s Yield Curve Spread
+        const curveEl = document.getElementById('curve-value');
+        const curveContext = document.getElementById('curve-context');
+        if (curveEl && tl.yield_curve) {
+            const curveStr = tl.yield_curve.value || '—';
+            const curveNum = parseFloat(curveStr.replace(/[^0-9.-]/g, ''));
+            curveEl.textContent = !isNaN(curveNum) ? `${curveNum.toFixed(0)}bp` : '—';
+            
+            // Color and context based on level
+            if (curveNum < -50) {
+                curveEl.className = 'regime-metric-value red';
+                if (curveContext) curveContext.textContent = 'Deep inversion';
+            } else if (curveNum < 0) {
+                curveEl.className = 'regime-metric-value yellow';
+                if (curveContext) curveContext.textContent = 'Inverted';
+            } else if (curveNum < 50) {
+                curveEl.className = 'regime-metric-value yellow';
+                if (curveContext) curveContext.textContent = 'Flat (0-50bp)';
+            } else {
+                curveEl.className = 'regime-metric-value green';
+                if (curveContext) curveContext.textContent = 'Steep (>50bp)';
+            }
         }
     }
     
@@ -276,14 +366,14 @@ function processMarketContextData(data) {
         if (insightTime) insightTime.textContent = formatTime();
     }
     
-    // Portfolio implication based on regime
+    // Portfolio implication based on regime (mean-reversion / bearish bias strategy)
     if (implicationText) {
         const implications = {
-            'RISK-ON': 'Favorable for long equity and call options. Momentum strategies preferred.',
-            'CAUTIOUS': 'Mixed signals. Reduce position sizes and favor hedged positions.',
-            'RISK-OFF': 'Defensive stance recommended. Favor puts and cash preservation.',
+            'RISK-ON': 'Complacency rising—prime environment for mean reversion puts on extended names. Calls serve as hedges against short delta. Low VIX = cheap vol for long-dated protection.',
+            'CAUTIOUS': 'Inflection point. Tighten stops on existing puts, scale into hedges. Watch for breakdown confirmation before adding bearish exposure.',
+            'RISK-OFF': 'Thesis playing out—puts gaining. Consider taking profits on winners, let hedges (calls) decay. Elevated vol = expensive to initiate new positions.',
         };
-        implicationText.textContent = implications[regimeLabel] || 'Monitoring market conditions.';
+        implicationText.textContent = implications[regimeLabel] || 'Monitoring for mean reversion setups.';
     }
     
     // Regime change alert

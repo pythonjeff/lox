@@ -34,6 +34,7 @@ import pandas as pd
 # Import refactored modules
 from dashboard.data_fetchers import (
     get_hy_oas, get_vix, get_10y_yield,
+    get_cpi_inflation, get_yield_curve_spread,
     get_sp500_return_since_inception, get_btc_return_since_inception,
 )
 from dashboard.regime_utils import get_regime_domains_data, get_regime_label
@@ -1984,6 +1985,8 @@ def _generate_palmer_analysis():
     hy_oas = get_hy_oas(settings)
     vix = get_vix(settings)
     yield_10y = get_10y_yield(settings)
+    cpi = get_cpi_inflation(settings)
+    yield_curve = get_yield_curve_spread(settings)
     
     # Get today's economic calendar
     fed_fiscal_events, calendar_date = fetch_fed_fiscal_calendar(settings)
@@ -2008,6 +2011,8 @@ def _generate_palmer_analysis():
         "hy_oas_bps": hy_oas.get("value") if hy_oas else None,
         "vix": vix.get("value") if vix else None,
         "yield_10y": yield_10y.get("value") if yield_10y else None,
+        "cpi_yoy": cpi.get("value") if cpi else None,
+        "yield_curve_2s10s": yield_curve.get("value") if yield_curve else None,
         "portfolio_nav": positions_data.get("nav_equity"),
         "portfolio_pnl": positions_data.get("total_pnl"),
     }
@@ -2016,6 +2021,8 @@ def _generate_palmer_analysis():
     vix_val = regime_snapshot.get("vix")
     hy_val = regime_snapshot.get("hy_oas_bps")
     yield_val = regime_snapshot.get("yield_10y")
+    cpi_val = regime_snapshot.get("cpi_yoy")
+    curve_val = regime_snapshot.get("yield_curve_2s10s")
     
     regime_label, regime_color = _get_regime_status(vix_val, hy_val)
     vol_label, vol_color = _get_vol_status(vix_val)
@@ -2178,6 +2185,8 @@ STYLE REQUIREMENTS:
             "volatility": {"label": vol_label, "color": vol_color, "value": f"VIX {vix_val:.1f}" if vix_val else "N/A"},
             "credit": {"label": credit_label, "color": credit_color, "value": f"{hy_val:.0f}bp" if hy_val else "N/A"},
             "rates": {"label": rates_label, "color": rates_color, "value": f"{yield_val:.2f}%" if yield_val else "N/A"},
+            "inflation": {"label": cpi.get("context") if cpi else "N/A", "color": cpi.get("color") if cpi else "gray", "value": f"{cpi_val:.1f}%" if cpi_val else "N/A"},
+            "yield_curve": {"label": yield_curve.get("context") if yield_curve else "N/A", "color": yield_curve.get("color") if yield_curve else "gray", "value": f"{curve_val:.0f}bp" if curve_val else "N/A"},
         },
         "portfolio_analysis": {
             "summary": portfolio_analysis_output.get("summary", ""),
