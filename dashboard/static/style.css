@@ -538,27 +538,119 @@ body {
 }
 
 /* ============================================
-   INSIGHT BOX (Market Context)
+   REGIME METRICS STRIP
+   ============================================ */
+.regime-metrics {
+    display: flex;
+    justify-content: space-around;
+    background: var(--bg-muted);
+    border-radius: 10px;
+    padding: 16px;
+    margin-top: 16px;
+    margin-bottom: 12px;
+}
+
+.regime-metric {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.regime-metric-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.regime-metric-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.regime-metric-value.green { color: var(--green); }
+.regime-metric-value.yellow { color: var(--yellow); }
+.regime-metric-value.red { color: var(--red); }
+
+/* ============================================
+   INSIGHT BOX (Market Context - Enhanced)
    ============================================ */
 .insight-box {
     background: var(--hero-bg);
-    border-radius: 10px;
+    border-radius: 12px;
     padding: 20px;
-    margin-top: 16px;
+    position: relative;
+    overflow: hidden;
+}
+
+.insight-box::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--green), var(--accent), transparent);
+}
+
+.insight-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.insight-icon {
+    font-size: 16px;
+}
+
+.insight-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.6);
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
 .insight-text {
-    font-size: 14px;
+    font-size: 15px;
     line-height: 1.6;
-    color: rgba(255,255,255,0.9);
-    font-style: italic;
+    color: rgba(255,255,255,0.95);
+    font-weight: 500;
+    margin-bottom: 16px;
+}
+
+.insight-implication {
+    background: rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    border-left: 3px solid var(--accent);
+}
+
+.implication-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.implication-text {
+    font-size: 13px;
+    color: rgba(255,255,255,0.8);
+    line-height: 1.5;
 }
 
 .insight-meta {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid rgba(255,255,255,0.1);
 }
@@ -566,10 +658,18 @@ body {
 .insight-tag {
     font-size: 9px;
     font-weight: 700;
-    color: rgba(255,255,255,0.5);
+    color: rgba(255,255,255,0.6);
     background: rgba(255,255,255,0.1);
-    padding: 3px 8px;
+    padding: 4px 10px;
     border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.insight-tag::before {
+    content: "✨";
+    font-size: 10px;
 }
 
 .insight-time {
@@ -770,6 +870,22 @@ body {
     .insight-text {
         font-size: 13px;
         line-height: 1.5;
+    }
+    
+    .regime-metrics {
+        padding: 12px;
+    }
+    
+    .regime-metric-value {
+        font-size: 16px;
+    }
+    
+    .insight-implication {
+        padding: 10px 12px;
+    }
+    
+    .implication-text {
+        font-size: 12px;
     }
     
     .accordion-content {

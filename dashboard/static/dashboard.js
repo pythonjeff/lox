@@ -207,32 +207,83 @@ async function fetchPositionThesis(positions) {
 }
 
 // ============================================
-// MARKET CONTEXT (Simplified - Regime + Insight)
+// MARKET CONTEXT (Enhanced - Regime + Metrics + Insight)
 // ============================================
 function processMarketContextData(data) {
     // Regime badge
     const regimeBadge = document.getElementById('regime-badge');
+    let regimeLabel = '—';
     if (regimeBadge && data.traffic_lights?.regime) {
         const regime = data.traffic_lights.regime;
-        regimeBadge.textContent = regime.label || '—';
-        regimeBadge.className = 'regime-badge ' + (regime.label || '').toLowerCase().replace(' ', '-');
+        regimeLabel = regime.label || '—';
+        regimeBadge.textContent = regimeLabel;
+        regimeBadge.className = 'regime-badge ' + (regimeLabel).toLowerCase().replace(' ', '-');
     }
     
-    // AI Insight (1 sentence summary)
+    // Key metrics
+    if (data.traffic_lights) {
+        const tl = data.traffic_lights;
+        
+        // VIX
+        const vixEl = document.getElementById('vix-value');
+        if (vixEl && tl.volatility) {
+            const vixStr = tl.volatility.value || '—';
+            vixEl.textContent = vixStr;
+            // Color based on level
+            const vixNum = parseFloat(vixStr.replace(/[^0-9.]/g, ''));
+            if (vixNum < 18) vixEl.className = 'regime-metric-value green';
+            else if (vixNum < 25) vixEl.className = 'regime-metric-value yellow';
+            else vixEl.className = 'regime-metric-value red';
+        }
+        
+        // Credit (HY Spread)
+        const creditEl = document.getElementById('credit-value');
+        if (creditEl && tl.credit) {
+            const creditStr = tl.credit.value || '—';
+            creditEl.textContent = creditStr;
+            const creditNum = parseFloat(creditStr.replace(/[^0-9.]/g, ''));
+            if (creditNum < 325) creditEl.className = 'regime-metric-value green';
+            else if (creditNum < 400) creditEl.className = 'regime-metric-value yellow';
+            else creditEl.className = 'regime-metric-value red';
+        }
+        
+        // 10Y Yield
+        const ratesEl = document.getElementById('rates-value');
+        if (ratesEl && tl.rates) {
+            const ratesStr = tl.rates.value || '—';
+            ratesEl.textContent = ratesStr;
+            const ratesNum = parseFloat(ratesStr.replace(/[^0-9.]/g, ''));
+            if (ratesNum < 4.0) ratesEl.className = 'regime-metric-value green';
+            else if (ratesNum < 4.5) ratesEl.className = 'regime-metric-value yellow';
+            else ratesEl.className = 'regime-metric-value red';
+        }
+    }
+    
+    // AI Insight
     const insightText = document.getElementById('insight-text');
     const insightTime = document.getElementById('insight-time');
+    const implicationText = document.getElementById('implication-text');
+    
     if (insightText) {
         if (data.summary) {
-            // Use condensed 1-sentence summary if available
             insightText.textContent = data.summary;
         } else if (data.analysis) {
-            // Fallback to first sentence of full analysis
             const firstSentence = data.analysis.split('.')[0] + '.';
             insightText.textContent = firstSentence;
         } else {
             insightText.textContent = 'Market analysis loading...';
         }
-        if (insightTime) insightTime.textContent = `Updated ${formatTime()}`;
+        if (insightTime) insightTime.textContent = formatTime();
+    }
+    
+    // Portfolio implication based on regime
+    if (implicationText) {
+        const implications = {
+            'RISK-ON': 'Favorable for long equity and call options. Momentum strategies preferred.',
+            'CAUTIOUS': 'Mixed signals. Reduce position sizes and favor hedged positions.',
+            'RISK-OFF': 'Defensive stance recommended. Favor puts and cash preservation.',
+        };
+        implicationText.textContent = implications[regimeLabel] || 'Monitoring market conditions.';
     }
     
     // Regime change alert
