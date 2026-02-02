@@ -573,9 +573,9 @@ def get_positions_data(force_refresh: bool = False):
                     "bid_ask_mark": True,
                 }
                 
-                # Generate macro-aware theory
-                theory = _generate_position_theory(position_dict, regime_context, settings)
-                position_dict["theory"] = theory
+                # Generate AI thesis for the position
+                thesis = _generate_position_theory(position_dict, regime_context, settings)
+                position_dict["thesis"] = thesis
                 
                 positions_list.append(position_dict)
             except Exception as pos_err:
@@ -617,12 +617,25 @@ def get_positions_data(force_refresh: bool = False):
         alpha_sp500 = return_pct - sp500_return if sp500_return is not None else None
         alpha_btc = return_pct - btc_return if btc_return is not None else None
         
+        # Get AUM (total capital) and investor count for hero zone
+        aum = original_capital
+        investor_count = 0
+        try:
+            investor_flows_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_investor_flows.csv")
+            flows = read_investor_flows(path=investor_flows_path)
+            investor_codes = set(f.code for f in flows if float(f.amount) > 0)
+            investor_count = len(investor_codes)
+        except Exception:
+            pass
+        
         result = {
             "positions": positions_list,
             "total_pnl": liquidation_pnl,  # Conservative P&L at bid/ask
             "total_value": total_liquidation_value,
             "nav_equity": liquidation_nav,  # Liquidation NAV
             "original_capital": original_capital,
+            "aum": aum,  # Total capital under management
+            "investor_count": investor_count,  # Number of unique investors
             "return_pct": return_pct,  # LIVE from Alpaca
             "sp500_return": sp500_return,
             "btc_return": btc_return,
@@ -694,6 +707,62 @@ def api_positions():
     # Short cache for live updates
     response.headers['Cache-Control'] = 'public, max-age=10'
     return response
+
+
+# ============ POSITION THESIS CACHE ============
+THESIS_CACHE = {"data": None, "timestamp": None}
+THESIS_CACHE_LOCK = threading.Lock()
+THESIS_CACHE_TTL = 3600  # 1 hour - thesis doesn't change with price
+
+
+@app.route('/api/position-thesis')
+def api_position_thesis():
+    """
+    API endpoint for AI-generated position thesis.
+    
+    Returns a map of symbol -> thesis for all open positions.
+    Cached for 1 hour since thesis is based on position type, not price.
+    """
+    # Check cache
+    with THESIS_CACHE_LOCK:
+        if THESIS_CACHE["data"] and THESIS_CACHE["timestamp"]:
+            cache_age = (datetime.now(timezone.utc) - THESIS_CACHE["timestamp"]).total_seconds()
+            if cache_age < THESIS_CACHE_TTL:
+                response = jsonify(THESIS_CACHE["data"])
+                response.headers['Cache-Control'] = 'public, max-age=3600'
+                return response
+    
+    try:
+        # Get positions data (will be cached)
+        positions_data = get_positions_data()
+        positions = positions_data.get("positions", [])
+        
+        # Build thesis map
+        theses = {}
+        for pos in positions:
+            symbol = pos.get("symbol", "")
+            thesis = pos.get("thesis", "")
+            if symbol and thesis:
+                theses[symbol] = thesis
+        
+        result = {
+            "theses": theses,
+            "count": len(theses),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        # Save to cache
+        with THESIS_CACHE_LOCK:
+            THESIS_CACHE["data"] = result
+            THESIS_CACHE["timestamp"] = datetime.now(timezone.utc)
+        
+        response = jsonify(result)
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+        return response
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "theses": {}})
 
 
 @app.route('/api/closed-trades')
@@ -2213,9 +2282,22 @@ def api_regime_analysis():
             # First request - trigger initial refresh
             pass
         
+        # Generate 1-sentence summary from analysis
+        analysis = PALMER_CACHE.get("analysis") or ""
+        summary = ""
+        if analysis:
+            # Extract first sentence or generate summary
+            sentences = analysis.split('.')
+            if sentences:
+                summary = sentences[0].strip() + '.'
+                # If too long, truncate
+                if len(summary) > 150:
+                    summary = summary[:147] + '...'
+        
         # Return cached data including monte_carlo and portfolio_analysis
         return jsonify({
-            "analysis": PALMER_CACHE.get("analysis"),
+            "analysis": analysis,
+            "summary": summary,  # 1-sentence summary for simplified display
             "regime_snapshot": PALMER_CACHE.get("regime_snapshot"),
             "traffic_lights": PALMER_CACHE.get("traffic_lights"),
             "portfolio_analysis": PALMER_CACHE.get("portfolio_analysis"),

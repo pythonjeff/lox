@@ -52,6 +52,7 @@
             <div class="hero-label">FUND RETURN</div>
             <div class="hero-value" id="hero-return">—</div>
             <div class="hero-benchmark" id="hero-benchmark">—</div>
+            <div class="hero-aum" id="hero-aum">—</div>
             <div class="hero-context">Since Jan 9, 2026</div>
         </section>
 
@@ -76,185 +77,32 @@
         <!-- Accordion Sections -->
         <div class="accordion">
             
-            <!-- Positions Section -->
-            <details class="accordion-section">
+            <!-- Positions Section (with AI Thesis) -->
+            <details class="accordion-section" open>
                 <summary class="accordion-header">
-                    <span class="accordion-title">Positions</span>
+                    <span class="accordion-title">Open Positions</span>
                     <div class="accordion-badges">
                         <span class="badge-label" id="positions-count">—</span>
                         <span class="badge-pnl" id="positions-pnl">—</span>
                     </div>
                 </summary>
                 <div class="accordion-content">
-                    <table class="positions-table">
-                        <thead>
-                            <tr>
-                                <th>Position</th>
-                                <th>Qty</th>
-                                <th>Value</th>
-                                <th>P&L</th>
-                            </tr>
-                        </thead>
-                        <tbody id="positions-body">
-                            <tr><td colspan="4" class="loading">Loading...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </details>
-
-            <!-- Your Investment Section -->
-            <details class="accordion-section">
-                <summary class="accordion-header">
-                    <span class="accordion-title">Your Investment</span>
-                    <div class="accordion-badges">
-                        <span class="badge-label">FUND RETURN</span>
-                        <span class="badge-value" id="fund-return">—</span>
+                    <div class="positions-list" id="positions-list">
+                        <div class="loading">Loading positions...</div>
                     </div>
-                </summary>
-                <div class="accordion-content">
-                    <table class="investor-table">
-                        <thead>
-                            <tr>
-                                <th>Investor</th>
-                                <th>Ownership</th>
-                                <th>Basis</th>
-                                <th>Value</th>
-                                <th>P&L</th>
-                                <th>Return</th>
-                            </tr>
-                        </thead>
-                        <tbody id="investor-body">
-                            <tr><td colspan="6" class="loading">Loading...</td></tr>
-                        </tbody>
-                    </table>
                 </div>
             </details>
 
-            <!-- Market Context Section (Palmer, collapsed) -->
+            <!-- Market Context Section (Simplified) -->
             <details class="accordion-section">
                 <summary class="accordion-header">
-                    <span class="accordion-title">Market Context</span>
+                    <span class="accordion-title">Market Regime</span>
                     <div class="accordion-badges">
                         <span class="regime-badge" id="regime-badge">—</span>
                     </div>
                 </summary>
                 <div class="accordion-content">
-                    <!-- Market Regime Trackers -->
-                    <div class="regime-trackers">
-                        <!-- VIX Tracker -->
-                        <div class="tracker-row">
-                            <div class="tracker-header">
-                                <span class="tracker-label">Volatility</span>
-                                <span class="tracker-value" id="vix-value">—</span>
-                            </div>
-                            <div class="tracker-bar-container">
-                                <div class="tracker-bar">
-                                    <div class="tracker-zone zone-green" style="width: 35%;"></div>
-                                    <div class="tracker-zone zone-yellow" style="width: 25%;"></div>
-                                    <div class="tracker-zone zone-red" style="width: 40%;"></div>
-                                    <div class="tracker-marker" id="vix-marker"></div>
-                                </div>
-                                <div class="tracker-labels">
-                                    <span>10</span>
-                                    <span class="tracker-threshold">18</span>
-                                    <span class="tracker-threshold">25</span>
-                                    <span>40</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- HY Spread / Credit Tracker -->
-                        <div class="tracker-row">
-                            <div class="tracker-header">
-                                <span class="tracker-label">Credit</span>
-                                <span class="tracker-value" id="hy-value">—</span>
-                            </div>
-                            <div class="tracker-bar-container">
-                                <div class="tracker-bar">
-                                    <div class="tracker-zone zone-green" style="width: 40%;"></div>
-                                    <div class="tracker-zone zone-yellow" style="width: 25%;"></div>
-                                    <div class="tracker-zone zone-red" style="width: 35%;"></div>
-                                    <div class="tracker-marker" id="hy-marker"></div>
-                                </div>
-                                <div class="tracker-labels">
-                                    <span>200bp</span>
-                                    <span class="tracker-threshold">325bp</span>
-                                    <span class="tracker-threshold">400bp</span>
-                                    <span>600bp</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- 10Y Yield / Rates Tracker -->
-                        <div class="tracker-row">
-                            <div class="tracker-header">
-                                <span class="tracker-label">Rates</span>
-                                <span class="tracker-value" id="rates-value">—</span>
-                            </div>
-                            <div class="tracker-bar-container">
-                                <div class="tracker-bar">
-                                    <div class="tracker-zone zone-green" style="width: 35%;"></div>
-                                    <div class="tracker-zone zone-yellow" style="width: 30%;"></div>
-                                    <div class="tracker-zone zone-red" style="width: 35%;"></div>
-                                    <div class="tracker-marker" id="rates-marker"></div>
-                                </div>
-                                <div class="tracker-labels">
-                                    <span>3.0%</span>
-                                    <span class="tracker-threshold">4.0%</span>
-                                    <span class="tracker-threshold">4.5%</span>
-                                    <span>5.5%</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Regime Domain Grid -->
-                    <div class="regime-grid">
-                        <div class="regime-domain" id="regime-funding">
-                            <span class="domain-dot"></span>
-                            <div class="domain-info">
-                                <span class="domain-label">Funding</span>
-                                <span class="domain-status">—</span>
-                            </div>
-                        </div>
-                        <div class="regime-domain" id="regime-usd">
-                            <span class="domain-dot"></span>
-                            <div class="domain-info">
-                                <span class="domain-label">USD</span>
-                                <span class="domain-status">—</span>
-                            </div>
-                        </div>
-                        <div class="regime-domain" id="regime-commod">
-                            <span class="domain-dot"></span>
-                            <div class="domain-info">
-                                <span class="domain-label">Gold</span>
-                                <span class="domain-status">—</span>
-                            </div>
-                        </div>
-                        <div class="regime-domain" id="regime-volatility">
-                            <span class="domain-dot"></span>
-                            <div class="domain-info">
-                                <span class="domain-label">Volatility</span>
-                                <span class="domain-status">—</span>
-                            </div>
-                        </div>
-                        <div class="regime-domain" id="regime-housing">
-                            <span class="domain-dot"></span>
-                            <div class="domain-info">
-                                <span class="domain-label">30Y Rate</span>
-                                <span class="domain-status">—</span>
-                            </div>
-                        </div>
-                        <div class="regime-domain" id="regime-crypto">
-                            <span class="domain-dot"></span>
-                            <div class="domain-info">
-                                <span class="domain-label">Bitcoin</span>
-                                <span class="domain-status">—</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- AI Insight (Macro Context) -->
+                    <!-- AI Insight (1 sentence) -->
                     <div class="insight-box" id="insight-box">
                         <div class="insight-text" id="insight-text">Loading market analysis...</div>
                         <div class="insight-meta">
@@ -262,40 +110,6 @@
                             <span class="insight-time" id="insight-time">—</span>
                         </div>
                     </div>
-                    
-                    <!-- News & Calendar Accordion -->
-                    <details class="news-accordion">
-                        <summary class="news-accordion-header">
-                            <span class="news-accordion-title">
-                                <span class="news-icon">📰</span>
-                                News & Economic Calendar
-                            </span>
-                            <span class="news-badge" id="news-count"></span>
-                        </summary>
-                        <div class="news-accordion-content">
-                            <!-- Economic Calendar -->
-                            <div class="calendar-section">
-                                <div class="calendar-header">
-                                    <span class="calendar-icon">📅</span>
-                                    <span class="calendar-title">Upcoming Events</span>
-                                </div>
-                                <div class="calendar-items" id="calendar-items">
-                                    <span class="loading-text">Loading...</span>
-                                </div>
-                            </div>
-                            
-                            <!-- News Feed -->
-                            <div class="news-feed-section">
-                                <div class="news-feed-header">
-                                    <span class="news-feed-icon">📈</span>
-                                    <span class="news-feed-title">Portfolio News</span>
-                                </div>
-                                <div class="news-feed" id="news-feed">
-                                    <span class="loading-text">Loading news...</span>
-                                </div>
-                            </div>
-                        </div>
-                    </details>
                 </div>
             </details>
 
