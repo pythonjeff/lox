@@ -131,6 +131,111 @@ def get_10y_yield(settings):
         return None
 
 
+def get_cpi_inflation(settings):
+    """Get CPI YoY inflation rate from FRED."""
+    try:
+        if not settings or not getattr(settings, 'FRED_API_KEY', None):
+            return None
+        
+        from ai_options_trader.data.fred import FredClient
+        fred = FredClient(api_key=settings.FRED_API_KEY)
+        # CPIAUCSL is the CPI index, we need YoY change
+        df = fred.fetch_series(series_id="CPIAUCSL", start_date="2022-01-01", refresh=False)
+        
+        if df is None or df.empty:
+            return None
+        
+        df = df.sort_values("date")
+        df = df[df["value"].notna()]
+        if df.shape[0] < 13:  # Need at least 13 months for YoY
+            return None
+        
+        # Calculate YoY inflation
+        series = pd.Series(df["value"].values, index=pd.to_datetime(df["date"]))
+        current = float(series.iloc[-1])
+        year_ago = float(series.iloc[-12]) if len(series) >= 12 else float(series.iloc[0])
+        yoy_pct = ((current - year_ago) / year_ago) * 100
+        asof = str(series.index[-1].date())
+        
+        # Context based on level
+        if yoy_pct > 4.0:
+            context = "Hot (>4%)"
+            color = "red"
+        elif yoy_pct > 3.0:
+            context = "Sticky (3-4%)"
+            color = "yellow"
+        elif yoy_pct > 2.0:
+            context = "Target (2-3%)"
+            color = "green"
+        else:
+            context = "Cool (<2%)"
+            color = "green"
+        
+        return {
+            "value": yoy_pct, 
+            "asof": asof, 
+            "label": "CPI YoY", 
+            "unit": "%",
+            "context": context,
+            "color": color,
+            "description": "Consumer Price Index Year-over-Year"
+        }
+    except Exception as e:
+        print(f"CPI fetch error: {e}")
+        return None
+
+
+def get_yield_curve_spread(settings):
+    """Get 2s10s yield curve spread from FRED (T10Y2Y series)."""
+    try:
+        if not settings or not getattr(settings, 'FRED_API_KEY', None):
+            return None
+        
+        from ai_options_trader.data.fred import FredClient
+        fred = FredClient(api_key=settings.FRED_API_KEY)
+        df = fred.fetch_series(series_id="T10Y2Y", start_date="2022-01-01", refresh=False)
+        
+        if df is None or df.empty:
+            return None
+        
+        df = df.sort_values("date")
+        df = df[df["value"].notna()]
+        if df.shape[0] < 2:
+            return None
+        
+        series = pd.Series(df["value"].values, index=pd.to_datetime(df["date"]))
+        spread = float(series.iloc[-1])  # Already in percentage points
+        spread_bps = spread * 100  # Convert to basis points
+        asof = str(series.index[-1].date())
+        
+        # Context based on level
+        if spread_bps < -50:
+            context = "Deep inversion"
+            color = "red"
+        elif spread_bps < 0:
+            context = "Inverted"
+            color = "yellow"
+        elif spread_bps < 50:
+            context = "Flat"
+            color = "yellow"
+        else:
+            context = "Steep"
+            color = "green"
+        
+        return {
+            "value": spread_bps, 
+            "asof": asof, 
+            "label": "2s10s Spread", 
+            "unit": "bp",
+            "context": context,
+            "color": color,
+            "description": "10Y minus 2Y Treasury spread (recession indicator)"
+        }
+    except Exception as e:
+        print(f"Yield curve fetch error: {e}")
+        return None
+
+
 def get_sp500_return_since_inception(settings):
     """Get S&P 500 return since fund inception for benchmark comparison."""
     return _get_asset_return_since_inception(settings, "SPY", "S&P 500")

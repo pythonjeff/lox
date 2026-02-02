@@ -541,11 +541,12 @@ body {
    REGIME METRICS STRIP
    ============================================ */
 .regime-metrics {
-    display: flex;
-    justify-content: space-around;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
     background: var(--bg-muted);
     border-radius: 10px;
-    padding: 16px;
+    padding: 16px 12px;
     margin-top: 16px;
     margin-bottom: 12px;
 }
@@ -574,6 +575,13 @@ body {
 .regime-metric-value.green { color: var(--green); }
 .regime-metric-value.yellow { color: var(--yellow); }
 .regime-metric-value.red { color: var(--red); }
+
+.regime-metric-context {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
 
 /* ============================================
    INSIGHT BOX (Market Context - Enhanced)
@@ -873,11 +881,21 @@ body {
     }
     
     .regime-metrics {
-        padding: 12px;
+        grid-template-columns: repeat(3, 1fr);
+        padding: 12px 8px;
+        gap: 12px;
     }
     
     .regime-metric-value {
-        font-size: 16px;
+        font-size: 14px;
+    }
+    
+    .regime-metric-label {
+        font-size: 9px;
+    }
+    
+    .regime-metric-context {
+        font-size: 8px;
     }
     
     .insight-implication {
