@@ -93,7 +93,7 @@
                 </div>
             </details>
 
-            <!-- Market Context Section (Simplified) -->
+            <!-- Market Context Section (Enhanced) -->
             <details class="accordion-section">
                 <summary class="accordion-header">
                     <span class="accordion-title">Market Regime</span>
@@ -102,11 +102,35 @@
                     </div>
                 </summary>
                 <div class="accordion-content">
-                    <!-- AI Insight (1 sentence) -->
+                    <!-- Key Metrics Strip -->
+                    <div class="regime-metrics">
+                        <div class="regime-metric">
+                            <span class="regime-metric-label">VIX</span>
+                            <span class="regime-metric-value" id="vix-value">—</span>
+                        </div>
+                        <div class="regime-metric">
+                            <span class="regime-metric-label">Credit</span>
+                            <span class="regime-metric-value" id="credit-value">—</span>
+                        </div>
+                        <div class="regime-metric">
+                            <span class="regime-metric-label">10Y</span>
+                            <span class="regime-metric-value" id="rates-value">—</span>
+                        </div>
+                    </div>
+                    
+                    <!-- AI Insight Box -->
                     <div class="insight-box" id="insight-box">
+                        <div class="insight-header">
+                            <span class="insight-icon">🎯</span>
+                            <span class="insight-title">Market Assessment</span>
+                        </div>
                         <div class="insight-text" id="insight-text">Loading market analysis...</div>
+                        <div class="insight-implication" id="insight-implication">
+                            <span class="implication-label">Portfolio Implication:</span>
+                            <span class="implication-text" id="implication-text">—</span>
+                        </div>
                         <div class="insight-meta">
-                            <span class="insight-tag">AI</span>
+                            <span class="insight-tag">AI Analysis</span>
                             <span class="insight-time" id="insight-time">—</span>
                         </div>
                     </div>
