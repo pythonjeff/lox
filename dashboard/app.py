@@ -430,9 +430,14 @@ def _get_live_twr(live_equity: float) -> float | None:
     - Live return since last snapshot (from Alpaca)
     
     Formula: Live TWR = (1 + twr_cum) × (1 + return_since_snapshot) - 1
+    
+    IMPORTANT: Subtracts any cash flows (deposits/withdrawals) that occurred
+    since the last snapshot to avoid inflating returns with new capital.
     """
     try:
         nav_sheet_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_sheet.csv")
+        nav_flows_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_flows.csv")
+        
         if not os.path.exists(nav_sheet_path):
             return None
         
@@ -447,6 +452,7 @@ def _get_live_twr(live_equity: float) -> float | None:
         latest = rows[-1]
         twr_cum_str = latest.get("twr_cum", "")
         last_equity_str = latest.get("equity", "")
+        last_snapshot_ts = latest.get("ts", "")
         
         if not twr_cum_str or not last_equity_str:
             return None
@@ -457,8 +463,34 @@ def _get_live_twr(live_equity: float) -> float | None:
         if last_equity <= 0 or live_equity <= 0:
             return None
         
-        # Return since last snapshot
-        return_since_snapshot = (live_equity - last_equity) / last_equity
+        # Check for flows since last snapshot (deposits inflate equity without being returns)
+        flows_since_snapshot = 0.0
+        if os.path.exists(nav_flows_path) and last_snapshot_ts:
+            try:
+                from datetime import datetime
+                # Parse last snapshot timestamp
+                snapshot_dt = datetime.fromisoformat(last_snapshot_ts.replace("Z", "+00:00"))
+                
+                with open(nav_flows_path, "r") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        flow_ts = row.get("ts", "")
+                        flow_amount = float(row.get("amount", 0) or 0)
+                        if flow_ts and flow_amount != 0:
+                            try:
+                                flow_dt = datetime.fromisoformat(flow_ts.replace("Z", "+00:00"))
+                                if flow_dt > snapshot_dt:
+                                    flows_since_snapshot += flow_amount
+                            except Exception:
+                                pass
+            except Exception as e:
+                print(f"[TWR] Error reading flows: {e}")
+        
+        # Adjust live equity by subtracting flows (TWR removes cash flow effects)
+        adjusted_equity = live_equity - flows_since_snapshot
+        
+        # Return since last snapshot (flow-adjusted)
+        return_since_snapshot = (adjusted_equity - last_equity) / last_equity
         
         # Chain the returns: (1 + cumulative) × (1 + recent) - 1
         live_twr = (1 + twr_cum) * (1 + return_since_snapshot) - 1
