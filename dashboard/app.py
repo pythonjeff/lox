@@ -1141,7 +1141,124 @@ def get_closed_trades_data():
     total_realized = sum(t['pnl'] for t in closed_trades)
     total_wins = sum(1 for t in closed_trades if t['pnl'] >= 0)
     total_losses = sum(1 for t in closed_trades if t['pnl'] < 0)
-    win_rate = total_wins / (total_wins + total_losses) * 100 if (total_wins + total_losses) > 0 else 0
+    total_trades = total_wins + total_losses
+    win_rate = total_wins / total_trades * 100 if total_trades > 0 else 0
+    
+    # =========================================================================
+    # PROFESSIONAL HEDGE FUND METRICS
+    # =========================================================================
+    
+    # Separate wins and losses
+    wins_pnl = [t['pnl'] for t in closed_trades if t['pnl'] >= 0]
+    losses_pnl = [t['pnl'] for t in closed_trades if t['pnl'] < 0]
+    all_pnl = [t['pnl'] for t in closed_trades]
+    all_pnl_pct = [t['pnl_pct'] for t in closed_trades]
+    
+    # Gross Profit / Gross Loss
+    gross_profit = sum(wins_pnl) if wins_pnl else 0
+    gross_loss = abs(sum(losses_pnl)) if losses_pnl else 0
+    
+    # Profit Factor = Gross Profit / Gross Loss (>1 is good, >2 is excellent)
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf') if gross_profit > 0 else 0
+    
+    # Average Win / Average Loss
+    avg_win = sum(wins_pnl) / len(wins_pnl) if wins_pnl else 0
+    avg_loss = abs(sum(losses_pnl) / len(losses_pnl)) if losses_pnl else 0
+    avg_win_pct = sum(t['pnl_pct'] for t in closed_trades if t['pnl'] >= 0) / len(wins_pnl) if wins_pnl else 0
+    avg_loss_pct = abs(sum(t['pnl_pct'] for t in closed_trades if t['pnl'] < 0) / len(losses_pnl)) if losses_pnl else 0
+    
+    # Win/Loss Ratio (Reward/Risk) - how much you make on wins vs lose on losses
+    win_loss_ratio = avg_win / avg_loss if avg_loss > 0 else float('inf') if avg_win > 0 else 0
+    
+    # Expectancy (Edge) = (Win Rate × Avg Win) - (Loss Rate × Avg Loss)
+    # This is your expected $ per trade
+    loss_rate = (100 - win_rate) / 100
+    expectancy = ((win_rate / 100) * avg_win) - (loss_rate * avg_loss)
+    expectancy_pct = ((win_rate / 100) * avg_win_pct) - (loss_rate * avg_loss_pct)
+    
+    # Average P&L per trade
+    avg_pnl = total_realized / total_trades if total_trades > 0 else 0
+    avg_pnl_pct = sum(all_pnl_pct) / len(all_pnl_pct) if all_pnl_pct else 0
+    
+    # Largest Win / Largest Loss
+    largest_win = max(wins_pnl) if wins_pnl else 0
+    largest_loss = min(losses_pnl) if losses_pnl else 0
+    largest_win_pct = max((t['pnl_pct'] for t in closed_trades if t['pnl'] >= 0), default=0)
+    largest_loss_pct = min((t['pnl_pct'] for t in closed_trades if t['pnl'] < 0), default=0)
+    
+    # Standard Deviation of P&L (for Sharpe-like calculation)
+    import statistics
+    pnl_std = statistics.stdev(all_pnl) if len(all_pnl) > 1 else 0
+    pnl_pct_std = statistics.stdev(all_pnl_pct) if len(all_pnl_pct) > 1 else 0
+    
+    # Trade Sharpe Ratio = Avg P&L / Std Dev P&L (simplified, not annualized)
+    # This measures consistency - higher is better
+    trade_sharpe = avg_pnl / pnl_std if pnl_std > 0 else 0
+    trade_sharpe_pct = avg_pnl_pct / pnl_pct_std if pnl_pct_std > 0 else 0
+    
+    # R-Multiple = Total P&L / Average Risk (avg loss serves as "1R")
+    # Measures how many "units of risk" you've captured
+    r_multiple = total_realized / avg_loss if avg_loss > 0 else 0
+    
+    # Kelly Criterion = Edge / Odds = (Win% × W/L Ratio - Loss%) / (W/L Ratio)
+    # Optimal fraction of capital to risk per trade
+    if win_loss_ratio > 0:
+        kelly = ((win_rate / 100) * win_loss_ratio - loss_rate) / win_loss_ratio
+        kelly = max(0, min(kelly, 1))  # Clamp between 0 and 1
+    else:
+        kelly = 0
+    
+    # Max Consecutive Wins/Losses
+    max_consec_wins = 0
+    max_consec_losses = 0
+    current_wins = 0
+    current_losses = 0
+    
+    # Sort by date for streak calculation (need to add dates back)
+    for t in closed_trades:
+        if t['pnl'] >= 0:
+            current_wins += 1
+            current_losses = 0
+            max_consec_wins = max(max_consec_wins, current_wins)
+        else:
+            current_losses += 1
+            current_wins = 0
+            max_consec_losses = max(max_consec_losses, current_losses)
+    
+    # Payoff Ratio interpretation
+    if profit_factor >= 2.5:
+        pf_grade = "A+"
+    elif profit_factor >= 2.0:
+        pf_grade = "A"
+    elif profit_factor >= 1.5:
+        pf_grade = "B"
+    elif profit_factor >= 1.2:
+        pf_grade = "C"
+    elif profit_factor >= 1.0:
+        pf_grade = "D"
+    else:
+        pf_grade = "F"
+    
+    # Overall trading grade (composite)
+    grade_score = 0
+    if win_rate >= 60: grade_score += 2
+    elif win_rate >= 50: grade_score += 1
+    if profit_factor >= 2.0: grade_score += 2
+    elif profit_factor >= 1.5: grade_score += 1
+    if expectancy > 0: grade_score += 1
+    if trade_sharpe > 0.5: grade_score += 1
+    if win_loss_ratio >= 1.5: grade_score += 1
+    
+    if grade_score >= 7:
+        overall_grade = "A"
+    elif grade_score >= 5:
+        overall_grade = "B"
+    elif grade_score >= 3:
+        overall_grade = "C"
+    elif grade_score >= 1:
+        overall_grade = "D"
+    else:
+        overall_grade = "F"
     
     return {
         "trades": closed_trades,
@@ -1150,6 +1267,33 @@ def get_closed_trades_data():
         "losses": total_losses,
         "win_rate": win_rate,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        # Professional metrics
+        "metrics": {
+            "profit_factor": round(profit_factor, 2) if profit_factor != float('inf') else 999,
+            "profit_factor_grade": pf_grade,
+            "avg_win": round(avg_win, 2),
+            "avg_loss": round(avg_loss, 2),
+            "avg_win_pct": round(avg_win_pct, 1),
+            "avg_loss_pct": round(avg_loss_pct, 1),
+            "win_loss_ratio": round(win_loss_ratio, 2) if win_loss_ratio != float('inf') else 999,
+            "expectancy": round(expectancy, 2),
+            "expectancy_pct": round(expectancy_pct, 2),
+            "avg_pnl": round(avg_pnl, 2),
+            "avg_pnl_pct": round(avg_pnl_pct, 1),
+            "largest_win": round(largest_win, 2),
+            "largest_loss": round(largest_loss, 2),
+            "largest_win_pct": round(largest_win_pct, 1),
+            "largest_loss_pct": round(largest_loss_pct, 1),
+            "trade_sharpe": round(trade_sharpe, 2),
+            "trade_sharpe_pct": round(trade_sharpe_pct, 2),
+            "r_multiple": round(r_multiple, 2),
+            "kelly_pct": round(kelly * 100, 1),
+            "max_consec_wins": max_consec_wins,
+            "max_consec_losses": max_consec_losses,
+            "gross_profit": round(gross_profit, 2),
+            "gross_loss": round(gross_loss, 2),
+            "overall_grade": overall_grade,
+        },
     }
 
 

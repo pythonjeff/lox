@@ -400,6 +400,171 @@ def _show_reversion_forecast(inp, forecast, console) -> None:
     print(Panel("\n".join(lines), title="📉 SLV Reversion Forecast 📉", expand=False))
 
 
+def _show_comex_inventory(settings, console) -> None:
+    """Display COMEX silver inventory analysis with ASCII chart."""
+    import numpy as np
+    from ai_options_trader.silver.comex import (
+        get_current_comex_inventory,
+        get_inventory_analysis_summary,
+        build_inventory_vs_price_dataset,
+    )
+    
+    try:
+        comex = get_current_comex_inventory()
+        summary = get_inventory_analysis_summary(settings)
+        df = build_inventory_vs_price_dataset(settings, start_date="2020-01-01")
+    except Exception as e:
+        console.print(f"[red]Error loading COMEX data: {e}[/red]")
+        return
+    
+    lines = []
+    
+    # Header with current inventory
+    signal_color = {
+        "bullish": "green",
+        "bearish": "red",
+        "neutral": "yellow",
+    }.get(comex.signal, "white")
+    
+    trend_icon = {
+        "rising": "📈",
+        "falling": "📉",
+        "stable": "➡️",
+    }.get(comex.trend, "")
+    
+    lines.append(f"[bold]Current COMEX Silver Inventory:[/bold] {comex.inventory_moz:.0f} Moz {trend_icon}")
+    lines.append(f"[bold]As of:[/bold] {comex.date}")
+    lines.append(f"[bold]Signal:[/bold] [{signal_color}]{comex.signal.upper()}[/{signal_color}]")
+    lines.append("")
+    
+    # Changes
+    lines.append("[bold]Inventory Changes:[/bold]")
+    
+    def fmt_change(val, pct_val):
+        if val is None:
+            return "[dim]—[/dim]"
+        color = "red" if val > 0 else "green" if val < 0 else "white"
+        pct_str = f" ({pct_val:+.1f}%)" if pct_val else ""
+        return f"[{color}]{val:+.0f} Moz{pct_str}[/{color}]"
+    
+    lines.append(f"  1-Month: {fmt_change(comex.change_1m_moz, comex.change_1m_pct)}")
+    lines.append(f"  3-Month: {fmt_change(comex.change_3m_moz, comex.change_3m_pct)}")
+    lines.append(f"  1-Year:  {fmt_change(comex.change_1y_moz, comex.change_1y_pct)}")
+    lines.append("")
+    
+    # 5-year percentile
+    if comex.percentile_5y is not None:
+        pct = comex.percentile_5y
+        bar_width = 30
+        filled = int((pct / 100) * bar_width)
+        bar = "█" * filled + "░" * (bar_width - filled)
+        
+        if pct > 80:
+            level_desc = "[red]HIGH (near 5Y highs)[/red]"
+        elif pct > 60:
+            level_desc = "[yellow]ELEVATED[/yellow]"
+        elif pct > 40:
+            level_desc = "[white]NORMAL[/white]"
+        elif pct > 20:
+            level_desc = "[cyan]LOW[/cyan]"
+        else:
+            level_desc = "[green]VERY LOW (near 5Y lows)[/green]"
+        
+        lines.append(f"[bold]5-Year Percentile:[/bold] {pct:.0f}% {level_desc}")
+        lines.append(f"[dim]Low[/dim] {bar} [dim]High[/dim]")
+        lines.append("")
+    
+    # ASCII chart: Inventory vs Price (last 2 years)
+    lines.append("[bold underline]COMEX Inventory vs SLV Price (2-year view)[/bold underline]")
+    lines.append("")
+    
+    if not df.empty and "inventory_normalized" in df.columns and "price_normalized" in df.columns:
+        # Get last 2 years of data, sampled monthly
+        recent = df.last("730D")
+        if len(recent) > 24:
+            # Sample to ~24 points
+            step = len(recent) // 24
+            sampled = recent.iloc[::step]
+        else:
+            sampled = recent
+        
+        # Build ASCII chart
+        chart_height = 10
+        chart_width = min(50, len(sampled))
+        
+        # Normalize data for chart
+        inv_data = sampled["inventory_normalized"].values[-chart_width:]
+        price_data = sampled["price_normalized"].values[-chart_width:]
+        
+        # Create chart grid
+        for row in range(chart_height, -1, -1):
+            threshold = (row / chart_height) * 100
+            line = ""
+            for col in range(chart_width):
+                inv_val = inv_data[col] if col < len(inv_data) and not np.isnan(inv_data[col]) else 0
+                price_val = price_data[col] if col < len(price_data) and not np.isnan(price_data[col]) else 0
+                
+                inv_here = inv_val >= threshold and inv_val < threshold + (100 / chart_height)
+                price_here = price_val >= threshold and price_val < threshold + (100 / chart_height)
+                
+                if inv_here and price_here:
+                    line += "[magenta]●[/magenta]"  # Overlap
+                elif inv_here:
+                    line += "[cyan]█[/cyan]"  # Inventory
+                elif price_here:
+                    line += "[yellow]▪[/yellow]"  # Price
+                else:
+                    line += " "
+            
+            # Y-axis label
+            if row == chart_height:
+                lines.append(f"High │{line}│")
+            elif row == 0:
+                lines.append(f"Low  │{line}│")
+            else:
+                lines.append(f"     │{line}│")
+        
+        lines.append(f"     └{'─' * chart_width}┘")
+        lines.append(f"      {'2Y ago':<{chart_width//2}}{'Today':>{chart_width//2}}")
+        lines.append("")
+        lines.append("[cyan]█ Inventory[/cyan]  [yellow]▪ SLV Price[/yellow]  [magenta]● Overlap[/magenta]")
+    
+    lines.append("")
+    
+    # Divergence interpretation
+    div = summary.get("divergence_score", 0) or 0
+    interp = summary.get("divergence_interpretation", "")
+    
+    if div > 20:
+        lines.append(f"[bold green]⚡ BULLISH DIVERGENCE[/bold green]: Inventory falling while price rising")
+        lines.append("[dim]Physical tightness suggests more upside[/dim]")
+    elif div < -20:
+        lines.append(f"[bold red]⚠ BEARISH DIVERGENCE[/bold red]: Inventory rising while price weak")
+        lines.append("[dim]Supply building suggests caution[/dim]")
+    else:
+        lines.append(f"[bold yellow]No significant divergence[/bold yellow]")
+    
+    lines.append("")
+    
+    # Key insight
+    lines.append("[bold underline]KEY INSIGHT[/bold underline]")
+    if comex.trend == "falling" and comex.change_3m_pct and comex.change_3m_pct < -10:
+        lines.append("[green]Rapid inventory drawdown signals physical tightness.[/green]")
+        lines.append("Historically bullish for silver prices.")
+    elif comex.trend == "rising" and comex.change_3m_pct and comex.change_3m_pct > 10:
+        lines.append("[red]Inventory build-up signals supply surplus.[/red]")
+        lines.append("May cap near-term price appreciation.")
+    else:
+        lines.append("Inventory levels are within normal range.")
+        lines.append("Watch for trend changes as leading indicator.")
+    
+    lines.append("")
+    lines.append("[dim]Data source: CME COMEX warehouse reports (interpolated)[/dim]")
+    lines.append("[dim]Update: Run 'lox labs silver --inventory' to refresh[/dim]")
+    
+    print(Panel("\n".join(lines), title="📦 COMEX Silver Inventory Analysis 📦", expand=False))
+
+
 def _show_breakdown_levels(inp, df, console) -> None:
     """Display technical breakdown levels that would trigger selling pressure."""
     from ai_options_trader.silver.signals import get_breakdown_levels_summary
@@ -518,6 +683,7 @@ def _run_silver_snapshot(
     bubble: bool = False,
     forecast: bool = False,
     levels: bool = False,
+    inventory: bool = False,
 ):
     """Shared implementation for silver snapshot."""
     import numpy as np
@@ -681,6 +847,10 @@ def _run_silver_snapshot(
         except Exception as e:
             console.print(f"[red]Error computing breakdown levels: {e}[/red]")
 
+    # Show COMEX inventory analysis if requested
+    if inventory:
+        _show_comex_inventory(settings, console)
+
     # Show put outlook if requested
     if puts:
         put_outlook = get_put_outlook(regime, inp)
@@ -755,10 +925,11 @@ def register(silver_app: typer.Typer) -> None:
         bubble: bool = typer.Option(False, "--bubble", help="Show visual bubble tracker with mean reversion metrics"),
         forecast: bool = typer.Option(False, "--forecast", help="Show reversion timing/severity forecast"),
         levels: bool = typer.Option(False, "--levels", help="Show technical breakdown levels that would trigger selling"),
+        inventory: bool = typer.Option(False, "--inventory", help="Show COMEX silver inventory vs price analysis"),
     ):
         """Silver / SLV regime tracker - price, technicals, gold/silver ratio."""
         if ctx.invoked_subcommand is None:
-            _run_silver_snapshot(refresh=refresh, llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, puts=puts, bubble=bubble, forecast=forecast, levels=levels)
+            _run_silver_snapshot(refresh=refresh, llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, puts=puts, bubble=bubble, forecast=forecast, levels=levels, inventory=inventory)
 
     @silver_app.command("snapshot")
     def snapshot(
@@ -773,6 +944,7 @@ def register(silver_app: typer.Typer) -> None:
         bubble: bool = typer.Option(False, "--bubble", help="Show visual bubble tracker with mean reversion metrics"),
         forecast: bool = typer.Option(False, "--forecast", help="Show reversion timing/severity forecast"),
         levels: bool = typer.Option(False, "--levels", help="Show technical breakdown levels that would trigger selling"),
+        inventory: bool = typer.Option(False, "--inventory", help="Show COMEX silver inventory vs price analysis"),
     ):
         """Silver snapshot: SLV price, technicals, GSR, regime."""
-        _run_silver_snapshot(start=start, refresh=refresh, llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, puts=puts, bubble=bubble, forecast=forecast, levels=levels)
+        _run_silver_snapshot(start=start, refresh=refresh, llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, puts=puts, bubble=bubble, forecast=forecast, levels=levels, inventory=inventory)

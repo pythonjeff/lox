@@ -160,6 +160,87 @@
                     </div>
                 </summary>
                 <div class="accordion-content">
+                    <!-- Performance Metrics Panel -->
+                    <div class="performance-metrics" id="performance-metrics">
+                        <!-- Grade & Core Stats -->
+                        <div class="perf-header">
+                            <div class="perf-grade-box" id="perf-grade-box">
+                                <span class="perf-grade-label">TRADER GRADE</span>
+                                <span class="perf-grade" id="perf-grade">—</span>
+                            </div>
+                            <div class="perf-core-stats">
+                                <div class="perf-stat">
+                                    <span class="perf-stat-value" id="profit-factor">—</span>
+                                    <span class="perf-stat-label">Profit Factor</span>
+                                </div>
+                                <div class="perf-stat">
+                                    <span class="perf-stat-value" id="expectancy">—</span>
+                                    <span class="perf-stat-label">Expectancy</span>
+                                </div>
+                                <div class="perf-stat">
+                                    <span class="perf-stat-value" id="trade-sharpe">—</span>
+                                    <span class="perf-stat-label">Trade Sharpe</span>
+                                </div>
+                                <div class="perf-stat">
+                                    <span class="perf-stat-value" id="r-multiple">—</span>
+                                    <span class="perf-stat-label">R-Multiple</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Detailed Metrics Grid -->
+                        <div class="perf-grid">
+                            <div class="perf-card">
+                                <div class="perf-card-title">Win/Loss Analysis</div>
+                                <div class="perf-card-row">
+                                    <span class="perf-row-label">Avg Win</span>
+                                    <span class="perf-row-value positive" id="avg-win">—</span>
+                                </div>
+                                <div class="perf-card-row">
+                                    <span class="perf-row-label">Avg Loss</span>
+                                    <span class="perf-row-value negative" id="avg-loss">—</span>
+                                </div>
+                                <div class="perf-card-row">
+                                    <span class="perf-row-label">Win/Loss Ratio</span>
+                                    <span class="perf-row-value" id="win-loss-ratio">—</span>
+                                </div>
+                            </div>
+                            
+                            <div class="perf-card">
+                                <div class="perf-card-title">Extremes</div>
+                                <div class="perf-card-row">
+                                    <span class="perf-row-label">Largest Win</span>
+                                    <span class="perf-row-value positive" id="largest-win">—</span>
+                                </div>
+                                <div class="perf-card-row">
+                                    <span class="perf-row-label">Largest Loss</span>
+                                    <span class="perf-row-value negative" id="largest-loss">—</span>
+                                </div>
+                                <div class="perf-card-row">
+                                    <span class="perf-row-label">Avg P&L/Trade</span>
+                                    <span class="perf-row-value" id="avg-pnl">—</span>
+                                </div>
+                            </div>
+                            
+                            <div class="perf-card">
+                                <div class="perf-card-title">Risk Management</div>
+                                <div class="perf-card-row">
+                                    <span class="perf-row-label">Kelly %</span>
+                                    <span class="perf-row-value" id="kelly-pct">—</span>
+                                </div>
+                                <div class="perf-card-row">
+                                    <span class="perf-row-label">Max Win Streak</span>
+                                    <span class="perf-row-value" id="max-wins">—</span>
+                                </div>
+                                <div class="perf-card-row">
+                                    <span class="perf-row-label">Max Loss Streak</span>
+                                    <span class="perf-row-value" id="max-losses">—</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Trade History Table -->
                     <table class="trades-table">
                         <thead>
                             <tr>
