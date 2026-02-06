@@ -909,6 +909,7 @@ def _register_commands() -> None:
     from ai_options_trader.cli_commands.regimes.silver_cmd import register as register_silver
     from ai_options_trader.cli_commands.regimes.regimes_cmd import register as register_regimes
     from ai_options_trader.cli_commands.regimes.fedfunds_cmd import register as register_fedfunds
+    from ai_options_trader.cli_commands.regimes.rareearths_cmd import register as register_rareearths
     
     # Options commands (consolidated)
     from ai_options_trader.cli_commands.options.options_cmd import register as register_options
@@ -983,6 +984,7 @@ def _register_commands() -> None:
     register_news(news_app)
     register_solar(solar_app)
     register_silver(silver_app)
+    register_rareearths(labs_app)  # Rare earths tracker
     register_bubble_finder(labs_app)  # Bubble finder scanner
     register_fundamentals(labs_app)  # CFA-level financial modeling
     
