@@ -9,10 +9,12 @@ Usage:
     lox chat -c regimes                # Pre-load all regime data
     lox chat -c fiscal -c funding      # Multiple contexts
     lox chat -c fiscal,funding,monetary  # Comma-separated contexts
+    lox chat -c rareearths             # Sector contexts (auto-discovered)
 
 After the context loads, you can ask follow-up questions like:
     "How does the Trump tariff announcement affect my IWM position?"
     "What's the risk to my portfolio if VIX spikes to 25?"
+    "Find me a put option for MP Materials"
 
 Author: Lox Capital Research
 """
@@ -22,22 +24,391 @@ import json
 import re
 import sys
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Callable
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
 
-from ai_options_trader.config import load_settings
+from ai_options_trader.config import load_settings, Settings
 
 app = typer.Typer(help="Interactive research chat with LLM analyst")
 
 
+# =============================================================================
+# CONTEXT REGISTRY - Extensible context loading system
+# =============================================================================
+
+# Registry of context loaders: name -> (loader_func, description)
+# Each loader returns (title: str, data: dict)
+CONTEXT_REGISTRY: dict[str, tuple[Callable, str]] = {}
+
+
+def register_context(name: str, description: str):
+    """Decorator to register a context loader."""
+    def decorator(func: Callable):
+        CONTEXT_REGISTRY[name] = (func, description)
+        return func
+    return decorator
+
+
+def get_available_contexts() -> list[str]:
+    """Get list of all available context names."""
+    return sorted(CONTEXT_REGISTRY.keys())
+
+
+def get_context_help() -> str:
+    """Get help text for all available contexts."""
+    lines = []
+    for name in sorted(CONTEXT_REGISTRY.keys()):
+        _, desc = CONTEXT_REGISTRY[name]
+        lines.append(f"  {name}: {desc}")
+    return "\n".join(lines)
+
+
+# =============================================================================
+# REGISTERED CONTEXTS - Sector/thematic contexts
+# =============================================================================
+
+@register_context("rareearths", "Rare earths & critical minerals sector")
+def _load_rareearths_context(settings: Settings, refresh: bool) -> tuple[str, dict]:
+    """Load rare earths sector context with extended historical data."""
+    from ai_options_trader.rareearths.tracker import (
+        build_rareearth_report, RE_MARKET_CONTEXT, get_thesis_summary
+    )
+    
+    report = build_rareearth_report(settings, basket="all")
+    thesis = get_thesis_summary()
+    
+    # Build securities summary with full historical context
+    securities = []
+    for sec in report.securities[:10]:
+        securities.append({
+            "ticker": sec.ticker,
+            "name": sec.name,
+            "category": sec.category,
+            "price": sec.price,
+            # Short-term performance
+            "change_1d": sec.change_1d,
+            "change_5d": sec.change_5d,
+            "change_1m": sec.change_1m,
+            # Medium-term performance
+            "change_3m": sec.change_3m,
+            "change_6m": sec.change_6m,
+            # Long-term performance
+            "change_ytd": sec.change_ytd,
+            "change_1y": sec.change_1y,
+            # 52-week range context
+            "week_52_high": sec.week_52_high,
+            "week_52_low": sec.week_52_low,
+            "pct_from_52w_high": sec.pct_from_52w_high,
+            "pct_from_52w_low": sec.pct_from_52w_low,
+            # Fundamentals
+            "market_cap_b": sec.market_cap_b,
+            "pe_ratio": sec.pe_ratio,
+            "re_revenue_pct": sec.re_revenue_pct,
+            # Exposure ratings
+            "china_exposure": sec.china_exposure,
+            "ev_exposure": sec.ev_exposure,
+            "defense_exposure": sec.defense_exposure,
+            "thesis": sec.thesis,
+        })
+    
+    return "Rare Earths Sector", {
+        "domain": "rareearths",
+        "as_of": report.as_of,
+        "basket_change_1d": report.basket_change_1d,
+        "total_market_cap_b": report.total_market_cap_b,
+        "securities": securities,
+        "bull_signals": report.bull_signals,
+        "bear_signals": report.bear_signals,
+        "market_context": RE_MARKET_CONTEXT,
+        "thesis": thesis,
+        "analysis_guidance": (
+            "When analyzing these securities, consider: "
+            "1) Long-term performance (1Y, YTD) vs short-term moves, "
+            "2) Distance from 52-week highs/lows to assess if extended, "
+            "3) Whether recent gains are priced in vs further upside potential, "
+            "4) Sector-specific catalysts and risks from thesis data."
+        ),
+    }
+
+
+@register_context("gpu", "GPU/AI infrastructure sector")
+def _load_gpu_context(settings: Settings, refresh: bool) -> tuple[str, dict]:
+    """Load GPU sector context."""
+    from ai_options_trader.gpu.tracker import build_gpu_tracker_report, GPU_SECURITIES
+    
+    report = build_gpu_tracker_report(settings, basket="all")
+    
+    securities = []
+    for sec in report.securities[:12]:
+        info = GPU_SECURITIES.get(sec.ticker, {})
+        securities.append({
+            "ticker": sec.ticker,
+            "name": sec.name,
+            "category": sec.category,
+            "price": sec.price,
+            "change_1d": sec.change_1d,
+            "gpu_revenue_pct": sec.gpu_revenue_pct,
+            "bear_sensitivity": sec.bear_sensitivity,
+            "key_risk": info.get("key_risk", ""),
+        })
+    
+    return "GPU Infrastructure Sector", {
+        "domain": "gpu",
+        "as_of": report.as_of,
+        "nvda_price": report.nvda_price,
+        "nvda_change_1d": report.nvda_change_1d,
+        "total_market_cap_b": report.total_gpu_market_cap_b,
+        "short_stack_change_1d": report.short_stack_change_1d,
+        "securities": securities,
+        "bull_signals": report.bull_signals,
+        "bear_signals": report.bear_signals,
+    }
+
+
+@register_context("silver", "Silver/SLV sector and regime")
+def _load_silver_context(settings: Settings, refresh: bool) -> tuple[str, dict]:
+    """Load silver sector context."""
+    from ai_options_trader.silver.signals import build_silver_state
+    from ai_options_trader.silver.regime import classify_silver_regime
+    
+    state = build_silver_state(settings=settings, start_date="2011-01-01", refresh=refresh)
+    regime = classify_silver_regime(state.inputs)
+    inp = state.inputs
+    
+    return f"Silver Regime: {regime.label}", {
+        "domain": "silver",
+        "regime": regime.label,
+        "description": regime.description,
+        "slv_price": inp.slv_price,
+        "slv_ma_50": inp.slv_ma_50,
+        "slv_ma_200": inp.slv_ma_200,
+        "slv_ret_5d_pct": inp.slv_ret_5d_pct,
+        "slv_ret_20d_pct": inp.slv_ret_20d_pct,
+        "gsr": inp.gsr,
+        "gsr_zscore": inp.gsr_zscore,
+        "bubble_score": inp.bubble_score,
+        "mean_reversion_pressure": inp.mean_reversion_pressure,
+        "trend_score": inp.trend_score,
+        "momentum_score": inp.momentum_score,
+    }
+
+
+@register_context("solar", "Solar/clean energy sector")
+def _load_solar_context(settings: Settings, refresh: bool) -> tuple[str, dict]:
+    """Load solar sector context."""
+    from ai_options_trader.solar.signals import build_solar_state
+    from ai_options_trader.solar.regime import classify_solar_regime
+    
+    state = build_solar_state(settings=settings, start_date="2020-01-01", refresh=refresh)
+    regime = classify_solar_regime(state.inputs)
+    inp = state.inputs
+    
+    return f"Solar Regime: {regime.label}", {
+        "domain": "solar",
+        "regime": regime.label,
+        "description": regime.description,
+        "tan_price": getattr(inp, "tan_price", None),
+        "tan_ret_20d_pct": getattr(inp, "tan_ret_20d_pct", None),
+        "tan_zscore_20d": getattr(inp, "tan_zscore_20d", None),
+    }
+
+
+# =============================================================================
+# OPTION FINDER TOOL - For chat-based option searches
+# =============================================================================
+
+def find_options_for_ticker(
+    settings: Settings,
+    ticker: str,
+    option_type: str = "put",
+    min_dte: int = 30,
+    max_dte: int = 90,
+    target_delta: float = 0.30,
+    max_results: int = 5,
+) -> dict:
+    """
+    Find options for a ticker based on parameters.
+    Returns structured data for LLM to present.
+    """
+    from datetime import date
+    from ai_options_trader.data.alpaca import fetch_option_chain, make_clients
+    from ai_options_trader.utils.occ import parse_occ_option_symbol
+    from ai_options_trader.data.quotes import fetch_stock_last_prices
+    
+    _, data_client = make_clients(settings)
+    t = ticker.upper()
+    today = date.today()
+    
+    # Get current stock price
+    stock_price = None
+    try:
+        prices, _, _ = fetch_stock_last_prices(settings=settings, symbols=[t])
+        stock_price = prices.get(t)
+    except Exception:
+        pass
+    
+    # Fetch option chain
+    chain = fetch_option_chain(data_client, t, feed=settings.alpaca_options_feed)
+    if not chain:
+        return {"error": f"No options data for {t}", "ticker": t}
+    
+    options = []
+    opt_type = option_type.lower()
+    
+    for opt in chain.values():
+        symbol = str(getattr(opt, "symbol", ""))
+        if not symbol:
+            continue
+        try:
+            expiry, parsed_type, strike = parse_occ_option_symbol(symbol, t)
+            if parsed_type != opt_type:
+                continue
+            dte = (expiry - today).days
+            if dte < min_dte or dte > max_dte:
+                continue
+            
+            greeks = getattr(opt, "greeks", None)
+            opt_delta = getattr(greeks, "delta", None) if greeks else None
+            opt_theta = getattr(greeks, "theta", None) if greeks else None
+            opt_iv = getattr(opt, "implied_volatility", None)
+            
+            quote = getattr(opt, "latest_quote", None)
+            bid = getattr(quote, "bid_price", None) if quote else None
+            ask = getattr(quote, "ask_price", None) if quote else None
+            
+            # Filter by delta if specified
+            if opt_delta is not None and target_delta > 0:
+                if abs(abs(opt_delta) - target_delta) > 0.10:
+                    continue
+            
+            options.append({
+                "symbol": symbol,
+                "strike": strike,
+                "expiry": expiry.isoformat(),
+                "dte": dte,
+                "delta": float(opt_delta) if opt_delta else None,
+                "theta": float(opt_theta) if opt_theta else None,
+                "iv": float(opt_iv) if opt_iv else None,
+                "bid": float(bid) if bid else None,
+                "ask": float(ask) if ask else None,
+            })
+        except Exception:
+            continue
+    
+    if not options:
+        return {
+            "error": f"No {opt_type}s found for {t} in {min_dte}-{max_dte} DTE with ~{target_delta:.0%} delta",
+            "ticker": t,
+        }
+    
+    # Sort by distance from target delta, then ATM
+    if stock_price:
+        options.sort(key=lambda x: (
+            abs(abs(x["delta"] or 0) - target_delta) if x["delta"] else 999,
+            abs(x["strike"] - stock_price),
+        ))
+    else:
+        options.sort(key=lambda x: x["dte"])
+    
+    options = options[:max_results]
+    
+    return {
+        "ticker": t,
+        "stock_price": stock_price,
+        "option_type": opt_type,
+        "parameters": {
+            "min_dte": min_dte,
+            "max_dte": max_dte,
+            "target_delta": target_delta,
+        },
+        "options": options,
+        "count": len(options),
+    }
+
+
+def parse_option_request(user_input: str, context_tickers: list[str]) -> dict | None:
+    """
+    Parse user input to detect option finding requests.
+    Returns dict with ticker and parameters, or None.
+    """
+    user_lower = user_input.lower()
+    
+    # Patterns for option requests
+    option_patterns = [
+        r"find\s+(?:me\s+)?(?:a\s+)?(?:an?\s+)?(put|call)(?:\s+option)?(?:\s+for)?\s+([A-Z]{1,5})",
+        r"(put|call)\s+option\s+(?:for\s+)?([A-Z]{1,5})",
+        r"show\s+(?:me\s+)?(put|call)s?\s+(?:for\s+)?([A-Z]{1,5})",
+        r"scan\s+([A-Z]{1,5})\s+(?:for\s+)?(put|call)s?",
+        r"([A-Z]{1,5})\s+(put|call)(?:\s+option)?s?",
+    ]
+    
+    for pattern in option_patterns:
+        match = re.search(pattern, user_input, re.IGNORECASE)
+        if match:
+            groups = match.groups()
+            # Handle both orderings (put/call first or ticker first)
+            if groups[0].upper() in ["PUT", "CALL"]:
+                opt_type = groups[0].lower()
+                ticker = groups[1].upper()
+            else:
+                ticker = groups[0].upper()
+                opt_type = groups[1].lower()
+            
+            # Parse DTE from input
+            min_dte, max_dte = 30, 90
+            dte_match = re.search(r"(\d+)\s*(?:to|-)?\s*(\d+)?\s*(?:dte|days?)", user_lower)
+            if dte_match:
+                min_dte = int(dte_match.group(1))
+                max_dte = int(dte_match.group(2)) if dte_match.group(2) else min_dte + 30
+            
+            # Parse delta from input
+            target_delta = 0.30
+            delta_match = re.search(r"(\d+)\s*delta", user_lower)
+            if delta_match:
+                target_delta = int(delta_match.group(1)) / 100
+            
+            return {
+                "ticker": ticker,
+                "option_type": opt_type,
+                "min_dte": min_dte,
+                "max_dte": max_dte,
+                "target_delta": target_delta,
+            }
+    
+    # Check for generic "find option" with context tickers
+    if any(kw in user_lower for kw in ["find option", "show option", "get option", "option for"]):
+        # Look for ticker in context
+        for ticker in context_tickers:
+            if ticker.upper() in user_input.upper():
+                opt_type = "put" if "put" in user_lower else "call" if "call" in user_lower else "put"
+                return {
+                    "ticker": ticker.upper(),
+                    "option_type": opt_type,
+                    "min_dte": 30,
+                    "max_dte": 90,
+                    "target_delta": 0.30,
+                }
+    
+    return None
+
+
 def _get_context_data(context: str, refresh: bool = False) -> tuple[str, dict]:
-    """Load context data based on the specified domain."""
+    """Load context data based on the specified domain.
+    
+    First checks the registry, then falls back to legacy handlers.
+    """
     settings = load_settings()
     
+    # Check registry first
+    if context in CONTEXT_REGISTRY:
+        loader, _ = CONTEXT_REGISTRY[context]
+        return loader(settings, refresh)
+    
+    # Legacy handlers (will be migrated to registry)
     if context == "fiscal":
         from ai_options_trader.fiscal.signals import build_fiscal_deficit_page_data
         from ai_options_trader.fiscal.regime import classify_fiscal_regime_snapshot
@@ -231,7 +602,11 @@ def _get_context_data(context: str, refresh: bool = False) -> tuple[str, dict]:
         }
     
     else:
-        raise ValueError(f"Unknown context: {context}. Use: fiscal, vol, macro, commodities, rates, funding, regimes, portfolio")
+        # Build list of available contexts
+        legacy = ["fiscal", "vol", "macro", "commodities", "rates", "funding", "monetary", "regimes", "portfolio"]
+        registered = list(CONTEXT_REGISTRY.keys())
+        all_contexts = sorted(set(legacy + registered))
+        raise ValueError(f"Unknown context: {context}. Use: {', '.join(all_contexts)}")
 
 
 def _format_context_display(title: str, data: dict, console: Console) -> None:
@@ -239,16 +614,106 @@ def _format_context_display(title: str, data: dict, console: Console) -> None:
     from rich.table import Table
     from rich.panel import Panel
     
+    domain = data.get("domain", "")
+    
+    # Handle sector contexts (rareearths, gpu, etc.)
+    if domain == "rareearths" and "securities" in data:
+        # Rare earths sector display with extended data
+        lines = [
+            f"[bold]As of:[/bold] {data.get('as_of', 'N/A')}",
+            f"[bold]Basket Today:[/bold] {data.get('basket_change_1d', 0):+.2f}%",
+            f"[bold]Total Market Cap:[/bold] ${data.get('total_market_cap_b', 0):.1f}B",
+            "",
+            "[bold]Key Securities (with extended performance):[/bold]",
+        ]
+        
+        from rich.table import Table
+        table = Table(show_header=True, expand=False, box=None)
+        table.add_column("Ticker", style="cyan")
+        table.add_column("Price", justify="right")
+        table.add_column("1D", justify="right")
+        table.add_column("1M", justify="right")
+        table.add_column("YTD", justify="right")
+        table.add_column("1Y", justify="right")
+        table.add_column("vs 52W Hi", justify="right")
+        
+        for sec in data.get("securities", [])[:8]:
+            def fmt_chg(v):
+                if v is None or v == 0:
+                    return "[dim]—[/dim]"
+                color = "green" if v > 0 else "red"
+                return f"[{color}]{v:+.1f}%[/{color}]"
+            
+            table.add_row(
+                sec['ticker'],
+                f"${sec.get('price', 0):.2f}",
+                fmt_chg(sec.get('change_1d')),
+                fmt_chg(sec.get('change_1m')),
+                fmt_chg(sec.get('change_ytd')),
+                fmt_chg(sec.get('change_1y')),
+                fmt_chg(sec.get('pct_from_52w_high')),
+            )
+        
+        console.print(Panel("\n".join(lines), title=f"📊 {title}", border_style="cyan"))
+        console.print(table)
+        
+        # Signals
+        signal_lines = []
+        if data.get("bull_signals"):
+            signal_lines.append("[bold green]Bull:[/bold green] " + " | ".join(data["bull_signals"][:2]))
+        if data.get("bear_signals"):
+            signal_lines.append("[bold red]Bear:[/bold red] " + " | ".join(data["bear_signals"][:2]))
+        if signal_lines:
+            console.print("\n".join(signal_lines))
+        
+        return
+    
+    elif domain == "gpu" and "securities" in data:
+        # GPU sector display
+        lines = [
+            f"[bold]As of:[/bold] {data.get('as_of', 'N/A')}",
+            f"[bold]NVDA:[/bold] ${data.get('nvda_price', 0):.2f} ({data.get('nvda_change_1d', 0):+.1f}%)",
+            f"[bold]Short Stack Today:[/bold] {data.get('short_stack_change_1d', 0):+.2f}%",
+            f"[bold]Total Market Cap:[/bold] ${data.get('total_market_cap_b', 0):.1f}B",
+            "",
+            "[bold]Key Securities:[/bold]",
+        ]
+        for sec in data.get("securities", [])[:6]:
+            chg = sec.get("change_1d", 0)
+            chg_color = "green" if chg > 0 else "red" if chg < 0 else "white"
+            lines.append(f"  {sec['ticker']:5} ${sec.get('price', 0):>7.2f} [{chg_color}]{chg:+.1f}%[/{chg_color}]")
+        
+        console.print(Panel("\n".join(lines), title=f"📊 {title}", border_style="cyan"))
+        return
+    
+    elif domain in ["silver", "solar"] and data.get("regime"):
+        # Silver/Solar regime display
+        lines = [
+            f"[bold]Regime:[/bold] {data.get('regime', 'N/A')}",
+            f"[dim]{data.get('description', '')}[/dim]",
+        ]
+        # Add key metrics
+        if domain == "silver":
+            lines.extend([
+                "",
+                f"[bold]SLV Price:[/bold] ${data.get('slv_price', 0):.2f}",
+                f"[bold]50-day MA:[/bold] ${data.get('slv_ma_50', 0):.2f}",
+                f"[bold]Gold/Silver Ratio:[/bold] {data.get('gsr', 0):.1f}",
+                f"[bold]Bubble Score:[/bold] {data.get('bubble_score', 0):.0f}/100",
+            ])
+        console.print(Panel("\n".join(lines), title=f"📊 {title}", border_style="cyan"))
+        return
+    
     if "domains" in data:
         # Multiple regimes
         table = Table(title="Regime Summary", show_header=True)
         table.add_column("Domain", style="cyan")
         table.add_column("Regime", style="bold")
-        for domain, info in data["domains"].items():
+        for domain_name, info in data["domains"].items():
             if "error" in info:
-                table.add_row(domain, f"[red]Error[/red]")
+                table.add_row(domain_name, f"[red]Error[/red]")
             else:
-                table.add_row(domain, info.get('regime', 'N/A'))
+                table.add_row(domain_name, info.get('regime', 'N/A'))
         console.print(table)
         
     elif "positions" in data:
@@ -389,6 +854,31 @@ def _format_context_display(title: str, data: dict, console: Console) -> None:
         ))
 
 
+def _extract_context_tickers(context_data: dict) -> list[str]:
+    """Extract tickers from context data (e.g., from sector contexts)."""
+    tickers = []
+    
+    # From securities list (rareearths, gpu, etc.)
+    if "securities" in context_data:
+        for sec in context_data["securities"]:
+            if isinstance(sec, dict) and "ticker" in sec:
+                tickers.append(sec["ticker"])
+    
+    # From nested domains
+    if "domains" in context_data:
+        for domain_data in context_data["domains"].values():
+            if isinstance(domain_data, dict):
+                tickers.extend(_extract_context_tickers(domain_data))
+    
+    # From ticker_focus
+    if "ticker_focus" in context_data:
+        tf = context_data["ticker_focus"]
+        if isinstance(tf, dict) and "ticker" in tf:
+            tickers.append(tf["ticker"])
+    
+    return list(set(tickers))
+
+
 def _detect_ticker_query(user_input: str, portfolio_tickers: list[str]) -> Optional[str]:
     """Detect if user is asking about a specific ticker in their portfolio."""
     user_upper = user_input.upper()
@@ -508,6 +998,7 @@ def _chat_with_llm(
     model: Optional[str] = None,
     temperature: float = 0.3,
     ticker_data: Optional[dict] = None,
+    option_data: Optional[dict] = None,
 ) -> str:
     """Send chat to LLM with context."""
     from openai import OpenAI
@@ -535,11 +1026,30 @@ When analyzing this ticker, provide hedge-fund level insights:
 - Be direct about whether to hold, add, reduce, or close the position
 """
     
+    option_context = ""
+    if option_data:
+        option_json = json.dumps(option_data, indent=2, default=str)
+        option_context = f"""
+
+OPTION SEARCH RESULTS (just fetched):
+{option_json}
+
+When presenting options to the user:
+1. Present the top 2-3 options in a clear format with:
+   - Symbol, Strike, Expiry, DTE
+   - Delta, IV, Bid/Ask
+2. Explain WHY each option might be suitable based on their thesis
+3. Recommend ONE specific option with reasoning
+4. Mention key risks (theta decay, IV crush potential, etc.)
+5. If user wants to execute, they can use: lox options buy <SYMBOL> <QTY>
+"""
+    
     system_message = f"""You are a senior macro research analyst at a hedge fund. 
 You have access to the following market data and regime context:
 
 {context_json}
 {ticker_context}
+{option_context}
 
 Guidelines:
 - Be concise but thorough
@@ -549,6 +1059,7 @@ Guidelines:
 - If asked about news/events, synthesize with the regime data
 - Use professional hedge fund language
 - When discussing positions, be specific about risk/reward and actionable recommendations
+- You can help find options for tickers in the context. When user asks for options, present them clearly.
 
 Current date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 """
@@ -851,6 +1362,25 @@ def chat_start(
         # Add user message
         messages.append({"role": "user", "content": user_input})
         
+        # Check for option finding request
+        context_tickers = _extract_context_tickers(context_data)
+        option_request = parse_option_request(user_input, context_tickers + portfolio_tickers)
+        option_data = None
+        
+        if option_request:
+            console.print(f"[cyan]Searching {option_request['option_type']}s for {option_request['ticker']}...[/cyan]")
+            try:
+                option_data = find_options_for_ticker(
+                    settings=settings,
+                    ticker=option_request["ticker"],
+                    option_type=option_request["option_type"],
+                    min_dte=option_request["min_dte"],
+                    max_dte=option_request["max_dte"],
+                    target_delta=option_request["target_delta"],
+                )
+            except Exception as e:
+                console.print(f"[yellow]Could not fetch options: {e}[/yellow]")
+        
         # Check if asking about a specific ticker
         ticker_data = None
         detected_ticker = _detect_ticker_query(user_input, portfolio_tickers)
@@ -869,6 +1399,7 @@ def chat_start(
                     context_data=context_data,
                     model=chosen_model,
                     ticker_data=ticker_data,
+                    option_data=option_data,
                 )
             
             # Add assistant response to history
