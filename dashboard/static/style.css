@@ -686,6 +686,165 @@ body {
 }
 
 /* ============================================
+   PERFORMANCE METRICS PANEL (Hedge Fund Grade)
+   ============================================ */
+.performance-metrics {
+    margin-top: 16px;
+    margin-bottom: 8px;
+}
+
+.perf-header {
+    display: flex;
+    gap: 20px;
+    align-items: stretch;
+    margin-bottom: 16px;
+}
+
+.perf-grade-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--hero-bg);
+    border-radius: 12px;
+    padding: 20px 28px;
+    min-width: 110px;
+}
+
+.perf-grade-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: rgba(255,255,255,0.5);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+}
+
+.perf-grade {
+    font-size: 42px;
+    font-weight: 800;
+    color: white;
+    line-height: 1;
+}
+
+.perf-grade-box.grade-a { background: linear-gradient(145deg, #059669 0%, #10b981 100%); }
+.perf-grade-box.grade-b { background: linear-gradient(145deg, #0284c7 0%, #0ea5e9 100%); }
+.perf-grade-box.grade-c { background: linear-gradient(145deg, #d97706 0%, #f59e0b 100%); }
+.perf-grade-box.grade-d { background: linear-gradient(145deg, #dc2626 0%, #ef4444 100%); }
+.perf-grade-box.grade-f { background: linear-gradient(145deg, #7f1d1d 0%, #991b1b 100%); }
+
+.perf-core-stats {
+    display: flex;
+    flex: 1;
+    gap: 8px;
+    background: var(--bg-muted);
+    border-radius: 12px;
+    padding: 16px;
+}
+
+.perf-stat {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0 8px;
+    border-right: 1px solid var(--border);
+}
+
+.perf-stat:last-child {
+    border-right: none;
+}
+
+.perf-stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+    margin-bottom: 4px;
+}
+
+.perf-stat-value.positive { color: var(--green); }
+.perf-stat-value.negative { color: var(--red); }
+.perf-stat-value.excellent { color: #059669; }
+
+.perf-stat-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.perf-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+
+.perf-card {
+    background: var(--bg-muted);
+    border-radius: 10px;
+    padding: 14px;
+}
+
+.perf-card-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.perf-card-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+}
+
+.perf-row-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.perf-row-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.perf-row-value.positive { color: var(--green); }
+.perf-row-value.negative { color: var(--red); }
+
+/* Metric tooltips */
+.perf-stat[data-tooltip] {
+    position: relative;
+    cursor: help;
+}
+
+.perf-stat[data-tooltip]:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--text-primary);
+    color: white;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    z-index: 100;
+    margin-bottom: 8px;
+}
+
+/* ============================================
    TRADES TABLE
    ============================================ */
 .trades-table {
@@ -913,6 +1072,62 @@ body {
     
     .trades-table {
         min-width: 400px;
+    }
+    
+    /* Performance metrics mobile */
+    .perf-header {
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .perf-grade-box {
+        flex-direction: row;
+        justify-content: flex-start;
+        gap: 16px;
+        padding: 16px 20px;
+    }
+    
+    .perf-grade-label {
+        margin-bottom: 0;
+    }
+    
+    .perf-grade {
+        font-size: 32px;
+    }
+    
+    .perf-core-stats {
+        flex-wrap: wrap;
+        gap: 0;
+        padding: 12px 8px;
+    }
+    
+    .perf-stat {
+        width: 50%;
+        flex: none;
+        padding: 8px;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+    
+    .perf-stat:nth-child(odd) {
+        border-right: 1px solid var(--border);
+    }
+    
+    .perf-stat:nth-child(n+3) {
+        border-bottom: none;
+    }
+    
+    .perf-stat-value {
+        font-size: 18px;
+    }
+    
+    .perf-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+    
+    .perf-card {
+        padding: 12px;
     }
 }
 
