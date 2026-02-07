@@ -37,6 +37,10 @@
             <div class="header-right">
                 <span class="live-indicator"><span class="live-dot"></span>LIVE</span>
                 <span class="header-timestamp" id="header-timestamp">—</span>
+                <a href="{{ url_for('my_account') }}" class="btn-my-account" title="My Account">My Account</a>
+                <form method="POST" action="{{ url_for('auth.logout') }}" class="logout-form">
+                    <button type="submit" class="btn-logout" title="Sign out">Sign Out</button>
+                </form>
             </div>
         </header>
 
