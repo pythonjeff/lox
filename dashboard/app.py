@@ -6,6 +6,7 @@ Palmer analysis is server-cached and refreshes every 30 minutes automatically.
 
 # ============ IMPORTS ============
 from flask import Flask, render_template, jsonify, request
+from flask_login import LoginManager, login_required, current_user
 from datetime import datetime, timezone, timedelta
 import sys
 import os
@@ -43,8 +44,51 @@ from dashboard.news_utils import (
     fetch_earnings_history, fetch_macro_headlines, get_event_source_url,
 )
 
+# Auth & database
+from dashboard.models import db, bcrypt, User
+from dashboard.auth import auth as auth_blueprint
+
 # ============ FLASK APP SETUP ============
 app = Flask(__name__)
+
+# Secret key for session cookies (set FLASK_SECRET_KEY in production!)
+app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "lox-dev-secret-change-me")
+
+# Database: Heroku sets DATABASE_URL for Postgres; falls back to local SQLite
+_db_url = os.environ.get(
+    "DATABASE_URL",
+    "sqlite:///" + os.path.join(os.path.dirname(__file__), "..", "data", "lox_users.db"),
+)
+# Heroku uses "postgres://" but SQLAlchemy 2.x requires "postgresql://"
+if _db_url.startswith("postgres://"):
+    _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+app.config["SQLALCHEMY_DATABASE_URI"] = _db_url
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# ============ INIT EXTENSIONS ============
+db.init_app(app)
+bcrypt.init_app(app)
+
+login_manager = LoginManager()
+login_manager.login_view = "auth.login"          # redirect here when @login_required fires
+login_manager.login_message = "Please sign in to access the dashboard."
+login_manager.login_message_category = "info"
+login_manager.init_app(app)
+
+
+@login_manager.user_loader
+def load_user(user_id: str):
+    """flask-login callback: load a User by primary key."""
+    return User.query.get(int(user_id))
+
+
+# Register auth blueprint (/auth/login, /auth/register, /auth/logout)
+app.register_blueprint(auth_blueprint)
+
+# Create tables on first run (safe no-op if they already exist)
+with app.app_context():
+    db.create_all()
+    print("[Dashboard] Database tables ready.")
 
 # ============ PALMER CACHE ============
 # Server-side cache for Palmer's analysis - users cannot trigger refreshes
@@ -727,12 +771,47 @@ def get_positions_data(force_refresh: bool = False):
 # ============ FLASK ROUTES ============
 
 @app.route('/')
+@login_required
 def index():
     """Main dashboard page."""
     return render_template('dashboard.html')
 
 
+@app.route('/my-account')
+@login_required
+def my_account():
+    """Personal investor account page — shows capital deposited and performance."""
+    investor_code = current_user.investor_code
+    account_data = None
+
+    if investor_code:
+        try:
+            data = get_investor_data()
+            investors = data.get("investors", [])
+            # Find this investor's row
+            for inv in investors:
+                if inv.get("code") == investor_code:
+                    account_data = {
+                        "code": inv["code"],
+                        "basis": inv.get("basis", 0),
+                        "value": inv.get("value", 0),
+                        "pnl": inv.get("pnl", 0),
+                        "return_pct": inv.get("return_pct", 0),
+                        "units": inv.get("units", 0),
+                        "ownership": inv.get("ownership", 0),
+                        "nav_per_unit": data.get("nav_per_unit", 1.0),
+                        "fund_return": data.get("fund_return", 0),
+                        "fund_equity": data.get("equity", 0),
+                    }
+                    break
+        except Exception as e:
+            print(f"[MyAccount] Error fetching investor data: {e}")
+
+    return render_template("my_account.html", account_data=account_data)
+
+
 @app.route('/api/positions')
+@login_required
 def api_positions():
     """API endpoint for positions data - LIVE updates."""
     data = get_positions_data()
@@ -749,6 +828,7 @@ THESIS_CACHE_TTL = 3600  # 1 hour - thesis doesn't change with price
 
 
 @app.route('/api/position-thesis')
+@login_required
 def api_position_thesis():
     """
     API endpoint for AI-generated position thesis.
@@ -799,6 +879,7 @@ def api_position_thesis():
 
 
 @app.route('/api/closed-trades')
+@login_required
 def api_closed_trades():
     """API endpoint for closed trades (realized P&L) with caching."""
     # Check cache
@@ -826,6 +907,7 @@ def api_closed_trades():
 
 
 @app.route('/api/regime-domains')
+@login_required
 def api_regime_domains():
     """API endpoint for regime domain indicators with caching."""
     # Check cache
@@ -854,6 +936,7 @@ def api_regime_domains():
 
 
 @app.route('/api/investors')
+@login_required
 def api_investors():
     """API endpoint for investor ledger - LIVE updates."""
     # Check cache
@@ -2623,6 +2706,7 @@ def _palmer_background_refresh():
 
 
 @app.route('/api/regime-analysis')
+@login_required
 def api_regime_analysis():
     """Palmer: Returns cached LLM analysis. Refreshes automatically every 30 min."""
     with PALMER_CACHE_LOCK:
@@ -2660,6 +2744,7 @@ def api_regime_analysis():
 
 
 @app.route('/api/regime-analysis/force-refresh')
+@login_required
 def api_regime_analysis_force():
     """Admin-only: Force refresh Palmer's analysis. Requires secret."""
     secret = request.args.get("secret", "")
@@ -2671,6 +2756,7 @@ def api_regime_analysis_force():
 
 
 @app.route('/api/monte-carlo')
+@login_required
 def api_monte_carlo():
     """Monte Carlo simulation results. Refreshes automatically every hour."""
     with MC_CACHE_LOCK:
@@ -2687,6 +2773,7 @@ def api_monte_carlo():
 
 
 @app.route('/api/monte-carlo/force-refresh')
+@login_required
 def api_monte_carlo_force():
     """Admin-only: Force refresh Monte Carlo simulation. Requires secret."""
     secret = request.args.get("secret", "")
@@ -2700,6 +2787,7 @@ def api_monte_carlo_force():
 # ============ NEWS & CALENDAR API ============
 
 @app.route('/api/market-news')
+@login_required
 def api_market_news():
     """API endpoint for portfolio ticker news and economic calendar."""
     try:

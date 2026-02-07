@@ -18,6 +18,9 @@ data/live/
 data/tracker.sqlite3
 data/tracker.sqlite3-shm
 data/tracker.sqlite3-wal
+data/lox_users.db
+data/lox_users.db-shm
+data/lox_users.db-wal
 
 # Source code cache
 src/ai_options_trader/data/cache/

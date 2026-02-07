@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOX FUND | My Account</title>
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='images/icons8-chart-material-two-tone-32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='images/icons8-chart-material-two-tone-16.png') }}">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-page: #f8f9fa;
+            --bg-container: #ffffff;
+            --bg-muted: #f5f5f5;
+            --border: #e5e5e5;
+            --accent: #0066ff;
+            --accent-light: rgba(0, 102, 255, 0.08);
+            --text-primary: #1a1a1a;
+            --text-secondary: #666666;
+            --text-muted: #999999;
+            --green: #00a86b;
+            --green-light: #4ade80;
+            --red: #e63946;
+            --red-light: #f87171;
+            --hero-bg: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
+        }
+
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-page);
+            color: var(--text-primary);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 24px;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header-compact {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 0;
+            margin-bottom: 32px;
+            position: relative;
+        }
+
+        .header-compact::after {
+            content: "";
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent), transparent);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+        }
+
+        .header-left a {
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .logo-text {
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: -1px;
+            color: var(--text-primary);
+        }
+
+        .logo-fund {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            letter-spacing: 0.5px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .btn-back {
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent);
+            background: none;
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 6px 14px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.15s, color 0.15s;
+        }
+
+        .btn-back:hover {
+            background: var(--accent);
+            color: white;
+        }
+
+        /* Page title */
+        .page-title {
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .page-heading {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 24px;
+        }
+
+        .investor-code-tag {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--accent);
+            background: var(--accent-light);
+            padding: 2px 10px;
+            border-radius: 6px;
+            letter-spacing: 1px;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+
+        /* Hero card */
+        .hero-card {
+            background: var(--hero-bg);
+            border-radius: 12px;
+            padding: 32px;
+            color: white;
+            margin-bottom: 24px;
+        }
+
+        .hero-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 8px;
+        }
+
+        .hero-value {
+            font-size: 42px;
+            font-weight: 700;
+            letter-spacing: -1px;
+            line-height: 1.1;
+        }
+
+        .hero-value.positive { color: var(--green-light); }
+        .hero-value.negative { color: var(--red-light); }
+
+        .hero-sub {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.6);
+            margin-top: 8px;
+        }
+
+        .hero-sub strong {
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        /* Stats grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--bg-container);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
+        .stat-value {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .stat-value.positive { color: var(--green); }
+        .stat-value.negative { color: var(--red); }
+
+        .stat-detail {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Info section */
+        .info-section {
+            background: var(--bg-container);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .info-section h3 {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--bg-muted);
+            font-size: 13px;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            color: var(--text-secondary);
+        }
+
+        .info-value {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state h3 {
+            font-size: 18px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        @media (max-width: 600px) {
+            .stats-grid { grid-template-columns: 1fr; }
+            .hero-value { font-size: 32px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header-compact">
+            <div class="header-left">
+                <a href="{{ url_for('index') }}">
+                    <span class="logo-text">LOX</span>
+                    <span class="logo-fund">FUND</span>
+                </a>
+            </div>
+            <div class="header-right">
+                <a href="{{ url_for('index') }}" class="btn-back">Dashboard</a>
+            </div>
+        </header>
+
+        <!-- Page title -->
+        <div class="page-title">Investor Account</div>
+        <h1 class="page-heading">
+            {{ current_user.email }}
+            {% if account_data %}
+            <span class="investor-code-tag">{{ account_data.code }}</span>
+            {% endif %}
+        </h1>
+
+        {% if account_data %}
+
+        <!-- Hero: Investment Return -->
+        <div class="hero-card">
+            <div class="hero-label">Your Investment Return</div>
+            <div class="hero-value {{ 'positive' if account_data.return_pct >= 0 else 'negative' }}">
+                {{ '%+.1f' | format(account_data.return_pct) }}%
+            </div>
+            <div class="hero-sub">
+                P&L: <strong>${{ '{:,.2f}'.format(account_data.pnl) }}</strong>
+                on ${{ '{:,.2f}'.format(account_data.basis) }} invested
+            </div>
+        </div>
+
+        <!-- Stats grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Capital Deposited</div>
+                <div class="stat-value">${{ '{:,.2f}'.format(account_data.basis) }}</div>
+                <div class="stat-detail">Total contributions</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Current Value</div>
+                <div class="stat-value {{ 'positive' if account_data.value > account_data.basis else 'negative' if account_data.value < account_data.basis else '' }}">
+                    ${{ '{:,.2f}'.format(account_data.value) }}
+                </div>
+                <div class="stat-detail">{{ '{:,.2f}'.format(account_data.units) }} units</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Profit / Loss</div>
+                <div class="stat-value {{ 'positive' if account_data.pnl >= 0 else 'negative' }}">
+                    ${{ '{:+,.2f}'.format(account_data.pnl) }}
+                </div>
+                <div class="stat-detail">{{ '%+.1f' | format(account_data.return_pct) }}% return</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Fund Ownership</div>
+                <div class="stat-value">{{ '%.1f' | format(account_data.ownership) }}%</div>
+                <div class="stat-detail">of total fund units</div>
+            </div>
+        </div>
+
+        <!-- Fund context -->
+        <div class="info-section">
+            <h3>Fund Details</h3>
+            <div class="info-row">
+                <span class="info-label">NAV per Unit</span>
+                <span class="info-value">${{ '{:,.4f}'.format(account_data.nav_per_unit) }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Fund AUM</span>
+                <span class="info-value">${{ '{:,.2f}'.format(account_data.fund_equity) }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Fund Return</span>
+                <span class="info-value {{ 'positive' if account_data.fund_return >= 0 else 'negative' }}">
+                    {{ '%+.2f' | format(account_data.fund_return) }}%
+                </span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Your Units</span>
+                <span class="info-value">{{ '{:,.2f}'.format(account_data.units) }}</span>
+            </div>
+        </div>
+
+        {% else %}
+
+        <!-- Empty state: no investor code or data not found -->
+        <div class="empty-state">
+            <h3>No Investor Data</h3>
+            {% if current_user.investor_code %}
+            <p>Could not load data for investor code <strong>{{ current_user.investor_code }}</strong>.</p>
+            {% else %}
+            <p>Your account is not linked to an investor code.</p>
+            <p>Contact your fund administrator if you believe this is an error.</p>
+            {% endif %}
+        </div>
+
+        {% endif %}
+    </div>
+</body>
+</html>

@@ -165,6 +165,147 @@ def scan_cmd(
     console.print(table)
 
 
+def _make_db_app():
+    """Build a minimal Flask app for CLI database access (local SQLite or Heroku Postgres)."""
+    import os as _os
+
+    from flask import Flask
+    from dashboard.models import db, bcrypt
+
+    _app = Flask(__name__)
+    _app.config["SECRET_KEY"] = _os.environ.get("FLASK_SECRET_KEY", "cli-temp")
+
+    db_url = _os.environ.get(
+        "DATABASE_URL",
+        "sqlite:///" + _os.path.join(_os.path.dirname(__file__), "..", "..", "data", "lox_users.db"),
+    )
+    # Heroku uses "postgres://" but SQLAlchemy 2.x requires "postgresql://"
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+    _app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+    _app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+    db.init_app(_app)
+    bcrypt.init_app(_app)
+    return _app
+
+
+@app.command("invite-investor")
+def invite_investor_cmd(
+    code: str = typer.Option(..., "--code", "-c", help="Investor code from nav_investor_flows.csv (e.g. JL)"),
+    email: str = typer.Option(..., "--email", "-e", prompt="Investor email", help="Email address to invite"),
+    base_url: str = typer.Option("http://localhost:5001", "--base-url", help="Dashboard base URL"),
+):
+    """Send an invite to an existing investor, linking their account to their investor code."""
+    import sys as _sys
+    import os as _os
+    import csv
+
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "..", ".."))
+
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    # Validate investor code exists in flows CSV
+    flows_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "data", "nav_investor_flows.csv")
+    known_codes: set[str] = set()
+    if _os.path.exists(flows_path):
+        with open(flows_path, newline="") as f:
+            for row in csv.DictReader(f):
+                c = (row.get("code") or "").strip().upper()
+                if c:
+                    known_codes.add(c)
+
+    code_upper = code.strip().upper()
+    if code_upper not in known_codes:
+        typer.echo(f"Warning: Code '{code_upper}' not found in nav_investor_flows.csv")
+        typer.echo(f"  Known codes: {', '.join(sorted(known_codes))}")
+        if not typer.confirm("Create invite anyway?"):
+            raise typer.Exit()
+
+    from dashboard.models import db, Invite, User
+
+    _app = _make_db_app()
+
+    with _app.app_context():
+        db.create_all()
+
+        # Check if user already exists with this code
+        existing = User.query.filter_by(investor_code=code_upper).first()
+        if existing:
+            typer.echo(f"Error: Investor code '{code_upper}' is already linked to user '{existing.username}' ({existing.email})")
+            raise typer.Exit(code=1)
+
+        # Check for pending invite with same code
+        pending = Invite.query.filter_by(investor_code=code_upper, accepted_at=None).first()
+        if pending and pending.is_valid:
+            typer.echo(f"Note: A pending invite for code '{code_upper}' already exists (sent to {pending.email})")
+            if not typer.confirm("Create a new invite anyway?"):
+                raise typer.Exit()
+
+        invite = Invite.create(investor_code=code_upper, email=email.strip().lower())
+        url = f"{base_url.rstrip('/')}/auth/register?invite={invite.token}"
+
+        typer.echo("")
+        typer.echo(f"  Invite created for investor {code_upper}")
+        typer.echo(f"  Email:   {invite.email}")
+        typer.echo(f"  Expires: {invite.expires_at.strftime('%Y-%m-%d')}")
+        typer.echo(f"")
+        typer.echo(f"  Registration link:")
+        typer.echo(f"  {url}")
+        typer.echo("")
+
+
+@app.command("create-admin")
+def create_admin_cmd(
+    email: str = typer.Option(..., "--email", "-e", prompt="Admin email", help="Admin email address"),
+    password: str = typer.Option(..., "--password", "-p", prompt="Password", hide_input=True, help="Admin password"),
+    investor_code: str = typer.Option(None, "--investor-code", "-c", help="Optional investor code to link (e.g. JL)"),
+):
+    """Create an admin user in the dashboard database."""
+    import sys as _sys
+    import os as _os
+
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "..", ".."))
+
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    from dashboard.models import db, User
+
+    _app = _make_db_app()
+
+    with _app.app_context():
+        db.create_all()
+
+        if User.query.filter_by(email=email.lower()).first():
+            typer.echo(f"Error: A user with email '{email}' already exists.", err=True)
+            raise typer.Exit(code=1)
+        if len(password) < 8:
+            typer.echo("Error: Password must be at least 8 characters.", err=True)
+            raise typer.Exit(code=1)
+
+        # Auto-generate username from email prefix
+        username = email.lower().split("@")[0]
+        if User.query.filter_by(username=username).first():
+            import uuid as _uuid
+            username = f"{username}_{_uuid.uuid4().hex[:6]}"
+
+        user = User(
+            email=email.lower(),
+            username=username,
+            is_admin=True,
+            investor_code=investor_code.strip().upper() if investor_code else None,
+        )
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+
+        code_str = f", investor_code={user.investor_code}" if user.investor_code else ""
+        typer.echo(f"Admin user created: {email}{code_str} [id={user.id}]")
+
+
 # ---------------------------------------------------------------------------
 # SUBGROUPS
 # ---------------------------------------------------------------------------
