@@ -1125,16 +1125,26 @@ def get_closed_trades_data():
             remaining_buy_qty = sum(b[0] for b in buy_queue)
             fully_closed = remaining_buy_qty < 0.001  # Floating point tolerance
             
+            # Track entry/exit dates for holding period calculation
+            entry_date = buys[0]['date'] if buys else None
+            exit_date = sells[-1]['date'] if sells else None
+            
             closed_trades.append({
                 'symbol': display_sym,
                 'cost': total_cost,
                 'proceeds': total_proceeds,
                 'pnl': realized_pnl,
                 'pnl_pct': pnl_pct,
-                'fully_closed': fully_closed
+                'fully_closed': fully_closed,
+                'entry_date': entry_date,
+                'exit_date': exit_date,
             })
     
-    # Sort by P&L (best first)
+    # Sort by exit date for equity curve construction
+    trades_with_dates = [t for t in closed_trades if t.get('exit_date')]
+    trades_with_dates.sort(key=lambda x: x['exit_date'])
+    
+    # Also sort main list by P&L for display
     closed_trades.sort(key=lambda x: x['pnl'], reverse=True)
     
     # Calculate totals
@@ -1145,8 +1155,10 @@ def get_closed_trades_data():
     win_rate = total_wins / total_trades * 100 if total_trades > 0 else 0
     
     # =========================================================================
-    # PROFESSIONAL HEDGE FUND METRICS
+    # INSTITUTIONAL-GRADE PERFORMANCE METRICS
     # =========================================================================
+    import statistics
+    import math
     
     # Separate wins and losses
     wins_pnl = [t['pnl'] for t in closed_trades if t['pnl'] >= 0]
@@ -1161,17 +1173,16 @@ def get_closed_trades_data():
     # Profit Factor = Gross Profit / Gross Loss (>1 is good, >2 is excellent)
     profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf') if gross_profit > 0 else 0
     
-    # Average Win / Average Loss
+    # Average Win / Average Loss (Payoff Ratio)
     avg_win = sum(wins_pnl) / len(wins_pnl) if wins_pnl else 0
     avg_loss = abs(sum(losses_pnl) / len(losses_pnl)) if losses_pnl else 0
     avg_win_pct = sum(t['pnl_pct'] for t in closed_trades if t['pnl'] >= 0) / len(wins_pnl) if wins_pnl else 0
     avg_loss_pct = abs(sum(t['pnl_pct'] for t in closed_trades if t['pnl'] < 0) / len(losses_pnl)) if losses_pnl else 0
     
-    # Win/Loss Ratio (Reward/Risk) - how much you make on wins vs lose on losses
-    win_loss_ratio = avg_win / avg_loss if avg_loss > 0 else float('inf') if avg_win > 0 else 0
+    # Payoff Ratio (Avg Win / Avg Loss) - institutional standard metric
+    payoff_ratio = avg_win / avg_loss if avg_loss > 0 else float('inf') if avg_win > 0 else 0
     
     # Expectancy (Edge) = (Win Rate × Avg Win) - (Loss Rate × Avg Loss)
-    # This is your expected $ per trade
     loss_rate = (100 - win_rate) / 100
     expectancy = ((win_rate / 100) * avg_win) - (loss_rate * avg_loss)
     expectancy_pct = ((win_rate / 100) * avg_win_pct) - (loss_rate * avg_loss_pct)
@@ -1186,25 +1197,157 @@ def get_closed_trades_data():
     largest_win_pct = max((t['pnl_pct'] for t in closed_trades if t['pnl'] >= 0), default=0)
     largest_loss_pct = min((t['pnl_pct'] for t in closed_trades if t['pnl'] < 0), default=0)
     
-    # Standard Deviation of P&L (for Sharpe-like calculation)
-    import statistics
+    # =========================================================================
+    # DISTRIBUTION STATISTICS (Std Dev, Skew)
+    # =========================================================================
     pnl_std = statistics.stdev(all_pnl) if len(all_pnl) > 1 else 0
     pnl_pct_std = statistics.stdev(all_pnl_pct) if len(all_pnl_pct) > 1 else 0
     
-    # Trade Sharpe Ratio = Avg P&L / Std Dev P&L (simplified, not annualized)
-    # This measures consistency - higher is better
-    trade_sharpe = avg_pnl / pnl_std if pnl_std > 0 else 0
-    trade_sharpe_pct = avg_pnl_pct / pnl_pct_std if pnl_pct_std > 0 else 0
+    # Skewness of returns (positive = right tail, negative = left tail)
+    # Skew = E[(X - μ)³] / σ³
+    skewness = 0
+    if len(all_pnl_pct) > 2 and pnl_pct_std > 0:
+        mean_pct = avg_pnl_pct
+        skewness = sum((x - mean_pct) ** 3 for x in all_pnl_pct) / (len(all_pnl_pct) * (pnl_pct_std ** 3))
     
-    # R-Multiple = Total P&L / Average Risk (avg loss serves as "1R")
-    # Measures how many "units of risk" you've captured
+    # =========================================================================
+    # EQUITY CURVE & DRAWDOWN ANALYSIS
+    # =========================================================================
+    # Build equity curve from trade sequence (assumes starting capital context)
+    equity_curve = []
+    running_pnl = 0
+    peak = 0
+    max_drawdown = 0
+    max_drawdown_pct = 0
+    drawdown_start = None
+    drawdown_end = None
+    recovery_date = None
+    max_dd_start = None
+    max_dd_end = None
+    
+    for t in trades_with_dates:
+        running_pnl += t['pnl']
+        exit_dt = t['exit_date']
+        equity_curve.append({'date': exit_dt, 'equity': running_pnl})
+        
+        if running_pnl > peak:
+            peak = running_pnl
+            if drawdown_start and not recovery_date:
+                recovery_date = exit_dt
+        else:
+            dd = peak - running_pnl
+            if dd > max_drawdown:
+                max_drawdown = dd
+                max_dd_start = drawdown_start
+                max_dd_end = exit_dt
+            if drawdown_start is None:
+                drawdown_start = exit_dt
+    
+    # Calculate drawdown as % of peak (if we had profits)
+    if peak > 0:
+        max_drawdown_pct = (max_drawdown / peak) * 100
+    
+    # Time to recover (in days)
+    recovery_days = None
+    if max_dd_start and recovery_date:
+        try:
+            recovery_days = (recovery_date - max_dd_start).days
+        except:
+            pass
+    
+    # =========================================================================
+    # HOLDING PERIOD ANALYSIS
+    # =========================================================================
+    holding_periods = []
+    for t in closed_trades:
+        entry = t.get('entry_date')
+        exit_dt = t.get('exit_date')
+        if entry and exit_dt:
+            try:
+                days = (exit_dt - entry).days
+                if days >= 0:
+                    holding_periods.append(days)
+            except:
+                pass
+    
+    avg_holding_days = sum(holding_periods) / len(holding_periods) if holding_periods else None
+    
+    # =========================================================================
+    # PORTFOLIO-LEVEL SHARPE (Annualized)
+    # =========================================================================
+    # Calculate from equity curve returns, not individual trades
+    # This is the institutionally correct way to measure risk-adjusted return
+    portfolio_sharpe = None
+    portfolio_sharpe_note = "Insufficient data"
+    
+    if len(equity_curve) >= 5:
+        # Calculate returns between trades
+        returns = []
+        for i in range(1, len(equity_curve)):
+            prev = equity_curve[i-1]['equity']
+            curr = equity_curve[i]['equity']
+            if prev != 0:
+                ret = (curr - prev) / abs(prev) if prev != 0 else 0
+                returns.append(ret)
+            else:
+                returns.append(curr / 100 if curr else 0)  # Assume $100 base if starting from 0
+        
+        if returns and len(returns) > 1:
+            mean_ret = statistics.mean(returns)
+            std_ret = statistics.stdev(returns)
+            if std_ret > 0:
+                # Annualize based on average trade frequency
+                if trades_with_dates and len(trades_with_dates) >= 2:
+                    first_date = trades_with_dates[0]['exit_date']
+                    last_date = trades_with_dates[-1]['exit_date']
+                    try:
+                        total_days = (last_date - first_date).days
+                        if total_days > 0:
+                            trades_per_year = (len(trades_with_dates) / total_days) * 252
+                            annualization_factor = math.sqrt(trades_per_year)
+                            portfolio_sharpe = (mean_ret / std_ret) * annualization_factor
+                            portfolio_sharpe_note = f"Annualized ({trades_per_year:.0f} trades/yr equiv)"
+                    except:
+                        pass
+    
+    # =========================================================================
+    # DATE RANGE & SAMPLE SIZE (Small-Sample Disclosure)
+    # =========================================================================
+    first_trade_date = None
+    last_trade_date = None
+    if trades_with_dates:
+        first_trade_date = trades_with_dates[0]['exit_date']
+        last_trade_date = trades_with_dates[-1]['exit_date']
+    
+    date_range_str = None
+    trading_days = None
+    if first_trade_date and last_trade_date:
+        try:
+            date_range_str = f"{first_trade_date.strftime('%b %d')} - {last_trade_date.strftime('%b %d, %Y')}"
+            trading_days = (last_trade_date - first_trade_date).days
+        except:
+            pass
+    
+    # Small sample warning
+    sample_warning = None
+    if total_trades < 20:
+        sample_warning = f"Small sample (n={total_trades}). Interpret with caution."
+    elif total_trades < 50:
+        sample_warning = f"Moderate sample (n={total_trades}). Results may not be statistically robust."
+    
+    # =========================================================================
+    # LEGACY METRICS (kept for compatibility)
+    # =========================================================================
+    # Trade-level Sharpe (per-trade consistency, NOT portfolio Sharpe)
+    trade_sharpe = avg_pnl / pnl_std if pnl_std > 0 else 0
+    
+    # R-Multiple = Total P&L / Average Risk
     r_multiple = total_realized / avg_loss if avg_loss > 0 else 0
     
-    # Kelly Criterion = Edge / Odds = (Win% × W/L Ratio - Loss%) / (W/L Ratio)
-    # Optimal fraction of capital to risk per trade
-    if win_loss_ratio > 0:
-        kelly = ((win_rate / 100) * win_loss_ratio - loss_rate) / win_loss_ratio
-        kelly = max(0, min(kelly, 1))  # Clamp between 0 and 1
+    # Kelly Criterion
+    if payoff_ratio > 0 and payoff_ratio != float('inf'):
+        kelly = ((win_rate / 100) * payoff_ratio - loss_rate) / payoff_ratio
+        kelly = max(0, min(kelly, 1))
     else:
         kelly = 0
     
@@ -1213,9 +1356,7 @@ def get_closed_trades_data():
     max_consec_losses = 0
     current_wins = 0
     current_losses = 0
-    
-    # Sort by date for streak calculation (need to add dates back)
-    for t in closed_trades:
+    for t in trades_with_dates:
         if t['pnl'] >= 0:
             current_wins += 1
             current_losses = 0
@@ -1225,37 +1366,28 @@ def get_closed_trades_data():
             current_wins = 0
             max_consec_losses = max(max_consec_losses, current_losses)
     
-    # Payoff Ratio interpretation
-    if profit_factor >= 2.5:
-        pf_grade = "A+"
-    elif profit_factor >= 2.0:
-        pf_grade = "A"
-    elif profit_factor >= 1.5:
-        pf_grade = "B"
-    elif profit_factor >= 1.2:
-        pf_grade = "C"
-    elif profit_factor >= 1.0:
-        pf_grade = "D"
-    else:
-        pf_grade = "F"
-    
-    # Overall trading grade (composite)
+    # =========================================================================
+    # OVERALL GRADE (Updated criteria)
+    # =========================================================================
     grade_score = 0
-    if win_rate >= 60: grade_score += 2
-    elif win_rate >= 50: grade_score += 1
-    if profit_factor >= 2.0: grade_score += 2
-    elif profit_factor >= 1.5: grade_score += 1
+    if win_rate >= 55: grade_score += 1
+    if win_rate >= 65: grade_score += 1
+    if profit_factor >= 1.5: grade_score += 1
+    if profit_factor >= 2.0: grade_score += 1
     if expectancy > 0: grade_score += 1
-    if trade_sharpe > 0.5: grade_score += 1
-    if win_loss_ratio >= 1.5: grade_score += 1
+    if payoff_ratio >= 1.0: grade_score += 1
+    if payoff_ratio >= 1.5: grade_score += 1
+    if max_drawdown_pct < 20 or max_drawdown_pct == 0: grade_score += 1
+    if portfolio_sharpe and portfolio_sharpe > 1.0: grade_score += 1
+    if portfolio_sharpe and portfolio_sharpe > 2.0: grade_score += 1
     
-    if grade_score >= 7:
+    if grade_score >= 8:
         overall_grade = "A"
-    elif grade_score >= 5:
+    elif grade_score >= 6:
         overall_grade = "B"
-    elif grade_score >= 3:
+    elif grade_score >= 4:
         overall_grade = "C"
-    elif grade_score >= 1:
+    elif grade_score >= 2:
         overall_grade = "D"
     else:
         overall_grade = "F"
@@ -1267,31 +1399,62 @@ def get_closed_trades_data():
         "losses": total_losses,
         "win_rate": win_rate,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        # Professional metrics
+        # Institutional metrics
         "metrics": {
+            # Core performance
             "profit_factor": round(profit_factor, 2) if profit_factor != float('inf') else 999,
-            "profit_factor_grade": pf_grade,
+            "expectancy": round(expectancy, 2),
+            "expectancy_pct": round(expectancy_pct, 2),
+            
+            # Payoff analysis
             "avg_win": round(avg_win, 2),
             "avg_loss": round(avg_loss, 2),
             "avg_win_pct": round(avg_win_pct, 1),
             "avg_loss_pct": round(avg_loss_pct, 1),
-            "win_loss_ratio": round(win_loss_ratio, 2) if win_loss_ratio != float('inf') else 999,
-            "expectancy": round(expectancy, 2),
-            "expectancy_pct": round(expectancy_pct, 2),
-            "avg_pnl": round(avg_pnl, 2),
-            "avg_pnl_pct": round(avg_pnl_pct, 1),
+            "payoff_ratio": round(payoff_ratio, 2) if payoff_ratio != float('inf') else 999,
+            
+            # Distribution
+            "pnl_std": round(pnl_std, 2),
+            "pnl_pct_std": round(pnl_pct_std, 1),
+            "skewness": round(skewness, 2),
+            
+            # Extremes
             "largest_win": round(largest_win, 2),
             "largest_loss": round(largest_loss, 2),
             "largest_win_pct": round(largest_win_pct, 1),
             "largest_loss_pct": round(largest_loss_pct, 1),
-            "trade_sharpe": round(trade_sharpe, 2),
-            "trade_sharpe_pct": round(trade_sharpe_pct, 2),
+            
+            # Drawdown
+            "max_drawdown": round(max_drawdown, 2),
+            "max_drawdown_pct": round(max_drawdown_pct, 1),
+            "recovery_days": recovery_days,
+            
+            # Holding period
+            "avg_holding_days": round(avg_holding_days, 1) if avg_holding_days else None,
+            
+            # Sharpe ratios
+            "trade_sharpe": round(trade_sharpe, 2),  # Per-trade consistency
+            "portfolio_sharpe": round(portfolio_sharpe, 2) if portfolio_sharpe else None,  # Annualized
+            "portfolio_sharpe_note": portfolio_sharpe_note,
+            
+            # Risk metrics
             "r_multiple": round(r_multiple, 2),
             "kelly_pct": round(kelly * 100, 1),
+            
+            # Streaks
             "max_consec_wins": max_consec_wins,
             "max_consec_losses": max_consec_losses,
+            
+            # Totals
             "gross_profit": round(gross_profit, 2),
             "gross_loss": round(gross_loss, 2),
+            
+            # Sample disclosure
+            "date_range": date_range_str,
+            "trading_days": trading_days,
+            "sample_warning": sample_warning,
+            
+            # Grade
             "overall_grade": overall_grade,
         },
     }

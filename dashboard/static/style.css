@@ -686,7 +686,37 @@ body {
 }
 
 /* ============================================
-   PERFORMANCE METRICS PANEL (Hedge Fund Grade)
+   SAMPLE DISCLOSURE BANNER
+   ============================================ */
+.sample-disclosure {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    margin-top: 16px;
+    margin-bottom: 12px;
+    background: rgba(245, 166, 35, 0.1);
+    border: 1px solid rgba(245, 166, 35, 0.3);
+    border-radius: 8px;
+    font-size: 12px;
+}
+
+.disclosure-icon {
+    font-size: 14px;
+}
+
+.disclosure-text {
+    color: var(--yellow);
+    font-weight: 500;
+}
+
+.disclosure-range {
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+/* ============================================
+   PERFORMANCE METRICS PANEL (Institutional Grade)
    ============================================ */
 .performance-metrics {
     margin-top: 16px;
@@ -820,6 +850,33 @@ body {
 
 .perf-row-value.positive { color: var(--green); }
 .perf-row-value.negative { color: var(--red); }
+
+/* Secondary metrics row */
+.perf-secondary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 12px 16px;
+    margin-top: 12px;
+    background: var(--bg-muted);
+    border-radius: 8px;
+    font-size: 12px;
+}
+
+.perf-secondary-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.perf-secondary-label {
+    color: var(--text-muted);
+}
+
+.perf-secondary-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
 
 /* Metric tooltips */
 .perf-stat[data-tooltip] {
