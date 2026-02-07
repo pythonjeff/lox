@@ -444,7 +444,7 @@ function processClosedTradesData(data) {
     }
 }
 
-// Render professional hedge fund performance metrics
+// Render institutional-grade performance metrics
 function renderPerformanceMetrics(metrics, tradeCount, winRate) {
     if (!metrics) return;
     
@@ -452,12 +452,58 @@ function renderPerformanceMetrics(metrics, tradeCount, winRate) {
     if (!panel) return;
     panel.style.display = 'block';
     
-    // Overall grade
+    // =========================================
+    // SAMPLE DISCLOSURE BANNER
+    // =========================================
+    const disclosureEl = document.getElementById('sample-disclosure');
+    const warningEl = document.getElementById('sample-warning');
+    const rangeEl = document.getElementById('date-range');
+    
+    if (disclosureEl && metrics.sample_warning) {
+        disclosureEl.style.display = 'flex';
+        if (warningEl) warningEl.textContent = metrics.sample_warning;
+        if (rangeEl && metrics.date_range) {
+            rangeEl.textContent = metrics.date_range;
+        }
+    } else if (disclosureEl) {
+        // Still show date range even without warning
+        if (metrics.date_range) {
+            disclosureEl.style.display = 'flex';
+            disclosureEl.style.background = 'var(--bg-muted)';
+            disclosureEl.style.borderColor = 'var(--border)';
+            if (warningEl) warningEl.textContent = `${tradeCount} trades`;
+            warningEl.style.color = 'var(--text-secondary)';
+            if (rangeEl) rangeEl.textContent = metrics.date_range;
+        } else {
+            disclosureEl.style.display = 'none';
+        }
+    }
+    
+    // =========================================
+    // OVERALL GRADE
+    // =========================================
     const gradeBox = document.getElementById('perf-grade-box');
     const gradeEl = document.getElementById('perf-grade');
     if (gradeEl) gradeEl.textContent = metrics.overall_grade;
     if (gradeBox) {
         gradeBox.className = 'perf-grade-box grade-' + metrics.overall_grade.toLowerCase();
+    }
+    
+    // =========================================
+    // CORE STATS (Top row)
+    // =========================================
+    
+    // Portfolio Sharpe (Annualized) - PRIMARY metric
+    const sharpeEl = document.getElementById('portfolio-sharpe');
+    if (sharpeEl) {
+        if (metrics.portfolio_sharpe !== null && metrics.portfolio_sharpe !== undefined) {
+            const s = metrics.portfolio_sharpe;
+            sharpeEl.textContent = s.toFixed(2);
+            sharpeEl.className = 'perf-stat-value' + (s >= 2 ? ' excellent' : s >= 1 ? ' positive' : s < 0 ? ' negative' : '');
+        } else {
+            sharpeEl.textContent = 'N/A';
+            sharpeEl.className = 'perf-stat-value';
+        }
     }
     
     // Profit Factor
@@ -476,55 +522,95 @@ function renderPerformanceMetrics(metrics, tradeCount, winRate) {
         expEl.className = 'perf-stat-value' + (exp >= 0 ? ' positive' : ' negative');
     }
     
-    // Trade Sharpe
-    const sharpeEl = document.getElementById('trade-sharpe');
-    if (sharpeEl) {
-        sharpeEl.textContent = metrics.trade_sharpe.toFixed(2);
-        sharpeEl.className = 'perf-stat-value' + (metrics.trade_sharpe >= 0.5 ? ' excellent' : metrics.trade_sharpe >= 0.2 ? ' positive' : '');
+    // Max Drawdown
+    const ddEl = document.getElementById('max-drawdown');
+    if (ddEl) {
+        const dd = metrics.max_drawdown_pct || 0;
+        if (dd > 0) {
+            ddEl.textContent = '-' + dd.toFixed(1) + '%';
+            ddEl.className = 'perf-stat-value' + (dd >= 25 ? ' negative' : dd >= 15 ? '' : ' positive');
+        } else {
+            ddEl.textContent = '0%';
+            ddEl.className = 'perf-stat-value positive';
+        }
     }
     
-    // R-Multiple
-    const rEl = document.getElementById('r-multiple');
-    if (rEl) {
-        const r = metrics.r_multiple;
-        rEl.textContent = (r >= 0 ? '+' : '') + r.toFixed(1) + 'R';
-        rEl.className = 'perf-stat-value' + (r >= 0 ? ' positive' : ' negative');
-    }
-    
-    // Win/Loss Analysis Card
+    // =========================================
+    // PAYOFF ANALYSIS CARD
+    // =========================================
     const avgWinEl = document.getElementById('avg-win');
     if (avgWinEl) avgWinEl.textContent = formatCurrency(metrics.avg_win) + ` (${metrics.avg_win_pct.toFixed(0)}%)`;
     
     const avgLossEl = document.getElementById('avg-loss');
     if (avgLossEl) avgLossEl.textContent = formatCurrency(metrics.avg_loss) + ` (${metrics.avg_loss_pct.toFixed(0)}%)`;
     
-    const wlRatioEl = document.getElementById('win-loss-ratio');
-    if (wlRatioEl) {
-        const wl = metrics.win_loss_ratio;
-        wlRatioEl.textContent = wl >= 999 ? '∞' : wl.toFixed(2) + ':1';
-        wlRatioEl.className = 'perf-row-value' + (wl >= 1.5 ? ' positive' : wl < 1 ? ' negative' : '');
+    const payoffEl = document.getElementById('payoff-ratio');
+    if (payoffEl) {
+        const pr = metrics.payoff_ratio;
+        payoffEl.textContent = pr >= 999 ? '∞' : pr.toFixed(2) + ':1';
+        payoffEl.className = 'perf-row-value' + (pr >= 1.5 ? ' positive' : pr < 1 ? ' negative' : '');
     }
     
-    // Extremes Card
+    // =========================================
+    // DISTRIBUTION CARD
+    // =========================================
+    const stdEl = document.getElementById('pnl-std');
+    if (stdEl) {
+        stdEl.textContent = metrics.pnl_pct_std.toFixed(1) + '%';
+    }
+    
+    const skewEl = document.getElementById('skewness');
+    if (skewEl) {
+        const sk = metrics.skewness;
+        let skewText = sk.toFixed(2);
+        if (sk > 0.5) skewText += ' (right tail)';
+        else if (sk < -0.5) skewText += ' (left tail)';
+        skewEl.textContent = skewText;
+        skewEl.className = 'perf-row-value' + (sk > 0 ? ' positive' : sk < -0.5 ? ' negative' : '');
+    }
+    
+    const holdEl = document.getElementById('avg-holding');
+    if (holdEl) {
+        if (metrics.avg_holding_days !== null && metrics.avg_holding_days !== undefined) {
+            holdEl.textContent = metrics.avg_holding_days.toFixed(0) + ' days';
+        } else {
+            holdEl.textContent = 'N/A';
+        }
+    }
+    
+    // =========================================
+    // EXTREMES & RISK CARD
+    // =========================================
     const lgWinEl = document.getElementById('largest-win');
     if (lgWinEl) lgWinEl.textContent = formatCurrency(metrics.largest_win) + ` (${metrics.largest_win_pct.toFixed(0)}%)`;
     
     const lgLossEl = document.getElementById('largest-loss');
     if (lgLossEl) lgLossEl.textContent = formatCurrency(metrics.largest_loss) + ` (${metrics.largest_loss_pct.toFixed(0)}%)`;
     
-    const avgPnlEl = document.getElementById('avg-pnl');
-    if (avgPnlEl) {
-        const avg = metrics.avg_pnl;
-        avgPnlEl.textContent = (avg >= 0 ? '+' : '') + formatCurrency(avg) + ` (${metrics.avg_pnl_pct.toFixed(0)}%)`;
-        avgPnlEl.className = 'perf-row-value' + (avg >= 0 ? ' positive' : ' negative');
+    const recoveryEl = document.getElementById('recovery-days');
+    if (recoveryEl) {
+        if (metrics.recovery_days !== null && metrics.recovery_days !== undefined) {
+            recoveryEl.textContent = metrics.recovery_days + ' days';
+        } else if (metrics.max_drawdown > 0) {
+            recoveryEl.textContent = 'Not yet';
+            recoveryEl.className = 'perf-row-value negative';
+        } else {
+            recoveryEl.textContent = 'N/A';
+        }
     }
     
-    // Risk Management Card
+    // =========================================
+    // SECONDARY METRICS ROW
+    // =========================================
+    const rEl = document.getElementById('r-multiple');
+    if (rEl) {
+        const r = metrics.r_multiple;
+        rEl.textContent = (r >= 0 ? '+' : '') + r.toFixed(1) + 'R';
+    }
+    
     const kellyEl = document.getElementById('kelly-pct');
     if (kellyEl) {
-        const k = metrics.kelly_pct;
-        kellyEl.textContent = k.toFixed(0) + '%';
-        kellyEl.className = 'perf-row-value' + (k > 0 ? ' positive' : '');
+        kellyEl.textContent = metrics.kelly_pct.toFixed(0) + '%';
     }
     
     const maxWinsEl = document.getElementById('max-wins');
