@@ -453,7 +453,6 @@ function renderOperatingPnl(trades) {
     const MONTHLY_COSTS = [
         { name: 'Alpaca', amount: 99 },
         { name: 'FMP', amount: 69 },
-        { name: 'Massive', amount: 29 },
     ];
     const totalCosts = MONTHLY_COSTS.reduce((sum, c) => sum + c.amount, 0);
     
