@@ -118,6 +118,25 @@
             color: white;
         }
 
+        .btn-logout {
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 14px;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+
+        .btn-logout:hover {
+            background: var(--red);
+            color: white;
+            border-color: var(--red);
+        }
+
         /* Page title */
         .page-title {
             font-size: 13px;
@@ -289,6 +308,9 @@
             </div>
             <div class="header-right">
                 <a href="{{ url_for('index') }}" class="btn-back">Dashboard</a>
+                <form method="POST" action="{{ url_for('auth.logout') }}" class="logout-form" style="display:inline;">
+                    <button type="submit" class="btn-logout">Sign Out</button>
+                </form>
             </div>
         </header>
 
