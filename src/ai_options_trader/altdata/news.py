@@ -173,55 +173,44 @@ def fetch_fmp_news(
     articles = []
     
     try:
-        from ai_options_trader.llm.outlooks.ticker_news import fetch_fmp_stock_news
-        
-        now = datetime.now(timezone.utc)
-        from_date = (now - timedelta(days=lookback_days)).date().isoformat()
-        to_date = now.date().isoformat()
+        from ai_options_trader.altdata.fmp import fetch_stock_news
         
         # Fetch ticker-specific news if symbols provided
         if symbols:
             clean_symbols = [s.strip().upper() for s in symbols if s.strip()]
-            if clean_symbols:
-                items = fetch_fmp_stock_news(
-                    settings=settings,
-                    tickers=clean_symbols,
-                    from_date=from_date,
-                    to_date=to_date,
-                    max_pages=3,
-                )
-                
+            for sym in clean_symbols[:5]:
+                items = fetch_stock_news(settings=settings, ticker=sym, limit=10)
                 for item in items[:limit]:
                     articles.append(NewsArticle(
-                        title=getattr(item, "title", "") or "",
-                        source=getattr(item, "source", "") or "FMP",
+                        title=item.get("title", "") or "",
+                        source=item.get("site", "") or "FMP",
                         provider="FMP",
-                        published_at=getattr(item, "published_at", "") or "",
-                        url=getattr(item, "url", None),
-                        snippet=getattr(item, "snippet", None),
-                        content=None,  # FMP doesn't provide full content
-                        symbols=[getattr(item, "ticker", "")] if getattr(item, "ticker", "") else None,
+                        published_at=item.get("publishedDate", "") or "",
+                        url=item.get("url", None),
+                        snippet=(item.get("text", "") or "")[:300] or None,
+                        content=None,
+                        symbols=[item.get("symbol", "")] if item.get("symbol") else None,
                     ))
     except Exception as e:
         print(f"[dim]FMP ticker news fetch failed: {e}[/dim]")
     
-    # Also fetch general macro news
+    # Also fetch general macro news via FMP stock news on broad tickers
     try:
-        from ai_options_trader.llm.outlooks.macro_news import fetch_fmp_general_news
+        from ai_options_trader.altdata.fmp import fetch_stock_news
         
-        macro_items = fetch_fmp_general_news(settings=settings, max_pages=2)
-        
-        for item in macro_items[:limit // 2]:  # Half the limit for macro
-            articles.append(NewsArticle(
-                title=getattr(item, "title", "") or "",
-                source=getattr(item, "source", "") or "FMP General",
-                provider="FMP",
-                published_at=getattr(item, "published_at", "") or "",
-                url=getattr(item, "url", None),
-                snippet=getattr(item, "snippet", None),
-                content=None,
-                symbols=None,  # General news not symbol-specific
-            ))
+        for macro_ticker in ["SPY", "TLT"]:
+            macro_items = fetch_stock_news(settings=settings, ticker=macro_ticker, limit=8)
+            for item in macro_items[:limit // 2]:
+                articles.append(NewsArticle(
+                    title=item.get("title", "") or "",
+                    source=item.get("site", "") or "FMP",
+                    provider="FMP",
+                    published_at=item.get("publishedDate", "") or "",
+                    url=item.get("url", None),
+                    snippet=(item.get("text", "") or "")[:300] or None,
+                    content=None,
+                    symbols=None,
+                ))
     except Exception as e:
         print(f"[dim]FMP macro news fetch failed: {e}[/dim]")
     

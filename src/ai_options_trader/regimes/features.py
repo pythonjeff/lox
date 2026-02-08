@@ -194,6 +194,7 @@ def build_unified_regime_state(
         
         # Map to RegimeResult
         score = 70 if "stagflation" in macro_regime.name else (30 if "goldilocks" in macro_regime.name else 50)
+        inp = macro_state.inputs
         state.macro = RegimeResult(
             name=macro_regime.name,
             label=macro_regime.name.replace("_", " ").title(),
@@ -201,6 +202,16 @@ def build_unified_regime_state(
             score=score,
             domain="macro",
             tags=["risk_off"] if "stagflation" in macro_regime.name else [],
+            metrics={
+                "CPI YoY": f"{inp.cpi_yoy:.1f}%" if inp.cpi_yoy is not None else None,
+                "Core CPI": f"{inp.core_cpi_yoy:.1f}%" if inp.core_cpi_yoy is not None else None,
+                "Payrolls 3m": f"{inp.payrolls_3m_annualized:.1f}%" if inp.payrolls_3m_annualized is not None else None,
+                "Unemp": f"{inp.unemployment_rate:.1f}%" if inp.unemployment_rate is not None else None,
+                "HY OAS": f"{inp.hy_oas * 100:.0f}bp" if inp.hy_oas is not None else None,
+                "10Y": f"{inp.ust_10y:.2f}%" if inp.ust_10y is not None else None,
+                "2s10s": f"{inp.curve_2s10s * 100:.0f}bp" if inp.curve_2s10s is not None else None,
+                "VIX": f"{inp.vix:.1f}" if inp.vix is not None else None,
+            },
         )
         risk_scores.append(score)
     except Exception as e:
@@ -214,6 +225,7 @@ def build_unified_regime_state(
         vol_state = build_volatility_state(settings=settings, start_date=start_date, refresh=refresh)
         vol_regime = classify_volatility_regime(vol_state.inputs)
         
+        inp = vol_state.inputs
         state.volatility = RegimeResult(
             name=vol_regime.name,
             label=vol_regime.label,
@@ -221,6 +233,13 @@ def build_unified_regime_state(
             score=vol_regime.score if hasattr(vol_regime, 'score') else (80 if "shock" in vol_regime.name else 50),
             domain="volatility",
             tags=list(vol_regime.tags) if hasattr(vol_regime, 'tags') else [],
+            metrics={
+                "VIX": f"{inp.vix:.1f}" if inp.vix is not None else None,
+                "VIX z": f"{inp.z_vix:+.1f}" if inp.z_vix is not None else None,
+                "VIX 5d Chg": f"{inp.vix_chg_5d_pct:+.1f}%" if inp.vix_chg_5d_pct is not None else None,
+                "Spike 20d": f"{inp.spike_20d_pct:.0f}%" if inp.spike_20d_pct is not None else None,
+                "Term Spread": f"{inp.vix_term_spread:+.2f}" if inp.vix_term_spread is not None else None,
+            },
         )
         risk_scores.append(state.volatility.score)
     except Exception as e:
@@ -234,6 +253,7 @@ def build_unified_regime_state(
         rates_state = build_rates_state(settings=settings, start_date=start_date, refresh=refresh)
         rates_regime = classify_rates_regime(rates_state.inputs)
         
+        inp = rates_state.inputs
         state.rates = RegimeResult(
             name=rates_regime.name,
             label=rates_regime.label,
@@ -241,6 +261,14 @@ def build_unified_regime_state(
             score=rates_regime.score if hasattr(rates_regime, 'score') else 50,
             domain="rates",
             tags=list(rates_regime.tags) if hasattr(rates_regime, 'tags') else [],
+            metrics={
+                "10Y": f"{inp.ust_10y:.2f}%" if inp.ust_10y is not None else None,
+                "2Y": f"{inp.ust_2y:.2f}%" if inp.ust_2y is not None else None,
+                "3M": f"{inp.ust_3m:.2f}%" if inp.ust_3m is not None else None,
+                "2s10s": f"{inp.curve_2s10s * 100:+.0f}bp" if inp.curve_2s10s is not None else None,
+                "10Y 20d Chg": f"{inp.ust_10y_chg_20d * 100:+.0f}bp" if inp.ust_10y_chg_20d is not None else None,
+                "2s10s z": f"{inp.z_curve_2s10s:+.1f}" if inp.z_curve_2s10s is not None else None,
+            },
         )
         risk_scores.append(state.rates.score)
     except Exception as e:
@@ -255,6 +283,7 @@ def build_unified_regime_state(
         funding_regime = classify_funding_regime(funding_state.inputs)
         
         score = 80 if "stress" in funding_regime.name else (60 if "tightening" in funding_regime.name else 40)
+        inp = funding_state.inputs
         state.funding = RegimeResult(
             name=funding_regime.name,
             label=funding_regime.label,
@@ -262,6 +291,15 @@ def build_unified_regime_state(
             score=score,
             domain="funding",
             tags=["risk_off"] if "stress" in funding_regime.name else [],
+            metrics={
+                "SOFR": f"{inp.sofr:.2f}%" if inp.sofr is not None else None,
+                "EFFR": f"{inp.effr:.2f}%" if inp.effr is not None else None,
+                "IORB": f"{inp.iorb:.2f}%" if inp.iorb is not None else None,
+                "Corridor": f"{inp.spread_corridor_bps:+.1f}bp" if inp.spread_corridor_bps is not None else None,
+                "RRP": f"${inp.on_rrp_usd_bn / 1000:.0f}B" if inp.on_rrp_usd_bn is not None else None,
+                "Reserves": f"${inp.bank_reserves_usd_bn / 1e6:.1f}T" if inp.bank_reserves_usd_bn is not None else None,
+                "TGA": f"${inp.tga_usd_bn / 1000:.0f}B" if inp.tga_usd_bn is not None else None,
+            },
         )
         risk_scores.append(score)
     except Exception as e:
@@ -275,6 +313,7 @@ def build_unified_regime_state(
         usd_state = build_usd_state(settings=settings, start_date=start_date, refresh=refresh)
         usd_regime = classify_usd_regime_from_state(usd_state)
         
+        inp = usd_state.inputs
         state.usd = RegimeResult(
             name=usd_regime.name,
             label=usd_regime.label,
@@ -282,6 +321,12 @@ def build_unified_regime_state(
             score=usd_regime.score,
             domain="usd",
             tags=list(usd_regime.tags),
+            metrics={
+                "DXY": f"{inp.usd_index_broad:.1f}" if inp.usd_index_broad is not None else None,
+                "20d Chg": f"{inp.usd_chg_20d_pct:+.1f}%" if inp.usd_chg_20d_pct is not None else None,
+                "60d Chg": f"{inp.usd_chg_60d_pct:+.1f}%" if inp.usd_chg_60d_pct is not None else None,
+                "DXY z": f"{inp.z_usd_level:+.1f}" if inp.z_usd_level is not None else None,
+            },
         )
     except Exception as e:
         logger.warning(f"Failed to build USD regime: {e}")
@@ -310,6 +355,13 @@ def build_unified_regime_state(
             score=score,
             domain="fiscal",
             tags=[],
+            metrics={
+                "Deficit/GDP": f"{fiscal_data.get('deficit_pct_gdp', 0):.1f}%" if fiscal_data.get('deficit_pct_gdp') else None,
+                "Deficit 12m": f"${fiscal_data.get('deficit_12m', 0) / 1e6:.1f}T" if fiscal_data.get('deficit_12m') else None,
+                "Impulse/GDP": f"{fiscal_data.get('deficit_impulse_pct_gdp', 0):+.1f}%" if fiscal_data.get('deficit_impulse_pct_gdp') is not None else None,
+                "TGA": f"${tga.get('tga_level', 0) / 1000:.0f}B" if tga.get('tga_level') else None,
+                "Long Share": f"{net.get('long_share', 0) * 100:.0f}%" if net.get('long_share') else None,
+            },
         )
     except Exception as e:
         logger.warning(f"Failed to build fiscal regime: {e}")
@@ -322,6 +374,7 @@ def build_unified_regime_state(
         comm_state = build_commodities_state(settings=settings, start_date=start_date, refresh=refresh)
         comm_regime = classify_commodities_regime(comm_state.inputs)
         
+        inp = comm_state.inputs
         state.commodities = RegimeResult(
             name=comm_regime.name,
             label=comm_regime.label,
@@ -329,6 +382,13 @@ def build_unified_regime_state(
             score=comm_regime.score if hasattr(comm_regime, 'score') else 50,
             domain="commodities",
             tags=list(comm_regime.tags) if hasattr(comm_regime, 'tags') else [],
+            metrics={
+                "Gold": f"${inp.gold:.0f}" if inp.gold is not None else None,
+                "Gold 20d": f"{inp.gold_ret_20d_pct:+.1f}%" if inp.gold_ret_20d_pct is not None else None,
+                "WTI": f"${inp.wti:.1f}" if inp.wti is not None else None,
+                "Copper": f"${inp.copper:.1f}" if inp.copper is not None else None,
+                "Broad 60d": f"{inp.broad_ret_60d_pct:+.1f}%" if inp.broad_ret_60d_pct is not None else None,
+            },
         )
     except Exception as e:
         logger.warning(f"Failed to build commodities regime: {e}")
@@ -342,6 +402,7 @@ def build_unified_regime_state(
         housing_regime = classify_housing_regime(housing_state.inputs)
         
         score = 70 if "stress" in housing_regime.label.lower() else (30 if "easing" in housing_regime.label.lower() else 50)
+        inp = housing_state.inputs
         state.housing = RegimeResult(
             name=housing_regime.label.lower().replace(" ", "_"),
             label=housing_regime.label,
@@ -349,6 +410,12 @@ def build_unified_regime_state(
             score=score,
             domain="housing",
             tags=[],
+            metrics={
+                "30Y Mtg": f"{inp.mortgage_30y:.2f}%" if inp.mortgage_30y is not None else None,
+                "Mtg Spread": f"{inp.mortgage_spread * 100:.0f}bp" if inp.mortgage_spread is not None else None,
+                "10Y": f"{inp.ust_10y:.2f}%" if inp.ust_10y is not None else None,
+                "Mtg Spd z": f"{inp.z_mortgage_spread:+.1f}" if inp.z_mortgage_spread is not None else None,
+            },
         )
     except Exception as e:
         logger.warning(f"Failed to build housing regime: {e}")
@@ -362,6 +429,7 @@ def build_unified_regime_state(
         monetary_regime = classify_monetary_regime(monetary_state.inputs)
         
         score = 70 if "qt_biting" in monetary_regime.name else (30 if "abundant" in monetary_regime.name else 50)
+        inp = monetary_state.inputs
         state.monetary = RegimeResult(
             name=monetary_regime.name,
             label=monetary_regime.label,
@@ -369,6 +437,13 @@ def build_unified_regime_state(
             score=score,
             domain="monetary",
             tags=[],
+            metrics={
+                "Fed Assets": f"${inp.fed_assets / 1e6:.1f}T" if inp.fed_assets is not None else None,
+                "Reserves": f"${inp.total_reserves / 1e6:.1f}T" if inp.total_reserves is not None else None,
+                "Reserves z": f"{inp.z_total_reserves:+.1f}" if inp.z_total_reserves is not None else None,
+                "RRP": f"${inp.on_rrp / 1000:.0f}B" if inp.on_rrp is not None else None,
+                "EFFR": f"{inp.effr:.2f}%" if inp.effr is not None else None,
+            },
         )
     except Exception as e:
         logger.warning(f"Failed to build monetary regime: {e}")

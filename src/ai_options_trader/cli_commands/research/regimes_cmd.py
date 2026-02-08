@@ -43,6 +43,17 @@ def _get_regime_color(score: float) -> str:
     return "red"
 
 
+def _format_metrics(metrics: dict, max_items: int = 4) -> str:
+    """Format a metrics dict into a compact display string."""
+    if not metrics:
+        return "[dim]—[/dim]"
+    parts = []
+    for k, v in list(metrics.items())[:max_items]:
+        if v is not None:
+            parts.append(f"[bold]{k}[/bold] {v}")
+    return "  ".join(parts) if parts else "[dim]—[/dim]"
+
+
 def register(app: typer.Typer) -> None:
     """Register the regimes command."""
     
@@ -127,10 +138,11 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool):
         box=None,
         padding=(0, 2),
     )
-    core_table.add_column("Pillar", style="bold")
-    core_table.add_column("Score", justify="center", width=12)
-    core_table.add_column("Regime")
-    core_table.add_column("Signal", width=40)
+    core_table.add_column("Pillar", style="bold", min_width=10, no_wrap=True)
+    core_table.add_column("Score", justify="center", min_width=5, no_wrap=True)
+    core_table.add_column("Regime", min_width=14)
+    core_table.add_column("Key Metrics", ratio=2)
+    core_table.add_column("Signal", ratio=1)
     
     core_pillars = [
         ("Macro", state.macro),
@@ -141,17 +153,18 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool):
     
     for name, regime in core_pillars:
         if regime:
-            bar = _regime_bar(regime.score)
             color = _get_regime_color(regime.score)
-            desc = regime.description[:38] + "..." if len(regime.description) > 38 else regime.description
+            desc = regime.description[:34] + "..." if len(regime.description) > 34 else regime.description
+            metrics_str = _format_metrics(regime.metrics) if regime.metrics else "[dim]—[/dim]"
             core_table.add_row(
                 name,
-                bar,
+                f"[{color}]{regime.score:.0f}[/{color}]",
                 f"[{color}]{regime.label}[/{color}]",
+                metrics_str,
                 f"[dim]{desc}[/dim]",
             )
         else:
-            core_table.add_row(name, "[dim]N/A[/dim]", "[dim]No data[/dim]", "")
+            core_table.add_row(name, "[dim]—[/dim]", "[dim]No data[/dim]", "", "")
     
     console.print(core_table)
     console.print()
@@ -164,10 +177,11 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool):
         box=None,
         padding=(0, 2),
     )
-    ext_table.add_column("Pillar", style="bold")
-    ext_table.add_column("Score", justify="center", width=12)
-    ext_table.add_column("Regime")
-    ext_table.add_column("Signal", width=40)
+    ext_table.add_column("Pillar", style="bold", min_width=10, no_wrap=True)
+    ext_table.add_column("Score", justify="center", min_width=5, no_wrap=True)
+    ext_table.add_column("Regime", min_width=14)
+    ext_table.add_column("Key Metrics", ratio=2)
+    ext_table.add_column("Signal", ratio=1)
     
     extended = [
         ("Fiscal", state.fiscal),
@@ -180,17 +194,18 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool):
     
     for name, regime in extended:
         if regime:
-            bar = _regime_bar(regime.score)
             color = _get_regime_color(regime.score)
-            desc = regime.description[:38] + "..." if len(regime.description) > 38 else regime.description
+            desc = regime.description[:34] + "..." if len(regime.description) > 34 else regime.description
+            metrics_str = _format_metrics(regime.metrics) if regime.metrics else "[dim]—[/dim]"
             ext_table.add_row(
                 name,
-                bar,
+                f"[{color}]{regime.score:.0f}[/{color}]",
                 f"[{color}]{regime.label}[/{color}]",
+                metrics_str,
                 f"[dim]{desc}[/dim]",
             )
         else:
-            ext_table.add_row(name, "[dim]N/A[/dim]", "[dim]No data[/dim]", "")
+            ext_table.add_row(name, "[dim]—[/dim]", "[dim]No data[/dim]", "", "")
     
     console.print(ext_table)
     console.print()
@@ -234,37 +249,38 @@ def _show_regime_detail(console: Console, settings, state, pillar: str, include_
         console.print(f"[yellow]No data available for {domain}[/yellow]")
         return
     
-    # Header
+    # Header with key metrics
     color = _get_regime_color(regime.score)
-    console.print(Panel(
-        f"[bold]{domain.upper()} REGIME[/bold]\n\n"
-        f"Status: [{color}]{regime.label}[/{color}]\n"
-        f"Score: [{color}]{regime.score:.0f}/100[/{color}]\n\n"
+    header_parts = [
+        f"[bold]{domain.upper()} REGIME[/bold]\n",
+        f"Status: [{color}]{regime.label}[/{color}]",
+        f"Score: [{color}]{regime.score:.0f}/100[/{color}]\n",
         f"{regime.description}",
+    ]
+    
+    # Show metrics in the header panel
+    if regime.metrics:
+        header_parts.append("")
+        metrics_line = "  ".join(
+            f"[bold]{k}[/bold]: {v}" for k, v in regime.metrics.items() if v is not None
+        )
+        header_parts.append(metrics_line)
+    
+    console.print(Panel(
+        "\n".join(header_parts),
         title=f"[bold cyan]LOX RESEARCH[/bold cyan]  [dim]{state.asof}[/dim]",
         border_style=color,
     ))
     console.print()
     
-    # Get detailed snapshot data if available
-    snapshot = {}
-    try:
-        # Try to get more detailed data for this domain
-        if domain == "volatility":
-            from ai_options_trader.volatility.regime import get_vol_regime_snapshot
-            snapshot = get_vol_regime_snapshot(settings)
-        elif domain == "rates":
-            from ai_options_trader.rates.regime import get_rates_regime_snapshot
-            snapshot = get_rates_regime_snapshot(settings)
-        elif domain == "funding":
-            from ai_options_trader.funding.regime import get_funding_regime_snapshot
-            snapshot = get_funding_regime_snapshot(settings)
-        elif domain == "macro":
-            from ai_options_trader.macro.signals import build_macro_state
-            macro_state = build_macro_state(settings, start_date="2020-01-01")
-            snapshot = {"state": macro_state} if macro_state else {}
-    except Exception:
-        snapshot = {"regime": regime.label, "score": regime.score, "description": regime.description}
+    # Build snapshot from regime metrics (real data for LLM)
+    snapshot = {
+        "regime": regime.label,
+        "score": regime.score,
+        "description": regime.description,
+    }
+    if regime.metrics:
+        snapshot["current_metrics"] = {k: v for k, v in regime.metrics.items() if v is not None}
     
     # LLM Analysis
     if include_llm or True:  # Always show LLM for detail view
