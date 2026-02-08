@@ -124,7 +124,7 @@ POSITIONS_CACHE = {
     "timestamp": None,
 }
 POSITIONS_CACHE_LOCK = threading.Lock()
-POSITIONS_CACHE_TTL = 10  # 10 seconds - live updates
+POSITIONS_CACHE_TTL = 30  # 30 seconds - balances freshness with performance
 
 # ============ OTHER DATA CACHES ============
 # Short-lived caches for other frequently requested data
@@ -143,6 +143,14 @@ DOMAINS_CACHE_TTL = 120  # 2 minutes
 NEWS_CACHE = {"data": None, "timestamp": None}
 NEWS_CACHE_LOCK = threading.Lock()
 NEWS_CACHE_TTL = 300  # 5 minutes
+
+REGIME_CTX_CACHE = {"data": None, "timestamp": None}
+REGIME_CTX_CACHE_LOCK = threading.Lock()
+REGIME_CTX_CACHE_TTL = 300  # 5 minutes - macro indicators move slowly
+
+BENCHMARK_CACHE = {"data": None, "timestamp": None}
+BENCHMARK_CACHE_LOCK = threading.Lock()
+BENCHMARK_CACHE_TTL = 300  # 5 minutes - daily returns change slowly
 
 
 # ============ QUOTE FETCHING HELPERS ============
@@ -205,7 +213,7 @@ def _fetch_batch_option_quotes(data_client, symbols: list[str]) -> dict[str, dic
     return result
 
 
-def _fetch_batch_stock_quotes(data_client, symbols: list[str]) -> dict[str, dict]:
+def _fetch_batch_stock_quotes(data_client, symbols: list[str], settings=None) -> dict[str, dict]:
     """
     Batch fetch bid/ask quotes for multiple stocks/ETFs in a single API call.
     Returns dict mapping symbol -> {'bid': float, 'ask': float}
@@ -220,11 +228,17 @@ def _fetch_batch_stock_quotes(data_client, symbols: list[str]) -> dict[str, dict
         from alpaca.data.requests import StockLatestQuoteRequest
         from alpaca.data.historical import StockHistoricalDataClient
         
-        # Create stock data client (uses same API keys from env)
+        # Use settings for proper key resolution (data_key falls back to api_key)
+        if settings:
+            api_key = getattr(settings, 'alpaca_data_key', None) or getattr(settings, 'alpaca_api_key', None)
+            secret_key = getattr(settings, 'alpaca_data_secret', None) or getattr(settings, 'alpaca_api_secret', None)
+        else:
+            api_key = os.environ.get("ALPACA_API_KEY")
+            secret_key = os.environ.get("ALPACA_API_SECRET")
+        
         stock_client = StockHistoricalDataClient(
-            api_key=os.environ.get("ALPACA_API_KEY"),
-            secret_key=os.environ.get("ALPACA_SECRET_KEY"),
-            url_override=os.environ.get("ALPACA_DATA_URL"),
+            api_key=api_key,
+            secret_key=secret_key,
         )
         
         req = StockLatestQuoteRequest(symbol_or_symbols=symbols)
@@ -399,7 +413,14 @@ def _get_original_capital():
 
 
 def _get_regime_context(settings):
-    """Get regime context for intelligent theory generation."""
+    """Get regime context for intelligent theory generation. Cached for 5 minutes."""
+    # Check cache first
+    with REGIME_CTX_CACHE_LOCK:
+        if REGIME_CTX_CACHE["data"] and REGIME_CTX_CACHE["timestamp"]:
+            cache_age = (datetime.now(timezone.utc) - REGIME_CTX_CACHE["timestamp"]).total_seconds()
+            if cache_age < REGIME_CTX_CACHE_TTL:
+                return REGIME_CTX_CACHE["data"]
+
     try:
         hy_oas = get_hy_oas(settings)
         vix = get_vix(settings)
@@ -410,12 +431,18 @@ def _get_regime_context(settings):
         hy_val = hy_oas.get("value") if hy_oas else None
         regime_label = get_regime_label(vix_val, hy_val)
         
-        return {
+        result = {
             "vix": f"{vix_val:.1f}" if vix_val else "N/A",
             "hy_oas_bps": f"{hy_val:.0f}" if hy_val else "N/A",
             "yield_10y": f"{yield_10y.get('value'):.2f}%" if yield_10y and yield_10y.get('value') else "N/A",
             "regime": regime_label,
         }
+        
+        with REGIME_CTX_CACHE_LOCK:
+            REGIME_CTX_CACHE["data"] = result
+            REGIME_CTX_CACHE["timestamp"] = datetime.now(timezone.utc)
+        
+        return result
     except Exception as e:
         print(f"[Positions] Could not fetch regime context: {e}")
         return {"vix": "N/A", "hy_oas_bps": "N/A", "yield_10y": "N/A", "regime": "UNKNOWN"}
@@ -604,7 +631,7 @@ def get_positions_data(force_refresh: bool = False):
         # OPTIMIZATION: Batch fetch all quotes in 2 API calls (instead of N)
         print(f"[Positions] Batch fetching quotes: {len(option_symbols)} options, {len(stock_symbols)} stocks")
         option_quotes = _fetch_batch_option_quotes(data_client, option_symbols)
-        stock_quotes = _fetch_batch_stock_quotes(data_client, stock_symbols)
+        stock_quotes = _fetch_batch_stock_quotes(data_client, stock_symbols, settings=settings)
         all_quotes = {**option_quotes, **stock_quotes}
         
         positions_list = []
@@ -650,8 +677,8 @@ def get_positions_data(force_refresh: bool = False):
                     "bid_ask_mark": True,
                 }
                 
-                # Generate AI thesis for the position
-                thesis = _generate_position_theory(position_dict, regime_context, settings)
+                # Use instant simple thesis in positions path (LLM thesis served separately via /api/position-thesis)
+                thesis = _simple_position_theory(position_dict)
                 position_dict["thesis"] = thesis
                 
                 positions_list.append(position_dict)
@@ -688,9 +715,21 @@ def get_positions_data(force_refresh: bool = False):
         return_pct = live_twr_pct if live_twr_pct is not None else simple_return_pct
         
         
-        # Get benchmark performance since inception for comparison
-        sp500_return = get_sp500_return_since_inception(settings)
-        btc_return = get_btc_return_since_inception(settings)
+        # Get benchmark performance since inception for comparison (cached 5 min)
+        sp500_return = None
+        btc_return = None
+        with BENCHMARK_CACHE_LOCK:
+            if BENCHMARK_CACHE["data"] and BENCHMARK_CACHE["timestamp"]:
+                _bcache_age = (datetime.now(timezone.utc) - BENCHMARK_CACHE["timestamp"]).total_seconds()
+                if _bcache_age < BENCHMARK_CACHE_TTL:
+                    sp500_return = BENCHMARK_CACHE["data"].get("sp500")
+                    btc_return = BENCHMARK_CACHE["data"].get("btc")
+        if sp500_return is None and btc_return is None:
+            sp500_return = get_sp500_return_since_inception(settings)
+            btc_return = get_btc_return_since_inception(settings)
+            with BENCHMARK_CACHE_LOCK:
+                BENCHMARK_CACHE["data"] = {"sp500": sp500_return, "btc": btc_return}
+                BENCHMARK_CACHE["timestamp"] = datetime.now(timezone.utc)
         alpha_sp500 = return_pct - sp500_return if sp500_return is not None else None
         alpha_btc = return_pct - btc_return if btc_return is not None else None
         
@@ -771,9 +810,8 @@ def get_positions_data(force_refresh: bool = False):
 # ============ FLASK ROUTES ============
 
 @app.route('/')
-@login_required
 def index():
-    """Main dashboard page."""
+    """Main dashboard page -- public (no login required)."""
     return render_template('dashboard.html')
 
 
@@ -811,9 +849,8 @@ def my_account():
 
 
 @app.route('/api/positions')
-@login_required
 def api_positions():
-    """API endpoint for positions data - LIVE updates."""
+    """API endpoint for positions data - LIVE updates (public)."""
     data = get_positions_data()
     response = jsonify(data)
     # Short cache for live updates
@@ -835,6 +872,7 @@ def api_position_thesis():
     
     Returns a map of symbol -> thesis for all open positions.
     Cached for 1 hour since thesis is based on position type, not price.
+    This endpoint does the slow LLM calls -- positions endpoint uses simple fallback.
     """
     # Check cache
     with THESIS_CACHE_LOCK:
@@ -846,17 +884,18 @@ def api_position_thesis():
                 return response
     
     try:
-        # Get positions data (will be cached)
+        # Get positions data (will be cached / fast now)
         positions_data = get_positions_data()
         positions = positions_data.get("positions", [])
+        settings = load_settings()
+        regime_context = _get_regime_context(settings)
         
-        # Build thesis map
+        # Generate LLM thesis for each position (slow but cached for 1 hour)
         theses = {}
         for pos in positions:
             symbol = pos.get("symbol", "")
-            thesis = pos.get("thesis", "")
-            if symbol and thesis:
-                theses[symbol] = thesis
+            if symbol:
+                theses[symbol] = _generate_position_theory(pos, regime_context, settings)
         
         result = {
             "theses": theses,
@@ -879,9 +918,8 @@ def api_position_thesis():
 
 
 @app.route('/api/closed-trades')
-@login_required
 def api_closed_trades():
-    """API endpoint for closed trades (realized P&L) with caching."""
+    """API endpoint for closed trades (realized P&L) with caching (public)."""
     # Check cache
     with TRADES_CACHE_LOCK:
         if TRADES_CACHE["data"] and TRADES_CACHE["timestamp"]:
@@ -2706,9 +2744,8 @@ def _palmer_background_refresh():
 
 
 @app.route('/api/regime-analysis')
-@login_required
 def api_regime_analysis():
-    """Palmer: Returns cached LLM analysis. Refreshes automatically every 30 min."""
+    """Palmer: Returns cached LLM analysis. Refreshes automatically every 30 min (public)."""
     with PALMER_CACHE_LOCK:
         if PALMER_CACHE["analysis"] is None:
             # First request - trigger initial refresh

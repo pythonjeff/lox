@@ -295,7 +295,7 @@
         <!-- Page title -->
         <div class="page-title">Investor Account</div>
         <h1 class="page-heading">
-            {{ current_user.email }}
+            {% if current_user.first_name %}{{ current_user.first_name }}'s Account{% else %}{{ current_user.email }}{% endif %}
             {% if account_data %}
             <span class="investor-code-tag">{{ account_data.code }}</span>
             {% endif %}

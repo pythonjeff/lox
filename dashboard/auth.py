@@ -87,14 +87,20 @@ def register():
         return redirect(url_for("auth.login"))
 
     if request.method == "POST":
-        # Email comes from the invite (locked), only password from form
+        # Email comes from the invite (locked); name + password from form
         email = invite.email
+        first_name = request.form.get("first_name", "").strip()
+        last_name = request.form.get("last_name", "").strip()
         password = request.form.get("password", "")
         password_confirm = request.form.get("password_confirm", "")
 
         # --- Validation ---
         errors = []
 
+        if not first_name:
+            errors.append("First name is required.")
+        if not last_name:
+            errors.append("Last name is required.")
         if not password:
             errors.append("Password is required.")
         if len(password) < 8:
@@ -108,12 +114,14 @@ def register():
         if errors:
             for e in errors:
                 flash(e, "error")
-            return render_template("register.html", invite=invite), 400
+            return render_template(
+                "register.html", invite=invite,
+                first_name=first_name, last_name=last_name,
+            ), 400
 
         # --- Create user linked to investor code ---
         # Username auto-derived from email (used internally, not shown to user)
         username = email.split("@")[0]
-        # Ensure uniqueness by appending id suffix if needed
         if User.query.filter_by(username=username).first():
             import uuid as _uuid
             username = f"{username}_{_uuid.uuid4().hex[:6]}"
@@ -121,6 +129,8 @@ def register():
         user = User(
             email=email,
             username=username,
+            first_name=first_name,
+            last_name=last_name,
             investor_code=invite.investor_code,
         )
         user.set_password(password)
