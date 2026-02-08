@@ -54,7 +54,7 @@ def login():
         next_page = request.args.get("next")
         if next_page and _is_safe_redirect(next_page):
             return redirect(next_page)
-        return redirect(url_for("index"))
+        return redirect(url_for("my_account"))
 
     return render_template("login.html")
 
@@ -148,7 +148,7 @@ def register():
         login_user(user, remember=True)
 
         flash(f"Welcome! Your account is linked to investor code {invite.investor_code}.", "success")
-        return redirect(url_for("index"))
+        return redirect(url_for("my_account"))
 
     # GET — render form pre-filled with invite data
     return render_template("register.html", invite=invite)
