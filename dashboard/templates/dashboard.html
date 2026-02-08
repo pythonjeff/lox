@@ -90,7 +90,7 @@
         <div class="accordion">
             
             <!-- Positions Section (with AI Thesis) -->
-            <details class="accordion-section" open>
+            <details class="accordion-section">
                 <summary class="accordion-header">
                     <span class="accordion-title">Open Positions</span>
                     <div class="accordion-badges">
@@ -354,6 +354,31 @@
             </details>
 
         </div>
+
+        <!-- Operating P&L (trailing 30 days) -->
+        <section class="ops-pnl-section" id="ops-pnl-section" style="display:none;">
+            <div class="ops-pnl-header">
+                <span class="ops-pnl-title">MONTHLY NET P&L</span>
+                <span class="ops-pnl-period" id="ops-pnl-period">Last 30 days</span>
+            </div>
+            <div class="ops-pnl-row">
+                <div class="ops-pnl-item ops-pnl-gross">
+                    <div class="ops-pnl-label">Realized P&L (30d)</div>
+                    <div class="ops-pnl-value" id="ops-gross-pnl">—</div>
+                </div>
+                <div class="ops-pnl-minus">−</div>
+                <div class="ops-pnl-item ops-pnl-costs">
+                    <div class="ops-pnl-label">Monthly Costs</div>
+                    <div class="ops-pnl-value" id="ops-costs">—</div>
+                    <div class="ops-pnl-breakdown" id="ops-breakdown"></div>
+                </div>
+                <div class="ops-pnl-equals">=</div>
+                <div class="ops-pnl-item ops-pnl-net">
+                    <div class="ops-pnl-label">Net After Costs</div>
+                    <div class="ops-pnl-value" id="ops-net-pnl">—</div>
+                </div>
+            </div>
+        </section>
 
         <!-- Footer -->
         <footer class="footer">

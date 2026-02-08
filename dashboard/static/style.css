@@ -1436,6 +1436,101 @@ body {
     }
 }
 
+/* ── Operating P&L Section ── */
+.ops-pnl-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+}
+
+.ops-pnl-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.ops-pnl-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+}
+
+.ops-pnl-period {
+    font-size: 11px;
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+.ops-pnl-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.ops-pnl-item {
+    text-align: center;
+    flex: 1;
+    min-width: 100px;
+}
+
+.ops-pnl-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+
+.ops-pnl-value {
+    font-size: 22px;
+    font-weight: 700;
+    font-family: 'Inter', monospace;
+}
+
+.ops-pnl-minus,
+.ops-pnl-equals {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-muted);
+    opacity: 0.5;
+    padding-top: 14px;
+}
+
+.ops-pnl-breakdown {
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    line-height: 1.5;
+    opacity: 0.7;
+}
+
+.ops-pnl-gross .ops-pnl-value.positive { color: var(--green); }
+.ops-pnl-gross .ops-pnl-value.negative { color: var(--red); }
+.ops-pnl-costs .ops-pnl-value { color: var(--red); }
+.ops-pnl-net .ops-pnl-value.positive { color: var(--green); }
+.ops-pnl-net .ops-pnl-value.negative { color: var(--red); }
+
+@media (max-width: 480px) {
+    .ops-pnl-row {
+        flex-direction: column;
+        gap: 8px;
+    }
+    .ops-pnl-minus, .ops-pnl-equals {
+        padding-top: 0;
+        font-size: 16px;
+    }
+    .ops-pnl-value {
+        font-size: 18px;
+    }
+}
+
 /* Extra small screens */
 @media (max-width: 380px) {
     .hero-value {

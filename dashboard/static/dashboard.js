@@ -440,6 +440,78 @@ function processClosedTradesData(data) {
             `;
         }).join('');
     }
+    
+    // ── Operating P&L (30-day net after costs) ──
+    renderOperatingPnl(data.trades || []);
+}
+
+function renderOperatingPnl(trades) {
+    const section = document.getElementById('ops-pnl-section');
+    if (!section) return;
+    
+    // Monthly infrastructure costs
+    const MONTHLY_COSTS = [
+        { name: 'Alpaca', amount: 99 },
+        { name: 'FMP', amount: 69 },
+        { name: 'Massive', amount: 29 },
+    ];
+    const totalCosts = MONTHLY_COSTS.reduce((sum, c) => sum + c.amount, 0);
+    
+    // Calculate realized P&L from trades closed in the last 30 days
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    
+    let pnl30d = 0;
+    let tradeCount30d = 0;
+    
+    for (const t of trades) {
+        // exit_date may come as RFC 2822 ("Thu, 05 Feb 2026 15:54:21 GMT") or ISO string
+        let exitDate = null;
+        if (t.exit_date) {
+            exitDate = new Date(t.exit_date);
+            if (isNaN(exitDate.getTime())) exitDate = null;
+        }
+        if (exitDate && exitDate >= thirtyDaysAgo) {
+            pnl30d += t.pnl || 0;
+            tradeCount30d++;
+        }
+    }
+    
+    const netPnl = pnl30d - totalCosts;
+    
+    section.style.display = 'block';
+    
+    // Period label
+    const periodEl = document.getElementById('ops-pnl-period');
+    if (periodEl) {
+        periodEl.textContent = `${tradeCount30d} trades closed in last 30d`;
+    }
+    
+    // Gross P&L
+    const grossEl = document.getElementById('ops-gross-pnl');
+    if (grossEl) {
+        grossEl.textContent = formatCurrency(pnl30d);
+        grossEl.className = 'ops-pnl-value ' + (pnl30d >= 0 ? 'positive' : 'negative');
+    }
+    
+    // Costs
+    const costsEl = document.getElementById('ops-costs');
+    if (costsEl) {
+        costsEl.textContent = formatCurrency(-totalCosts);
+    }
+    
+    // Cost breakdown
+    const breakdownEl = document.getElementById('ops-breakdown');
+    if (breakdownEl) {
+        breakdownEl.textContent = MONTHLY_COSTS.map(c => `${c.name} $${c.amount}`).join(' · ');
+    }
+    
+    // Net P&L
+    const netEl = document.getElementById('ops-net-pnl');
+    if (netEl) {
+        netEl.textContent = formatCurrency(netPnl);
+        netEl.className = 'ops-pnl-value ' + (netPnl >= 0 ? 'positive' : 'negative');
+    }
 }
 
 // Render institutional-grade performance metrics
