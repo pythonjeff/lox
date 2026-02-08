@@ -502,13 +502,39 @@ def get_regime_timeline(app, closed_trades: list[dict],
     return events
 
 
-def get_edge_summary(app, closed_trades: list[dict], nav_twr: float = None,
+def get_edge_summary(app, closed_trades: list[dict],
                      spy_return: float = None) -> dict:
     """
     Compute headline 'edge' stats for the resume card.
+    All metrics derived from trade data (no NAV sheet dependency).
     """
     perf = get_regime_performance(app, closed_trades)
     by_regime = perf.get("by_regime", {})
+
+    # Total stats across all regimes
+    total_trades = sum(s["trades"] for s in by_regime.values())
+    total_wins = sum(s["wins"] for s in by_regime.values())
+    overall_wr = (total_wins / total_trades * 100) if total_trades else 0
+
+    # Total P&L from all closed trades
+    total_pnl = sum(s["total_pnl"] for s in by_regime.values())
+
+    # Overall profit factor (gross wins / gross losses)
+    gross_wins = 0
+    gross_losses = 0
+    for s in by_regime.values():
+        for_wins = s.get("wins", 0)
+        for_losses = s.get("losses", 0)
+        # Recompute from trade data for accuracy
+    for t in closed_trades:
+        pnl = t.get("pnl", 0)
+        if pnl >= 0:
+            gross_wins += pnl
+        else:
+            gross_losses += abs(pnl)
+    profit_factor = (gross_wins / gross_losses) if gross_losses > 0 else (
+        999.0 if gross_wins > 0 else 0
+    )
 
     # Best environment by profit factor
     best_regime = None
@@ -523,37 +549,14 @@ def get_edge_summary(app, closed_trades: list[dict], nav_twr: float = None,
 
     best_wr = by_regime[best_regime]["win_rate"] if best_regime else 0
 
-    # Alpha (nav_twr is decimal like 0.357, spy_return is pct like -0.5)
-    alpha = None
-    if nav_twr is not None and spy_return is not None:
-        alpha = (nav_twr * 100) - spy_return
-
-    # Total stats
-    total_trades = sum(s["trades"] for s in by_regime.values())
-    total_wins = sum(s["wins"] for s in by_regime.values())
-    overall_wr = (total_wins / total_trades * 100) if total_trades else 0
-
-    # Regime anticipation: did we reduce exposure before risk-off?
-    transitions = get_regime_transitions(app, closed_trades)
-    risk_off_transitions = [t for t in transitions if t["to_regime"] == "RISK-OFF"]
-    anticipated = 0
-    for t in risk_off_transitions:
-        # If fewer trades entered in the 5 days before, count as anticipated
-        if t["trades_count"] == 0 or t["pnl_5d_after"] >= 0:
-            anticipated += 1
-    anticipation_text = None
-    if risk_off_transitions:
-        anticipation_text = f"{anticipated}/{len(risk_off_transitions)} risk-off shifts"
-
     return {
-        "alpha": round(alpha, 2) if alpha is not None else None,
-        "nav_twr": round(nav_twr * 100, 1) if nav_twr is not None else None,
-        "spy_return": round(spy_return, 1) if spy_return is not None else None,
+        "total_pnl": round(total_pnl, 2),
+        "profit_factor": round(min(profit_factor, 999.0), 2),
         "best_regime": best_regime,
         "best_regime_wr": round(best_wr, 0) if best_wr else None,
         "best_regime_pf": round(best_pf, 1) if best_pf and best_pf < 999 else None,
         "total_trades": total_trades,
         "overall_win_rate": round(overall_wr, 0),
-        "regime_anticipation": anticipation_text,
+        "spy_return": round(spy_return, 1) if spy_return is not None else None,
         "regimes_active": len(by_regime),
     }
