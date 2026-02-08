@@ -123,7 +123,7 @@ def _fetch_price_data(settings, symbol: str) -> dict:
 
 
 def _fetch_fundamentals(settings, symbol: str) -> dict:
-    """Fetch fundamental data."""
+    """Fetch fundamental data (auto-detects ETFs vs stocks)."""
     try:
         import requests
         
@@ -132,7 +132,7 @@ def _fetch_fundamentals(settings, symbol: str) -> dict:
         
         result = {}
         
-        # Company profile
+        # Company profile (works for both stocks and ETFs)
         url = f"https://financialmodelingprep.com/api/v3/profile/{symbol}"
         resp = requests.get(url, params={"apikey": settings.fmp_api_key}, timeout=15)
         if resp.ok:
@@ -140,21 +140,32 @@ def _fetch_fundamentals(settings, symbol: str) -> dict:
             if data and isinstance(data, list):
                 result["profile"] = data[0]
         
-        # Key metrics
-        url = f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{symbol}"
-        resp = requests.get(url, params={"apikey": settings.fmp_api_key}, timeout=15)
-        if resp.ok:
-            data = resp.json()
-            if data and isinstance(data, list):
-                result["metrics"] = data[0]
+        # Check if ETF — fetch ETF-specific data instead of stock ratios
+        is_etf = result.get("profile", {}).get("isEtf", False)
         
-        # Ratios
-        url = f"https://financialmodelingprep.com/api/v3/ratios-ttm/{symbol}"
-        resp = requests.get(url, params={"apikey": settings.fmp_api_key}, timeout=15)
-        if resp.ok:
-            data = resp.json()
-            if data and isinstance(data, list):
-                result["ratios"] = data[0]
+        if is_etf:
+            # ETF info (AUM, expense ratio, holdings count, etc.)
+            url = f"https://financialmodelingprep.com/api/v4/etf-info"
+            resp = requests.get(url, params={"symbol": symbol, "apikey": settings.fmp_api_key}, timeout=15)
+            if resp.ok:
+                data = resp.json()
+                if data and isinstance(data, list):
+                    result["etf_info"] = data[0]
+        else:
+            # Stock-specific: key metrics and ratios
+            url = f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{symbol}"
+            resp = requests.get(url, params={"apikey": settings.fmp_api_key}, timeout=15)
+            if resp.ok:
+                data = resp.json()
+                if data and isinstance(data, list):
+                    result["metrics"] = data[0]
+            
+            url = f"https://financialmodelingprep.com/api/v3/ratios-ttm/{symbol}"
+            resp = requests.get(url, params={"apikey": settings.fmp_api_key}, timeout=15)
+            if resp.ok:
+                data = resp.json()
+                if data and isinstance(data, list):
+                    result["ratios"] = data[0]
         
         return result
     except Exception:
@@ -254,7 +265,79 @@ Trend: {technicals.get('trend', 'N/A').upper()}  |  Volatility: {technicals.get(
 
 
 def _show_fundamentals(console: Console, fundamentals: dict):
-    """Display fundamentals table."""
+    """Display fundamentals table (detects ETFs vs stocks)."""
+    profile = fundamentals.get("profile", {})
+    etf_info = fundamentals.get("etf_info", {})
+    
+    is_etf = profile.get("isEtf", False) or bool(etf_info)
+    
+    if is_etf:
+        _show_etf_fundamentals(console, profile, etf_info)
+    else:
+        _show_stock_fundamentals(console, fundamentals)
+
+
+def _show_etf_fundamentals(console: Console, profile: dict, etf_info: dict):
+    """Display ETF-specific fundamentals."""
+    table = Table(title="[bold]ETF Profile[/bold]", box=None, padding=(0, 2))
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+    
+    def fmt(val, pct=False, billions=False, dollar=False):
+        if val is None:
+            return "N/A"
+        try:
+            v = float(val)
+            if billions:
+                return f"${v/1e9:.1f}B"
+            if pct:
+                return f"{v:.2f}%"
+            if dollar:
+                return f"${v:.2f}"
+            return f"{v:,.0f}"
+        except Exception:
+            return str(val)[:20]
+    
+    aum = etf_info.get("aum") or profile.get("mktCap")
+    expense = etf_info.get("expenseRatio")
+    nav = etf_info.get("nav")
+    holdings = etf_info.get("holdingsCount")
+    div_yield = profile.get("lastDiv")
+    price = profile.get("price")
+    beta = profile.get("beta")
+    inception = etf_info.get("inceptionDate") or profile.get("ipoDate")
+    asset_class = etf_info.get("assetClass", "N/A")
+    company = etf_info.get("etfCompany", "N/A")
+    
+    # Compute yield % if we have div and price
+    yield_pct = None
+    if div_yield and price:
+        try:
+            yield_pct = (float(div_yield) / float(price)) * 100
+        except Exception:
+            pass
+    
+    table.add_row("AUM", fmt(aum, billions=True), "Expense Ratio", fmt(expense, pct=True))
+    table.add_row("NAV", fmt(nav, dollar=True), "Holdings", fmt(holdings))
+    table.add_row("Yield", fmt(yield_pct, pct=True) if yield_pct else fmt(div_yield, dollar=True), "Beta", fmt(beta))
+    table.add_row("Asset Class", str(asset_class)[:15], "Issuer", str(company)[:15])
+    table.add_row("Inception", str(inception)[:10] if inception else "N/A", "Avg Volume", fmt(etf_info.get("avgVolume")))
+    
+    console.print()
+    console.print(table)
+    
+    # Show description if available
+    desc = etf_info.get("description") or profile.get("description")
+    if desc:
+        from rich.text import Text
+        console.print()
+        console.print(f"[dim]{desc[:200]}[/dim]")
+
+
+def _show_stock_fundamentals(console: Console, fundamentals: dict):
+    """Display stock fundamentals table."""
     profile = fundamentals.get("profile", {})
     metrics = fundamentals.get("metrics", {})
     ratios = fundamentals.get("ratios", {})
@@ -265,7 +348,6 @@ def _show_fundamentals(console: Console, fundamentals: dict):
     table.add_column("Metric", style="bold")
     table.add_column("Value", justify="right")
     
-    # Format values
     def fmt(val, pct=False, billions=False):
         if val is None:
             return "N/A"
@@ -284,7 +366,6 @@ def _show_fundamentals(console: Console, fundamentals: dict):
     ps = ratios.get("priceToSalesRatioTTM")
     pb = ratios.get("priceToBookRatioTTM")
     
-    rev_growth = metrics.get("revenuePerShareTTM")
     profit_margin = ratios.get("netProfitMarginTTM")
     roe = ratios.get("returnOnEquityTTM")
     roa = ratios.get("returnOnAssetsTTM")
