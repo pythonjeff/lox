@@ -398,32 +398,25 @@ def _fetch_domain_news(
         )
     
     except Exception as e:
-        # Fallback to FMP-only if unified fetch fails
+        # Fallback to FMP direct if unified fetch fails
         try:
-            from ai_options_trader.llm.outlooks.ticker_news import fetch_fmp_stock_news
+            from ai_options_trader.altdata.fmp import fetch_stock_news
             
-            now = datetime.now(timezone.utc)
-            from_date = (now - timedelta(days=lookback_days)).date().isoformat()
-            to_date = now.date().isoformat()
-            
-            items = fetch_fmp_stock_news(
-                settings=settings,
-                tickers=tickers,
-                from_date=from_date,
-                to_date=to_date,
-                max_pages=3,
-            )
+            all_items = []
+            for ticker in tickers[:5]:
+                items = fetch_stock_news(settings=settings, ticker=ticker, limit=10)
+                all_items.extend(items)
             
             formatted = []
-            for i, it in enumerate(items[:max_items]):
+            for i, it in enumerate(all_items[:max_items]):
                 formatted.append({
                     "index": i + 1,
-                    "title": getattr(it, "title", ""),
-                    "source": getattr(it, "source", "") or "FMP",
+                    "title": it.get("title", ""),
+                    "source": it.get("site", "") or "FMP",
                     "provider": "FMP",
-                    "published_at": getattr(it, "published_at", ""),
-                    "url": getattr(it, "url", ""),
-                    "snippet": (getattr(it, "snippet", "") or "")[:300],
+                    "published_at": it.get("publishedDate", ""),
+                    "url": it.get("url", ""),
+                    "snippet": (it.get("text", "") or "")[:300],
                 })
             return formatted
         except Exception:
@@ -443,31 +436,36 @@ def _fetch_general_macro_news(
     keywords = ctx.get("news_keywords", []) + ctx.get("macro_keywords", [])
     
     try:
-        from ai_options_trader.llm.outlooks.macro_news import fetch_fmp_general_news
+        from ai_options_trader.altdata.fmp import fetch_stock_news
         
-        items = fetch_fmp_general_news(settings=settings, max_pages=2)
+        # Use FMP stock news with general tickers as proxy for macro news
+        macro_tickers = ["SPY", "TLT", "HYG", "VIX", "DXY"]
+        all_items = []
+        for ticker in macro_tickers[:3]:
+            items = fetch_stock_news(settings=settings, ticker=ticker, limit=10)
+            all_items.extend(items)
         
         # Filter by keywords
         if keywords:
             filtered = []
-            for item in items:
-                title = (getattr(item, "title", "") or "").lower()
-                snippet = (getattr(item, "snippet", "") or "").lower()
-                text = f"{title} {snippet}"
-                if any(kw.lower() in text for kw in keywords):
+            for item in all_items:
+                title = (item.get("title", "") or "").lower()
+                text_body = (item.get("text", "") or "").lower()
+                combined = f"{title} {text_body}"
+                if any(kw.lower() in combined for kw in keywords):
                     filtered.append(item)
-            items = filtered
+            all_items = filtered if filtered else all_items
         
         return [
             {
                 "index": i + 1,
-                "title": getattr(it, "title", ""),
-                "source": getattr(it, "source", "") or "General News",
-                "published_at": getattr(it, "published_at", ""),
-                "url": getattr(it, "url", ""),
-                "topic": getattr(it, "topic", "macro"),
+                "title": it.get("title", ""),
+                "source": it.get("site", "") or "FMP",
+                "published_at": it.get("publishedDate", ""),
+                "url": it.get("url", ""),
+                "topic": "macro",
             }
-            for i, it in enumerate(items[:max_items])
+            for i, it in enumerate(all_items[:max_items])
         ]
     except Exception:
         return []
