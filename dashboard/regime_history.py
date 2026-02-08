@@ -245,16 +245,16 @@ def get_regime_performance(app, closed_trades: list[dict]) -> dict:
 
         return regime_map[best]
 
-    # Tag trades
+    # Tag trades by EXIT regime (captures which conditions the trade realized in)
     tagged = []
     for t in closed_trades:
-        entry_regime = lookup_regime(t.get("entry_date"))
-        tagged.append({**t, "entry_regime": entry_regime})
+        exit_regime = lookup_regime(t.get("exit_date"))
+        tagged.append({**t, "exit_regime": exit_regime})
 
-    # Group by regime
+    # Group by exit regime
     regimes = {}
     for t in tagged:
-        r = t["entry_regime"]
+        r = t["exit_regime"]
         if r == "UNKNOWN":
             continue
         if r not in regimes:
