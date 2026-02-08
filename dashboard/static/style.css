@@ -1034,6 +1034,190 @@ body {
 }
 
 /* ============================================
+   EDGE SUMMARY CARD (Feature 5)
+   ============================================ */
+.edge-card {
+    background: var(--hero-bg);
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 16px;
+    margin-bottom: 12px;
+    position: relative;
+    overflow: hidden;
+}
+
+.edge-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--green), transparent);
+}
+
+.edge-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.edge-card-icon {
+    color: var(--accent);
+    font-size: 14px;
+}
+
+.edge-card-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.6);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+}
+
+.edge-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+}
+
+.edge-stat {
+    text-align: center;
+}
+
+.edge-stat-value {
+    display: block;
+    font-size: 22px;
+    font-weight: 700;
+    color: white;
+    line-height: 1.2;
+    margin-bottom: 4px;
+}
+
+.edge-stat-value.positive { color: #4ade80; }
+.edge-stat-value.negative { color: #f87171; }
+.edge-stat-value.risk-on { color: #4ade80; }
+.edge-stat-value.cautious { color: #fbbf24; }
+.edge-stat-value.risk-off { color: #f87171; }
+
+.edge-stat-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* ============================================
+   SECTION LABELS (shared)
+   ============================================ */
+.section-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 20px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+/* ============================================
+   REGIME EQUITY CHART (Feature 2)
+   ============================================ */
+.regime-chart-section {
+    margin-top: 4px;
+}
+
+.regime-chart-wrap {
+    background: var(--bg-muted);
+    border-radius: 10px;
+    padding: 16px 12px;
+    height: 240px;
+}
+
+.regime-chart-legend {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 8px;
+}
+
+.chart-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.chart-legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+/* ============================================
+   PERFORMANCE BY REGIME TABLE (Feature 1)
+   ============================================ */
+.regime-perf-section {
+    margin-top: 4px;
+}
+
+.regime-perf-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.regime-perf-table th {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-align: left;
+    padding: 10px 10px;
+    border-bottom: 1px solid var(--border);
+}
+
+.regime-perf-table th:nth-child(n+2) {
+    text-align: right;
+}
+
+.regime-perf-table td {
+    font-size: 13px;
+    padding: 12px 10px;
+    border-bottom: 1px solid var(--bg-muted);
+    color: var(--text-secondary);
+}
+
+.regime-perf-table td:nth-child(n+2) {
+    text-align: right;
+}
+
+.regime-perf-table td:first-child {
+    padding-right: 8px;
+}
+
+.regime-perf-table td.positive { color: var(--green); font-weight: 600; }
+.regime-perf-table td.negative { color: var(--red); font-weight: 600; }
+
+.regime-perf-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.regime-perf-table tbody tr:hover {
+    background: var(--bg-muted);
+}
+
+
+/* ============================================
    FOOTER
    ============================================ */
 .footer {
@@ -1231,6 +1415,24 @@ body {
     
     .perf-card {
         padding: 12px;
+    }
+    
+    /* Regime resume builder mobile */
+    .edge-stats {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+    }
+    
+    .edge-stat-value {
+        font-size: 18px;
+    }
+    
+    .regime-perf-table {
+        min-width: 500px;
+    }
+    
+    .regime-perf-section {
+        overflow-x: auto;
     }
 }
 

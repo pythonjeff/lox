@@ -25,6 +25,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <!-- Chart.js + date adapter + annotation plugin for equity curve with regime bands -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -101,7 +105,7 @@
                 </div>
             </details>
 
-            <!-- Market Context Section (Enhanced) -->
+            <!-- Market Context Section (Enhanced with Resume Builder) -->
             <details class="accordion-section">
                 <summary class="accordion-header">
                     <span class="accordion-title">Market Regime</span>
@@ -110,6 +114,33 @@
                     </div>
                 </summary>
                 <div class="accordion-content">
+
+                    <!-- FEATURE 5: Edge Summary Card -->
+                    <div class="edge-card" id="edge-card" style="display:none;">
+                        <div class="edge-card-header">
+                            <span class="edge-card-icon">&#9670;</span>
+                            <span class="edge-card-title">REGIME EDGE</span>
+                        </div>
+                        <div class="edge-stats">
+                            <div class="edge-stat">
+                                <span class="edge-stat-value" id="edge-alpha">—</span>
+                                <span class="edge-stat-label">TWR vs S&P</span>
+                            </div>
+                            <div class="edge-stat">
+                                <span class="edge-stat-value" id="edge-best-regime">—</span>
+                                <span class="edge-stat-label" id="edge-best-detail">Best Environment</span>
+                            </div>
+                            <div class="edge-stat">
+                                <span class="edge-stat-value" id="edge-win-rate">—</span>
+                                <span class="edge-stat-label">Overall Win Rate</span>
+                            </div>
+                            <div class="edge-stat">
+                                <span class="edge-stat-value" id="edge-anticipation">—</span>
+                                <span class="edge-stat-label">Regime Reads</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Key Metrics Strip -->
                     <div class="regime-metrics">
                         <div class="regime-metric">
@@ -142,7 +173,7 @@
                     <!-- AI Insight Box -->
                     <div class="insight-box" id="insight-box">
                         <div class="insight-header">
-                            <span class="insight-icon">🎯</span>
+                            <span class="insight-icon">&#127919;</span>
                             <span class="insight-title">Market Assessment</span>
                         </div>
                         <div class="insight-text" id="insight-text">Loading market analysis...</div>
@@ -155,6 +186,36 @@
                             <span class="insight-time" id="insight-time">—</span>
                         </div>
                     </div>
+
+                    <!-- Regime-Aware P&L Curve (from closed trades) -->
+                    <div class="regime-chart-section" id="regime-chart-section" style="display:none;">
+                        <div class="section-label">CUMULATIVE P&L BY REGIME</div>
+                        <div class="regime-chart-wrap">
+                            <canvas id="regime-equity-chart" height="220"></canvas>
+                        </div>
+                        <div class="regime-chart-legend" id="regime-chart-legend"></div>
+                    </div>
+
+                    <!-- Performance-by-Regime Attribution Table (enriched) -->
+                    <div class="regime-perf-section" id="regime-perf-section" style="display:none;">
+                        <div class="section-label">PERFORMANCE BY REGIME</div>
+                        <table class="regime-perf-table">
+                            <thead>
+                                <tr>
+                                    <th>Regime</th>
+                                    <th>Trades</th>
+                                    <th>Win Rate</th>
+                                    <th>Avg Return</th>
+                                    <th>Avg Hold</th>
+                                    <th>P/C</th>
+                                    <th>Total P&L</th>
+                                </tr>
+                            </thead>
+                            <tbody id="regime-perf-body">
+                            </tbody>
+                        </table>
+                    </div>
+
                 </div>
             </details>
 

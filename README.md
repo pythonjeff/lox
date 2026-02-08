@@ -118,17 +118,19 @@ The platform provides:
 
 ## Performance
 
+<!-- PERF_START -->
 | Metric | Value |
 |--------|-------|
 | **Inception** | January 9, 2026 |
-| **Total Capital** | $1,100 |
-| **Current NAV** | $1,024 |
-| **TWR (Since Inception)** | **-5.60%** |
-| **Benchmark (SPY)** | -0.70% |
-| **Alpha** | -4.9% |
+| **Total Capital** | $5,050 |
+| **Current NAV** | $6,045 |
+| **TWR (Since Inception)** | **+35.74%** |
+| **Benchmark (SPY)** | -0.50% |
+| **Alpha** | +36.2% |
 | **Strategy** | Discretionary macro with tail-risk hedging |
 
-*Last updated: Jan 24, 2026 • Live at [loxfund.com](https://loxfund.com)*
+*Last updated: Feb 7, 2026 • Live at [loxfund.com](https://loxfund.com)*
+<!-- PERF_END -->
 
 ---
 
