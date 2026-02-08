@@ -261,6 +261,8 @@ def invite_investor_cmd(
 def create_admin_cmd(
     email: str = typer.Option(..., "--email", "-e", prompt="Admin email", help="Admin email address"),
     password: str = typer.Option(..., "--password", "-p", prompt="Password", hide_input=True, help="Admin password"),
+    first_name: str = typer.Option("", "--first-name", "-f", help="First name"),
+    last_name: str = typer.Option("", "--last-name", "-l", help="Last name"),
     investor_code: str = typer.Option(None, "--investor-code", "-c", help="Optional investor code to link (e.g. JL)"),
 ):
     """Create an admin user in the dashboard database."""
@@ -295,6 +297,8 @@ def create_admin_cmd(
         user = User(
             email=email.lower(),
             username=username,
+            first_name=first_name.strip(),
+            last_name=last_name.strip(),
             is_admin=True,
             investor_code=investor_code.strip().upper() if investor_code else None,
         )

@@ -173,10 +173,8 @@ function processPositionsData(data) {
             `;
         }).join('');
         
-        // Fetch thesis for positions if not already included
-        if (!data.positions[0]?.thesis) {
-            fetchPositionThesis(data.positions);
-        }
+        // Lazily fetch AI-generated thesis (upgrades the simple fallback thesis)
+        fetchPositionThesis(data.positions);
     }
     
     // Update footer
@@ -656,13 +654,13 @@ initDashboardParallel();
 // REFRESH INTERVALS
 // ============================================
 
-// LIVE data: Positions refresh every 10 seconds
+// LIVE data: Positions refresh every 30 seconds (matches server cache TTL)
 setInterval(() => {
     fetch('/api/positions')
         .then(r => r.json())
         .then(processPositionsData)
         .catch(console.error);
-}, 10000);
+}, 30000);
 
 // Market context & trades: Refresh every 5 minutes
 setInterval(() => {
