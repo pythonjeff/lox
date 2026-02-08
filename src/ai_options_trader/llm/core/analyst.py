@@ -423,6 +423,52 @@ def _fetch_domain_news(
             return []
 
 
+def _fetch_ticker_news(
+    settings: Settings,
+    ticker: str,
+    max_items: int = 15,
+    lookback_days: int = 7,
+) -> list[dict[str, Any]]:
+    """Fetch news specifically for a given ticker symbol."""
+    try:
+        from ai_options_trader.altdata.news import fetch_unified_news, format_news_for_llm
+        
+        articles = fetch_unified_news(
+            settings=settings,
+            symbols=[ticker],
+            keywords=None,
+            lookback_days=lookback_days,
+            limit=max_items * 2,
+            include_content=True,
+        )
+        
+        return format_news_for_llm(
+            articles,
+            max_articles=max_items,
+            include_snippets=True,
+            include_content=True,
+        )
+    except Exception:
+        try:
+            from ai_options_trader.altdata.fmp import fetch_stock_news
+            
+            items = fetch_stock_news(settings=settings, ticker=ticker, limit=max_items)
+            formatted = []
+            for i, it in enumerate(items[:max_items]):
+                formatted.append({
+                    "index": i + 1,
+                    "title": it.get("title", ""),
+                    "source": it.get("site", "") or "FMP",
+                    "provider": "FMP",
+                    "published_at": it.get("publishedDate", ""),
+                    "url": it.get("url", ""),
+                    "snippet": (it.get("text", "") or "")[:300],
+                })
+            return formatted
+        except Exception:
+            return []
+
+
 def _fetch_general_macro_news(
     settings: Settings,
     domain: str,
@@ -610,6 +656,7 @@ def llm_analyze_regime(
     include_calendar: bool = True,
     model: str | None = None,
     temperature: float = 0.25,
+    ticker: str | None = None,
 ) -> str:
     """
     Universal LLM regime analyst - Research Grade.
@@ -693,8 +740,11 @@ def llm_analyze_regime(
     if sector_impl:
         payload["sector_implications"] = sector_impl
     
-    # Add canonical scenario framework for Monte Carlo alignment
-    payload["scenario_framework"] = SCENARIO_FRAMEWORK
+    # Add canonical scenario framework (only for regime analysis, not ticker-specific)
+    if not ticker:
+        payload["scenario_framework"] = SCENARIO_FRAMEWORK
+    else:
+        payload["ticker"] = ticker
     
     # Fetch real-time data with source tracking
     sources_used = []
@@ -706,20 +756,30 @@ def llm_analyze_regime(
             sources_used.append(f"FMP Real-time Quotes ({price_data.get('asof', 'N/A')})")
     
     if include_news:
-        # Unified news from FMP + Alpaca
-        unified_news = _fetch_domain_news(settings, domain, max_items=15, lookback_days=5)
-        if unified_news:
-            payload["news_articles"] = unified_news
-            
-            # Count by provider
-            alpaca_count = sum(1 for n in unified_news if n.get("provider") == "Alpaca")
-            fmp_count = sum(1 for n in unified_news if n.get("provider") == "FMP")
-            content_count = sum(1 for n in unified_news if n.get("content"))
-            
-            if alpaca_count > 0:
-                sources_used.append(f"Alpaca News API ({alpaca_count} articles, {content_count} with full content)")
-            if fmp_count > 0:
-                sources_used.append(f"FMP News API ({fmp_count} articles)")
+        if ticker:
+            # Ticker-specific news fetching
+            ticker_news = _fetch_ticker_news(settings, ticker, max_items=15, lookback_days=7)
+            if ticker_news:
+                payload["news_articles"] = ticker_news
+                alpaca_count = sum(1 for n in ticker_news if n.get("provider") == "Alpaca")
+                fmp_count = sum(1 for n in ticker_news if n.get("provider") == "FMP")
+                content_count = sum(1 for n in ticker_news if n.get("content"))
+                if alpaca_count > 0:
+                    sources_used.append(f"Alpaca News API ({alpaca_count} articles, {content_count} with full content)")
+                if fmp_count > 0:
+                    sources_used.append(f"FMP News API ({fmp_count} articles)")
+        else:
+            # Domain-wide news for regime analysis
+            unified_news = _fetch_domain_news(settings, domain, max_items=15, lookback_days=5)
+            if unified_news:
+                payload["news_articles"] = unified_news
+                alpaca_count = sum(1 for n in unified_news if n.get("provider") == "Alpaca")
+                fmp_count = sum(1 for n in unified_news if n.get("provider") == "FMP")
+                content_count = sum(1 for n in unified_news if n.get("content"))
+                if alpaca_count > 0:
+                    sources_used.append(f"Alpaca News API ({alpaca_count} articles, {content_count} with full content)")
+                if fmp_count > 0:
+                    sources_used.append(f"FMP News API ({fmp_count} articles)")
         
         # Also fetch general macro news for broader context
         macro_news = _fetch_general_macro_news(settings, domain, max_items=8)
@@ -743,43 +803,55 @@ def llm_analyze_regime(
     
     payload_json = json.dumps(payload, indent=2, default=str)
     
-    prompt = f"""You are a PhD-level macro strategist at a top-tier hedge fund (Citadel/Renaissance caliber) writing a **research brief** on {domain.upper()}.
+    # Build ticker-specific or regime-generic prompt sections
+    if ticker:
+        subject = f"{ticker}"
+        scenario_section = f"""### SCENARIO ANALYSIS ({ticker}-Specific)
 
-You are given comprehensive data including:
-- Quantitative snapshot with key metrics
-- Real-time prices with timestamps  
-- News articles from multiple providers (FMP + Alpaca) with sources
-- Some articles include FULL CONTENT for deeper analysis
-- Economic calendar events with dates
-- **Historical context for calibration:**
-  - 52-week ranges for key instruments (current position within range)
-  - Typical event-day moves for major releases (CPI, FOMC, NFP, etc.)
-  - Current volatility regime (for sizing move estimates)
-- Data source provenance
+Provide **4-5 scenarios** for {ticker} over the next 3 months. Each scenario must include a **specific price target for {ticker}** — NOT SPX, TLT, or VIX.
 
-Your task: Produce a **research-grade brief** suitable for portfolio managers.
+| Scenario | Probability | Key Trigger | {ticker} Target (3M) | {ticker} Price Range |
+|----------|-------------|-------------|---------------------|---------------------|
+| BULL | X% | [specific catalyst] | $XX.XX | $XX - $XX |
+| BASE | X% | [current trajectory] | $XX.XX | $XX - $XX |
+| BEAR | X% | [risk catalyst] | $XX.XX | $XX - $XX |
+| TAIL RISK | X% | [extreme scenario] | $XX.XX | $XX - $XX |
 
-## OUTPUT FORMAT
+**Rules:**
+1. Probabilities must sum to 100%
+2. Price targets must reference the current price from the snapshot data
+3. Triggers should reference specific upcoming events from the catalyst calendar
+4. Calibrate move sizes to the asset's recent volatility (from snapshot)
+"""
+        catalyst_section = f"""### CATALYST CALENDAR ({ticker} Impact)
 
-### REGIME STATUS
-- Current regime: [label] — [1-line interpretation grounded in metrics]
-- Confidence: [HIGH/MEDIUM/LOW] — [rationale based on signal consistency]
+For each upcoming calendar event, estimate the **impact on {ticker} specifically**:
 
-### KEY METRICS
-List 4-6 metrics with specific values from the snapshot. Note:
-- Extremes (percentiles, z-scores if available)
-- Direction of change
-- Historical context if evident
+| Date | Event | Expected | Impact on {ticker} if Miss | Impact on {ticker} if Beat |
+|------|-------|----------|--------------------------|--------------------------|
+| [date] | [event] | [forecast] | {ticker} [direction + price move] | {ticker} [direction + price move] |
 
-### NEWS & MARKET CONTEXT
-Synthesize the provided news into 5-8 bullets. **Cite sources using [N] format** (N = article index).
-- What's driving current prices? Reference specific articles.
-- Key themes emerging across multiple sources
-- Any analyst calls, price targets, or research notes mentioned in content?
-- Notable quotes from articles (if full content available)
-- Divergences between news narrative and quant signals?
+*Be specific: "{ticker} -$0.50 if CPI > 3.5%" not generic "rates could rise"*
+"""
+        trade_section = f"""### TRADE EXPRESSIONS ({ticker}-Focused)
 
-### SCENARIO ANALYSIS (Monte Carlo Aligned)
+Provide **5 specific trade ideas for {ticker}** (or closely related instruments). These should be actionable and specific to {ticker}.
+
+**Required mix:**
+- 1-2 **Directional** plays on {ticker} itself (long/short shares or ETF)
+- 1-2 **Options** strategies on {ticker} (spreads, straddles, covered calls, etc.)
+- 1 **Relative value** or **pair trade** ({ticker} vs a related instrument)
+
+**For each trade:**
+| Direction | Instrument | Strategy | Conviction | Entry | Target | Stop | Timeframe |
+|-----------|-----------|----------|------------|-------|--------|------|-----------|
+| Long/Short | {ticker} or option | [strategy detail] | HIGH/MED/LOW | $XX.XX | $XX.XX | $XX.XX | Xd/Xw |
+
+*Use the support/resistance levels and technical data from the snapshot for entry/target/stop.*
+"""
+    else:
+        subject = domain.upper()
+        scenario_section = """### SCENARIO ANALYSIS (Monte Carlo Aligned)
 
 **REQUIRED**: Use scenarios from the `scenario_framework` in the data payload. These match our Monte Carlo simulations for institutional consistency.
 
@@ -805,8 +877,8 @@ Select **4-5 scenarios** most relevant to current conditions and assign probabil
 - SLOW_BLEED: Grinding down, -8% drift, VIX ~19
 - VOL_CRUSH: Melt-up, IV collapse, +10% drift, VIX 12-14
 - BASE_CASE: Neutral, +5% drift, VIX ~20
-
-### CATALYST CALENDAR (Event-Driven)
+"""
+        catalyst_section = """### CATALYST CALENDAR (Event-Driven)
 
 For each upcoming calendar event, estimate **market impact**:
 
@@ -815,15 +887,8 @@ For each upcoming calendar event, estimate **market impact**:
 | [date] | [event] | [forecast if available] | [direction + magnitude] | [direction + magnitude] |
 
 *Be specific: "10Y +15-20bps if CPI > 3.5%" not just "rates could rise"*
-
-### HISTORICAL CONTEXT
-
-Reference 1-2 **historical analogs** if applicable:
-- When was the last time we saw similar conditions?
-- What happened next? (with timeframes and magnitudes)
-- What's different this time?
-
-### TRADE EXPRESSIONS (Cross-Asset)
+"""
+        trade_section = """### TRADE EXPRESSIONS (Cross-Asset)
 
 Provide **7 specific trade ideas** spanning multiple asset classes. Use the sector_implications data when available.
 
@@ -839,7 +904,54 @@ Provide **7 specific trade ideas** spanning multiple asset classes. Use the sect
 | Long/Short | [specific ticker] | X% | HIGH/MED/LOW | [condition] | [price or %] | [price or %] |
 
 *Reference sector_implications from the data payload to justify sector picks.*
+"""
 
+    prompt = f"""You are a PhD-level macro strategist at a top-tier hedge fund (Citadel/Renaissance caliber) writing a **research brief** on {subject}.
+
+You are given comprehensive data including:
+- Quantitative snapshot with key metrics
+- Real-time prices with timestamps  
+- News articles from multiple providers (FMP + Alpaca) with sources
+- Some articles include FULL CONTENT for deeper analysis
+- Economic calendar events with dates
+- **Historical context for calibration:**
+  - 52-week ranges for key instruments (current position within range)
+  - Typical event-day moves for major releases (CPI, FOMC, NFP, etc.)
+  - Current volatility regime (for sizing move estimates)
+- Data source provenance
+
+Your task: Produce a **research-grade brief** suitable for portfolio managers.{' Focus ALL analysis on ' + ticker + ' — not generic market indices.' if ticker else ''}
+
+## OUTPUT FORMAT
+
+### REGIME STATUS
+- Current regime: [label] — [1-line interpretation grounded in metrics]
+- Confidence: [HIGH/MEDIUM/LOW] — [rationale based on signal consistency]
+
+### KEY METRICS
+List 4-6 metrics with specific values from the snapshot. Note:
+- Extremes (percentiles, z-scores if available)
+- Direction of change
+- Historical context if evident
+
+### NEWS & MARKET CONTEXT
+Synthesize the provided news into 5-8 bullets. **Cite sources using [N] format** (N = article index).
+- What's driving current prices? Reference specific articles.
+- Key themes emerging across multiple sources
+- Any analyst calls, price targets, or research notes mentioned in content?
+- Notable quotes from articles (if full content available)
+- Divergences between news narrative and quant signals?
+
+{scenario_section}
+{catalyst_section}
+### HISTORICAL CONTEXT
+
+Reference 1-2 **historical analogs** if applicable:
+- When was the last time we saw similar conditions{'for ' + ticker if ticker else ''}?
+- What happened next? (with timeframes and magnitudes)
+- What's different this time?
+
+{trade_section}
 ### RISKS & INVALIDATION
 4-5 bullets:
 - What flips this view?
@@ -864,6 +976,7 @@ List the primary data sources and APIs consulted for this analysis.
    - Historical percentiles if provided
    - Typical event-day moves for calendar releases
 8. Total length: 700-1000 words (tables count toward limit)
+{('9. ALL scenarios, catalysts, and trade ideas MUST reference ' + ticker + ' directly. Do NOT substitute generic SPX/TLT/VIX targets.') if ticker else ''}
 
 ## DATA PAYLOAD
 {payload_json}
