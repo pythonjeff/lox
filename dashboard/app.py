@@ -2875,16 +2875,12 @@ def api_regime_performance():
         # Regime performance breakdown
         perf = get_regime_performance(app, closed_trades)
 
-        # NAV TWR for alpha calculation
-        nav_snapshots = read_nav_sheet()
-        nav_twr = nav_snapshots[-1].twr_cum if nav_snapshots else None
-
         # SPY benchmark
         settings = load_settings()
         spy_return = get_sp500_return_since_inception(settings)
 
-        # Edge summary
-        edge = get_edge_summary(app, closed_trades, nav_twr=nav_twr, spy_return=spy_return)
+        # Edge summary (trade-data only, no NAV sheet dependency)
+        edge = get_edge_summary(app, closed_trades, spy_return=spy_return)
 
         # Regime bands for equity curve background
         bands = RegimeSnapshot.get_regime_bands()

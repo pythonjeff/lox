@@ -636,26 +636,20 @@ function processRegimePerformance(data) {
         return;
     }
 
-    // ── Feature 5: Edge Summary Card ──
+    // ── Edge Summary Card ──
     const edgeCard = document.getElementById('edge-card');
     if (edgeCard && data.edge) {
         const e = data.edge;
         edgeCard.style.display = 'block';
 
-        const alphaEl = document.getElementById('edge-alpha');
-        if (alphaEl && e.nav_twr !== null && e.nav_twr !== undefined) {
-            const twr = e.nav_twr;
-            const spy = e.spy_return;
-            if (spy !== null && spy !== undefined) {
-                const alpha = twr - spy;
-                alphaEl.textContent = (alpha >= 0 ? '+' : '') + alpha.toFixed(1) + '%';
-                alphaEl.className = 'edge-stat-value ' + (alpha >= 0 ? 'positive' : 'negative');
-            } else {
-                alphaEl.textContent = (twr >= 0 ? '+' : '') + twr.toFixed(1) + '% TWR';
-                alphaEl.className = 'edge-stat-value ' + (twr >= 0 ? 'positive' : 'negative');
-            }
+        // Total P&L
+        const pnlEl = document.getElementById('edge-total-pnl');
+        if (pnlEl && e.total_pnl !== undefined) {
+            pnlEl.textContent = formatCurrency(e.total_pnl);
+            pnlEl.className = 'edge-stat-value ' + (e.total_pnl >= 0 ? 'positive' : 'negative');
         }
 
+        // Best environment
         const bestEl = document.getElementById('edge-best-regime');
         const bestDetail = document.getElementById('edge-best-detail');
         if (bestEl && e.best_regime) {
@@ -663,22 +657,24 @@ function processRegimePerformance(data) {
             bestEl.className = 'edge-stat-value ' + (REGIME_COLORS[e.best_regime]?.badge || '');
             if (bestDetail) {
                 let detail = 'Best Environment';
-                if (e.best_regime_wr) detail += ` (${e.best_regime_wr}% WR`;
-                if (e.best_regime_pf) detail += `, ${e.best_regime_pf}x PF`;
-                if (e.best_regime_wr || e.best_regime_pf) detail += ')';
+                if (e.best_regime_wr) detail += ` (${e.best_regime_wr}% WR)`;
                 bestDetail.textContent = detail;
             }
         }
 
+        // Win rate
         const wrEl = document.getElementById('edge-win-rate');
         if (wrEl && e.overall_win_rate !== undefined) {
             wrEl.textContent = e.overall_win_rate + '%';
             wrEl.className = 'edge-stat-value ' + (e.overall_win_rate >= 55 ? 'positive' : '');
         }
 
-        const antEl = document.getElementById('edge-anticipation');
-        if (antEl) {
-            antEl.textContent = e.regime_anticipation || 'N/A';
+        // Profit factor
+        const pfEl = document.getElementById('edge-profit-factor');
+        if (pfEl && e.profit_factor !== undefined) {
+            const pf = e.profit_factor;
+            pfEl.textContent = pf >= 999 ? '∞' : pf.toFixed(1) + 'x';
+            pfEl.className = 'edge-stat-value ' + (pf >= 1.5 ? 'positive' : pf >= 1.0 ? '' : 'negative');
         }
     }
 
