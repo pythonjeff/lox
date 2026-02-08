@@ -45,7 +45,7 @@ from dashboard.news_utils import (
 )
 
 # Auth & database
-from dashboard.models import db, bcrypt, User
+from dashboard.models import db, bcrypt, User, RegimeSnapshot
 from dashboard.auth import auth as auth_blueprint
 
 # ============ FLASK APP SETUP ============
@@ -1581,6 +1581,56 @@ def get_closed_trades_data():
     }
 
 
+def get_open_position_entry_dates() -> dict:
+    """
+    Fetch filled buy orders and return earliest buy date per symbol
+    for currently held positions. Used to place open positions on the timeline.
+    Returns: { raw_symbol: datetime, ... }
+    """
+    try:
+        settings = load_settings()
+        trading, _ = make_clients(settings)
+    except Exception:
+        return {}
+
+    try:
+        from alpaca.trading.requests import GetOrdersRequest
+        from alpaca.trading.enums import QueryOrderStatus
+
+        req = GetOrdersRequest(status=QueryOrderStatus.ALL, limit=500)
+        orders = trading.get_orders(req) or []
+    except Exception:
+        return {}
+
+    # Get current positions to know which symbols are open
+    try:
+        positions = trading.get_all_positions()
+        open_symbols = {str(getattr(p, "symbol", "")) for p in positions}
+    except Exception:
+        return {}
+
+    # Find earliest buy date per open symbol
+    entry_dates = {}
+    for o in orders:
+        status = str(getattr(o, 'status', '?')).split('.')[-1].lower()
+        if 'filled' not in status:
+            continue
+        side = str(getattr(o, 'side', '?')).split('.')[-1].lower()
+        if side != 'buy':
+            continue
+        sym = str(getattr(o, 'symbol', ''))
+        if sym not in open_symbols:
+            continue
+        filled_at = getattr(o, 'filled_at', None)
+        if filled_at is None:
+            continue
+        # Keep earliest buy
+        if sym not in entry_dates or filled_at < entry_dates[sym]:
+            entry_dates[sym] = filled_at
+
+    return entry_dates
+
+
 def _parse_option_symbol_display(sym: str) -> str:
     """Parse option symbol for display."""
     if '/' in sym:  # Crypto
@@ -2723,6 +2773,21 @@ def _refresh_palmer_cache():
             if changed:
                 print(f"[Palmer] ⚡ REGIME CHANGE DETECTED: {change_details}")
         
+        # Persist daily regime snapshot
+        try:
+            from dashboard.regime_history import snapshot_today
+            rs = result.get("regime_snapshot", {})
+            snapshot_today(
+                app,
+                vix_val=rs.get("vix"),
+                hy_val=rs.get("hy_oas_bps"),
+                yield_val=rs.get("yield_10y"),
+                cpi_val=rs.get("cpi_yoy"),
+                curve_val=rs.get("yield_curve_2s10s"),
+            )
+        except Exception as snap_err:
+            print(f"[Palmer] Regime snapshot save error: {snap_err}")
+        
         print(f"[Palmer] Cache refreshed successfully")
     except Exception as e:
         import traceback
@@ -2790,6 +2855,88 @@ def api_regime_analysis_force():
     
     _refresh_palmer_cache()
     return jsonify({"message": "Palmer analysis refreshed", "timestamp": datetime.now(timezone.utc).isoformat()})
+
+
+# ============ REGIME PERFORMANCE API (Resume Builder) ============
+
+@app.route('/api/regime-performance')
+def api_regime_performance():
+    """Regime-tagged trade performance: attribution table, adaptation metrics, edge summary."""
+    try:
+        from dashboard.regime_history import (
+            get_regime_performance, get_edge_summary,
+        )
+        from dashboard.models import RegimeSnapshot
+
+        # Get closed trades
+        trades_data = get_closed_trades_data()
+        closed_trades = trades_data.get("trades", [])
+
+        # Regime performance breakdown
+        perf = get_regime_performance(app, closed_trades)
+
+        # NAV TWR for alpha calculation
+        nav_snapshots = read_nav_sheet()
+        nav_twr = nav_snapshots[-1].twr_cum if nav_snapshots else None
+
+        # SPY benchmark
+        settings = load_settings()
+        spy_return = get_sp500_return_since_inception(settings)
+
+        # Edge summary
+        edge = get_edge_summary(app, closed_trades, nav_twr=nav_twr, spy_return=spy_return)
+
+        # Regime bands for equity curve background
+        bands = RegimeSnapshot.get_regime_bands()
+
+        # Build equity curve from closed trades (deterministic from Alpaca orders).
+        # Sort by exit date, compute cumulative realized P&L per day.
+        trades_by_exit = []
+        for t in closed_trades:
+            exit_dt = t.get("exit_date")
+            if exit_dt is None:
+                continue
+            if isinstance(exit_dt, str):
+                try:
+                    exit_dt = datetime.fromisoformat(exit_dt.replace("Z", "+00:00"))
+                except Exception:
+                    continue
+            trades_by_exit.append((exit_dt, t.get("pnl", 0)))
+        trades_by_exit.sort(key=lambda x: x[0])
+
+        # Collapse to one point per day (cumulative P&L)
+        equity_by_day = {}
+        running_pnl = 0
+        for exit_dt, pnl in trades_by_exit:
+            day = exit_dt.date().isoformat() if hasattr(exit_dt, 'date') else str(exit_dt)[:10]
+            running_pnl += pnl
+            equity_by_day[day] = running_pnl
+
+        # Add today with unrealized P&L as latest point
+        try:
+            positions_data = get_positions_data()
+            unrealized = sum(p.get("pnl", 0) for p in positions_data.get("positions", []))
+            today_str = datetime.now(timezone.utc).date().isoformat()
+            latest_realized = running_pnl
+            equity_by_day[today_str] = latest_realized + unrealized
+        except Exception:
+            pass
+
+        equity_series = [{"date": d, "pnl": equity_by_day[d]}
+                         for d in sorted(equity_by_day.keys())]
+
+        return jsonify({
+            "by_regime": perf["by_regime"],
+            "edge": edge,
+            "regime_bands": bands,
+            "equity_series": equity_series,
+            "spy_return": spy_return,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "by_regime": {}, "edge": {}})
 
 
 @app.route('/api/monte-carlo')
@@ -2948,6 +3095,13 @@ def start_background_threads():
     
     # Do initial refreshes in background
     def initial_refresh():
+        # Backfill regime history on first boot (idempotent upsert)
+        try:
+            from dashboard.regime_history import backfill_regime_history
+            backfill_regime_history(app)
+        except Exception as e:
+            print(f"[RegimeHistory] Backfill error (non-fatal): {e}")
+        
         _refresh_mc_cache()  # MC first (Palmer uses cached MC)
         _refresh_palmer_cache()
     

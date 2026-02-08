@@ -1,10 +1,11 @@
 """
 LOX FUND - Database Models
-SQLAlchemy ORM models for user authentication, session tracking, and invites.
+SQLAlchemy ORM models for user authentication, session tracking, invites,
+and regime history snapshots.
 """
 
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date as date_type
 
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
@@ -198,3 +199,111 @@ class Invite(db.Model):
     def __repr__(self) -> str:
         status = "accepted" if self.is_accepted else ("expired" if self.is_expired else "pending")
         return f"<Invite {self.investor_code} -> {self.email} ({status})>"
+
+
+# ============ REGIME SNAPSHOT MODEL ============
+
+class RegimeSnapshot(db.Model):
+    """
+    Daily snapshot of market regime state.
+    Used to correlate trading performance with macro conditions.
+    """
+
+    __tablename__ = "regime_snapshots"
+
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, unique=True, nullable=False, index=True)
+    regime = db.Column(db.String(20), nullable=False)  # RISK-ON, CAUTIOUS, RISK-OFF
+
+    # Key macro indicators at snapshot time
+    vix = db.Column(db.Float, nullable=True)
+    hy_oas = db.Column(db.Float, nullable=True)          # basis points
+    yield_10y = db.Column(db.Float, nullable=True)        # percent
+    cpi_yoy = db.Column(db.Float, nullable=True)          # percent
+    curve_2s10s = db.Column(db.Float, nullable=True)      # basis points
+
+    created_at = db.Column(
+        db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def to_dict(self) -> dict:
+        """Serialize snapshot to dict."""
+        return {
+            "date": self.date.isoformat(),
+            "regime": self.regime,
+            "vix": self.vix,
+            "hy_oas": self.hy_oas,
+            "yield_10y": self.yield_10y,
+            "cpi_yoy": self.cpi_yoy,
+            "curve_2s10s": self.curve_2s10s,
+        }
+
+    @classmethod
+    def upsert(cls, *, snapshot_date: date_type, regime: str,
+               vix: float = None, hy_oas: float = None,
+               yield_10y: float = None, cpi_yoy: float = None,
+               curve_2s10s: float = None) -> "RegimeSnapshot":
+        """Insert or update a regime snapshot for a given date."""
+        existing = cls.query.filter_by(date=snapshot_date).first()
+        if existing:
+            existing.regime = regime
+            if vix is not None:
+                existing.vix = vix
+            if hy_oas is not None:
+                existing.hy_oas = hy_oas
+            if yield_10y is not None:
+                existing.yield_10y = yield_10y
+            if cpi_yoy is not None:
+                existing.cpi_yoy = cpi_yoy
+            if curve_2s10s is not None:
+                existing.curve_2s10s = curve_2s10s
+            db.session.commit()
+            return existing
+        snap = cls(
+            date=snapshot_date,
+            regime=regime,
+            vix=vix,
+            hy_oas=hy_oas,
+            yield_10y=yield_10y,
+            cpi_yoy=cpi_yoy,
+            curve_2s10s=curve_2s10s,
+        )
+        db.session.add(snap)
+        db.session.commit()
+        return snap
+
+    @classmethod
+    def get_regime_for_date(cls, target_date: date_type) -> str | None:
+        """Return regime label for a given date, or the closest prior date."""
+        snap = cls.query.filter(cls.date <= target_date).order_by(cls.date.desc()).first()
+        return snap.regime if snap else None
+
+    @classmethod
+    def get_all_ordered(cls) -> list["RegimeSnapshot"]:
+        """Return all snapshots ordered by date ascending."""
+        return cls.query.order_by(cls.date.asc()).all()
+
+    @classmethod
+    def get_regime_bands(cls) -> list[dict]:
+        """Return contiguous regime bands [{start, end, regime}, ...]."""
+        snaps = cls.get_all_ordered()
+        if not snaps:
+            return []
+        bands = []
+        current = {"start": snaps[0].date.isoformat(), "regime": snaps[0].regime}
+        for s in snaps[1:]:
+            if s.regime != current["regime"]:
+                current["end"] = s.date.isoformat()
+                bands.append(current)
+                current = {"start": s.date.isoformat(), "regime": s.regime}
+        # Close last band with today
+        current["end"] = datetime.now(timezone.utc).date().isoformat()
+        bands.append(current)
+        return bands
+
+    def __repr__(self) -> str:
+        return f"<RegimeSnapshot {self.date} {self.regime} VIX={self.vix}>"

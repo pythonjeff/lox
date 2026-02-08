@@ -619,26 +619,230 @@ function renderPerformanceMetrics(metrics, tradeCount, winRate) {
 }
 
 // ============================================
-// INIT & REFRESH (Streamlined - 3 endpoints)
+// REGIME PERFORMANCE (Resume Builder - Features 1-6)
+// ============================================
+
+let regimeEquityChart = null;
+
+const REGIME_COLORS = {
+    'RISK-ON': { bg: 'rgba(0, 168, 107, 0.18)', border: '#00a86b', text: '#00a86b', badge: 'risk-on' },
+    'CAUTIOUS': { bg: 'rgba(245, 166, 35, 0.22)', border: '#f5a623', text: '#f5a623', badge: 'cautious' },
+    'RISK-OFF': { bg: 'rgba(230, 57, 70, 0.18)', border: '#e63946', text: '#e63946', badge: 'risk-off' },
+};
+
+function processRegimePerformance(data) {
+    if (data.error && !data.by_regime) {
+        console.error('[Regime Perf] Error:', data.error);
+        return;
+    }
+
+    // ── Feature 5: Edge Summary Card ──
+    const edgeCard = document.getElementById('edge-card');
+    if (edgeCard && data.edge) {
+        const e = data.edge;
+        edgeCard.style.display = 'block';
+
+        const alphaEl = document.getElementById('edge-alpha');
+        if (alphaEl && e.nav_twr !== null && e.nav_twr !== undefined) {
+            const twr = e.nav_twr;
+            const spy = e.spy_return;
+            if (spy !== null && spy !== undefined) {
+                const alpha = twr - spy;
+                alphaEl.textContent = (alpha >= 0 ? '+' : '') + alpha.toFixed(1) + '%';
+                alphaEl.className = 'edge-stat-value ' + (alpha >= 0 ? 'positive' : 'negative');
+            } else {
+                alphaEl.textContent = (twr >= 0 ? '+' : '') + twr.toFixed(1) + '% TWR';
+                alphaEl.className = 'edge-stat-value ' + (twr >= 0 ? 'positive' : 'negative');
+            }
+        }
+
+        const bestEl = document.getElementById('edge-best-regime');
+        const bestDetail = document.getElementById('edge-best-detail');
+        if (bestEl && e.best_regime) {
+            bestEl.textContent = e.best_regime;
+            bestEl.className = 'edge-stat-value ' + (REGIME_COLORS[e.best_regime]?.badge || '');
+            if (bestDetail) {
+                let detail = 'Best Environment';
+                if (e.best_regime_wr) detail += ` (${e.best_regime_wr}% WR`;
+                if (e.best_regime_pf) detail += `, ${e.best_regime_pf}x PF`;
+                if (e.best_regime_wr || e.best_regime_pf) detail += ')';
+                bestDetail.textContent = detail;
+            }
+        }
+
+        const wrEl = document.getElementById('edge-win-rate');
+        if (wrEl && e.overall_win_rate !== undefined) {
+            wrEl.textContent = e.overall_win_rate + '%';
+            wrEl.className = 'edge-stat-value ' + (e.overall_win_rate >= 55 ? 'positive' : '');
+        }
+
+        const antEl = document.getElementById('edge-anticipation');
+        if (antEl) {
+            antEl.textContent = e.regime_anticipation || 'N/A';
+        }
+    }
+
+    // ── Performance-by-Regime Table (enriched with hold time & puts/calls) ──
+    const perfSection = document.getElementById('regime-perf-section');
+    const perfBody = document.getElementById('regime-perf-body');
+    if (perfBody && data.by_regime && Object.keys(data.by_regime).length > 0) {
+        perfSection.style.display = 'block';
+        const order = ['RISK-ON', 'CAUTIOUS', 'RISK-OFF'];
+        const sorted = Object.entries(data.by_regime).sort(
+            (a, b) => order.indexOf(a[0]) - order.indexOf(b[0])
+        );
+        perfBody.innerHTML = sorted.map(([regime, s]) => {
+            const rc = REGIME_COLORS[regime] || {};
+            const pnlClass = s.total_pnl >= 0 ? 'positive' : 'negative';
+            const hold = s.avg_hold_days !== null ? s.avg_hold_days + 'd' : '—';
+            const pc = `${s.puts || 0}P/${s.calls || 0}C`;
+            return `<tr>
+                <td><span class="regime-badge ${rc.badge || ''}">${regime}</span></td>
+                <td>${s.trades}</td>
+                <td>${s.win_rate.toFixed(0)}%</td>
+                <td class="${s.avg_return >= 0 ? 'positive' : 'negative'}">${s.avg_return >= 0 ? '+' : ''}${s.avg_return.toFixed(1)}%</td>
+                <td>${hold}</td>
+                <td>${pc}</td>
+                <td class="${pnlClass}">${formatCurrency(s.total_pnl)}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    // ── Regime-Aware Equity Curve (from closed trades) ──
+    const chartSection = document.getElementById('regime-chart-section');
+    if (chartSection && data.equity_series && data.equity_series.length > 1 && typeof Chart !== 'undefined') {
+        chartSection.style.display = 'block';
+        renderRegimeEquityCurve(data.equity_series, data.regime_bands);
+    }
+
+}
+
+function renderRegimeEquityCurve(equitySeries, regimeBands) {
+    const canvas = document.getElementById('regime-equity-chart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    // Destroy previous chart
+    if (regimeEquityChart) {
+        regimeEquityChart.destroy();
+        regimeEquityChart = null;
+    }
+
+    // Build data as {x, y} for time-scale axis
+    const chartData = equitySeries.map(p => ({ x: p.date, y: p.pnl }));
+
+    // Build regime background bands as Chart.js annotations
+    const bandAnnotations = {};
+    if (regimeBands && regimeBands.length > 0) {
+        regimeBands.forEach((band, i) => {
+            const rc = REGIME_COLORS[band.regime] || {};
+            bandAnnotations['band' + i] = {
+                type: 'box',
+                xMin: band.start,
+                xMax: band.end,
+                backgroundColor: rc.bg || 'rgba(200,200,200,0.1)',
+                borderWidth: 0,
+                drawTime: 'beforeDatasetsDraw',
+            };
+        });
+    }
+
+    regimeEquityChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'Cumulative P&L',
+                data: chartData,
+                borderColor: '#0066ff',
+                backgroundColor: 'rgba(0, 102, 255, 0.08)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3,
+                pointRadius: 3,
+                pointHoverRadius: 6,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                annotation: {
+                    annotations: bandAnnotations,
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            const val = ctx.parsed.y;
+                            return `P&L: ${val >= 0 ? '+' : ''}$${val.toFixed(0)}`;
+                        }
+                    }
+                },
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: 'day',
+                        displayFormats: { day: 'MMM d' },
+                        tooltipFormat: 'MMM d, yyyy',
+                    },
+                    display: true,
+                    grid: { display: false },
+                    ticks: {
+                        font: { size: 10, family: 'Inter' },
+                        color: '#999',
+                        maxTicksLimit: 8,
+                    }
+                },
+                y: {
+                    display: true,
+                    grid: { color: 'rgba(0,0,0,0.05)' },
+                    ticks: {
+                        font: { size: 10, family: 'Inter' },
+                        color: '#999',
+                        callback: function(val) { return (val >= 0 ? '+' : '') + '$' + val.toFixed(0); }
+                    }
+                }
+            }
+        }
+    });
+
+    // Build legend for regime bands
+    const legendEl = document.getElementById('regime-chart-legend');
+    if (legendEl) {
+        legendEl.innerHTML = ['RISK-ON', 'CAUTIOUS', 'RISK-OFF'].map(r => {
+            const rc = REGIME_COLORS[r];
+            return `<span class="chart-legend-item">
+                <span class="chart-legend-dot" style="background:${rc.border}"></span>${r}
+            </span>`;
+        }).join('');
+    }
+}
+
+// ============================================
+// INIT & REFRESH (4 endpoints)
 // ============================================
 
 async function initDashboardParallel() {
-    console.log('[Dashboard] Starting parallel load (v2 streamlined)...');
+    console.log('[Dashboard] Starting parallel load (v3 regime resume)...');
     const startTime = performance.now();
     
-    // Only fetch 3 endpoints now (removed investors, news, domains)
     const fetches = [
         fetch('/api/positions').then(r => r.json()).catch(e => ({ error: e.message, positions: [] })),
         fetch('/api/regime-analysis').then(r => r.json()).catch(e => ({ error: e.message })),
         fetch('/api/closed-trades').then(r => r.json()).catch(e => ({ error: e.message, trades: [] })),
+        fetch('/api/regime-performance').then(r => r.json()).catch(e => ({ error: e.message, by_regime: {} })),
     ];
     
     try {
-        const [positionsData, marketData, tradesData] = await Promise.all(fetches);
+        const [positionsData, marketData, tradesData, regimePerf] = await Promise.all(fetches);
         
         processPositionsData(positionsData);
         processMarketContextData(marketData);
         processClosedTradesData(tradesData);
+        processRegimePerformance(regimePerf);
         
         const elapsed = (performance.now() - startTime).toFixed(0);
         console.log(`[Dashboard] Load complete in ${elapsed}ms`);
@@ -667,5 +871,6 @@ setInterval(() => {
     Promise.all([
         fetch('/api/regime-analysis').then(r => r.json()).then(processMarketContextData).catch(console.error),
         fetch('/api/closed-trades').then(r => r.json()).then(processClosedTradesData).catch(console.error),
+        fetch('/api/regime-performance').then(r => r.json()).then(processRegimePerformance).catch(console.error),
     ]);
 }, 300000);
