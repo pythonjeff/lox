@@ -9,7 +9,10 @@ Usage:
 """
 from __future__ import annotations
 
+import logging
 import typer
+
+logger = logging.getLogger(__name__)
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -61,30 +64,39 @@ def register(app: typer.Typer) -> None:
             fundamentals = _fetch_fundamentals(settings, symbol)
             technicals = _compute_technicals(price_data)
         
-        # Display price info
+        # 1. Price box
         if price_data:
-            _show_price_panel(console, symbol, price_data, technicals)
-        
-        # Display fundamentals
+            iv = _fetch_atm_implied_vol(settings, symbol, technicals.get("current") if technicals else None)
+            _show_price_panel(console, symbol, price_data, technicals or {}, implied_vol=iv)
+
+        # 2. Key Risks Summary (auto-generated, before fundamentals)
+        if fundamentals or technicals:
+            _show_key_risks_summary(console, symbol, fundamentals or {}, technicals or {})
+
+        # 3. Fundamentals
         if fundamentals:
-            _show_fundamentals(console, fundamentals)
-        
-        # ETF Flow analysis (only for ETFs)
+            _show_fundamentals(console, fundamentals, technicals or {}, price_data or {})
+
+        # 4. Peer Comparison (stocks only, data-driven)
         is_etf = fundamentals.get("profile", {}).get("isEtf", False) or fundamentals.get("etf_info")
+        if not is_etf and fundamentals:
+            _show_peer_comparison(console, settings, symbol, fundamentals)
+
+        # 5. Technical levels
+        if technicals:
+            _show_technicals(console, technicals)
+
+        # ETF Flow analysis (only for ETFs)
         if is_etf and price_data.get("historical"):
             _show_etf_flows(console, price_data, fundamentals)
-        
-        # Bond ETF: Refinancing wall (maturity distribution)
+
+        # Bond ETF: Refinancing wall
         if is_etf:
             asset_class = (fundamentals.get("etf_info", {}).get("assetClass") or "").lower()
             description = (fundamentals.get("profile", {}).get("description") or "").lower()
             is_bond_etf = "fixed income" in asset_class or "bond" in description or "credit" in description
             if is_bond_etf:
                 _show_refinancing_wall(console, settings, symbol)
-        
-        # Display technicals
-        if technicals:
-            _show_technicals(console, technicals)
         
         # Generate chart
         if chart and price_data:
@@ -124,7 +136,7 @@ def _fetch_price_data(settings, symbol: str) -> dict:
         historical = []
         if resp.ok:
             data = resp.json()
-            historical = data.get("historical", [])[:252]  # 1 year
+            historical = data.get("historical", [])[:756]  # 3 years
         
         return {
             "symbol": symbol,
@@ -158,28 +170,60 @@ def _fetch_fundamentals(settings, symbol: str) -> dict:
         
         if is_etf:
             # ETF info (AUM, expense ratio, holdings count, etc.)
-            url = f"https://financialmodelingprep.com/api/v4/etf-info"
+            url = "https://financialmodelingprep.com/api/v4/etf-info"
             resp = requests.get(url, params={"symbol": symbol, "apikey": settings.fmp_api_key}, timeout=15)
             if resp.ok:
                 data = resp.json()
                 if data and isinstance(data, list):
                     result["etf_info"] = data[0]
         else:
-            # Stock-specific: key metrics and ratios
+            # Stock: key metrics and ratios
             url = f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{symbol}"
             resp = requests.get(url, params={"apikey": settings.fmp_api_key}, timeout=15)
             if resp.ok:
                 data = resp.json()
                 if data and isinstance(data, list):
                     result["metrics"] = data[0]
-            
+
             url = f"https://financialmodelingprep.com/api/v3/ratios-ttm/{symbol}"
             resp = requests.get(url, params={"apikey": settings.fmp_api_key}, timeout=15)
             if resp.ok:
                 data = resp.json()
                 if data and isinstance(data, list):
                     result["ratios"] = data[0]
-        
+
+            # Income statement (revenue, gross profit for margin and growth)
+            url = f"https://financialmodelingprep.com/api/v3/income-statement/{symbol}"
+            resp = requests.get(url, params={"apikey": settings.fmp_api_key, "limit": 3}, timeout=15)
+            if resp.ok:
+                data = resp.json()
+                if data and isinstance(data, list):
+                    result["income_statement"] = data
+
+            # Cash flow (FCF)
+            url = f"https://financialmodelingprep.com/api/v3/cash-flow-statement/{symbol}"
+            resp = requests.get(url, params={"apikey": settings.fmp_api_key, "limit": 2}, timeout=15)
+            if resp.ok:
+                data = resp.json()
+                if data and isinstance(data, list):
+                    result["cash_flow"] = data
+
+            # Balance sheet (cash, debt)
+            url = f"https://financialmodelingprep.com/api/v3/balance-sheet-statement/{symbol}"
+            resp = requests.get(url, params={"apikey": settings.fmp_api_key, "limit": 1}, timeout=15)
+            if resp.ok:
+                data = resp.json()
+                if data and isinstance(data, list):
+                    result["balance_sheet"] = data[0]
+
+            # Revenue growth (YoY)
+            url = f"https://financialmodelingprep.com/api/v3/income-statement-growth/{symbol}"
+            resp = requests.get(url, params={"apikey": settings.fmp_api_key, "limit": 2}, timeout=15)
+            if resp.ok:
+                data = resp.json()
+                if data and isinstance(data, list):
+                    result["income_growth"] = data
+
         return result
     except Exception:
         return {}
@@ -227,19 +271,68 @@ def _compute_technicals(price_data: dict) -> dict:
         high_52w = max(highs) if len(highs) > 0 else None
         low_52w = min(lows) if len(lows) > 0 else None
         
-        # Support/Resistance (simple: recent lows/highs)
+        # Support/Resistance (20d swing low/high) with method labels
         support = min(lows[-20:]) if len(lows) >= 20 else None
         resistance = max(highs[-20:]) if len(highs) >= 20 else None
-        
-        # Volatility (20-day)
-        returns = np.diff(closes[-21:]) / closes[-21:-1] if len(closes) >= 21 else []
-        volatility = np.std(returns) * np.sqrt(252) * 100 if len(returns) > 0 else None
-        
-        # Trend (above/below 50 MA)
+        support_method = "20d swing low" if support is not None else None
+        resistance_method = "20d swing high" if resistance is not None else None
+
+        # Volatility: 30d for display (CFA-style), 20d for backward compat
+        ret_30 = np.diff(closes[-31:]) / closes[-31:-1] if len(closes) >= 31 else np.array([])
+        ret_20 = np.diff(closes[-21:]) / closes[-21:-1] if len(closes) >= 21 else np.array([])
+        volatility_30d = float(np.std(ret_30) * np.sqrt(252) * 100) if len(ret_30) > 0 else None
+        volatility = float(np.std(ret_20) * np.sqrt(252) * 100) if len(ret_20) > 0 else None
+
+        # Trend: factual label from MA positions (no editorializing)
         trend = None
-        if ma_50:
+        trend_label = "N/A"
+        if ma_50 is not None and current:
             trend = "bullish" if current > ma_50 else "bearish"
-        
+            above_20 = (ma_20 is not None and current > ma_20)
+            above_50 = current > ma_50
+            above_200 = (ma_200 is not None and current > ma_200)
+            if above_20 and above_50 and above_200:
+                trend_label = "Above all major MAs (20/50/200)"
+            elif above_50 and above_200 and not above_20:
+                trend_label = "Above 50/200 SMA, below 20 SMA"
+            elif above_50 and not above_200 and ma_200 is not None:
+                trend_label = "Above 50 SMA, below 200 SMA"
+            elif not above_50 and above_200 and ma_200 is not None:
+                trend_label = "Below 50 SMA, above 200 SMA"
+            elif not above_50 and not above_200:
+                trend_label = "Below all major MAs (20/50/200)"
+            else:
+                trend_label = "Above 20/50 SMA" if above_20 and above_50 else "Below 20/50 SMA"
+
+        # 50/200 SMA crossover (Golden Cross / Death Cross)
+        sma_crossover = None
+        if ma_50 is not None and ma_200 is not None and len(closes) >= 200:
+            if ma_50 > ma_200:
+                sma_crossover = "Golden Cross (50 > 200)"
+            else:
+                sma_crossover = "Death Cross (50 < 200)"
+
+        # MACD (12, 26, 9)
+        macd_signal = None
+        if len(closes) >= 34:
+            ema12 = pd.Series(closes).ewm(span=12, adjust=False).mean().values
+            ema26 = pd.Series(closes).ewm(span=26, adjust=False).mean().values
+            macd_line = ema12 - ema26
+            signal_line = pd.Series(macd_line).ewm(span=9, adjust=False).mean().values
+            if macd_line[-1] > signal_line[-1]:
+                macd_signal = "Bullish (MACD above signal)"
+            else:
+                macd_signal = "Bearish (MACD below signal)"
+
+        # Volume context
+        if "volume" in df.columns:
+            vol_series = df["volume"].astype(float)
+            avg_volume = float(vol_series.tail(20).mean()) if len(vol_series) >= 20 else None
+            today_volume = float(vol_series.iloc[-1]) if len(vol_series) > 0 else None
+            vol_vs_avg = (today_volume / avg_volume) if avg_volume and avg_volume > 0 else None
+        else:
+            avg_volume = today_volume = vol_vs_avg = None
+
         return {
             "current": current,
             "ma_20": ma_20,
@@ -250,54 +343,307 @@ def _compute_technicals(price_data: dict) -> dict:
             "low_52w": low_52w,
             "support": support,
             "resistance": resistance,
+            "support_method": support_method,
+            "resistance_method": resistance_method,
             "volatility": volatility,
+            "volatility_30d": volatility_30d,
             "trend": trend,
+            "trend_label": trend_label,
+            "sma_crossover": sma_crossover,
+            "macd_signal": macd_signal,
+            "avg_volume": avg_volume,
+            "today_volume": today_volume,
+            "vol_vs_avg": vol_vs_avg,
             "df": df,
         }
     except Exception:
         return {}
 
 
-def _show_price_panel(console: Console, symbol: str, price_data: dict, technicals: dict):
-    """Display price information panel."""
+def _fetch_atm_implied_vol(settings, symbol: str, current_price: float | None) -> float | None:
+    """Fetch ATM implied vol from options chain (Polygon) if available. Returns annualized IV as decimal or None."""
+    if not current_price or current_price <= 0:
+        return None
+    try:
+        from datetime import date, timedelta
+        from lox.data.polygon import fetch_options_chain_polygon
+        expiry_lte = (date.today() + timedelta(days=60)).isoformat()
+        expiry_gte = (date.today() + timedelta(days=20)).isoformat()
+        chain = fetch_options_chain_polygon(
+            settings, symbol, expiration_date_gte=expiry_gte, expiration_date_lte=expiry_lte, limit=100
+        )
+        if not chain:
+            return None
+        # Near ATM: strike within ~5% of spot
+        ivs = []
+        for c in chain:
+            if c.iv is None:
+                continue
+            strike = c.strike
+            if strike and abs(strike - current_price) / current_price <= 0.05:
+                ivs.append(c.iv)
+        if not ivs:
+            return None
+        return float(sum(ivs) / len(ivs))
+    except Exception:
+        return None
+
+
+def _show_price_panel(
+    console: Console,
+    symbol: str,
+    price_data: dict,
+    technicals: dict,
+    implied_vol: float | None = None,
+):
+    """Display price information panel. Vol and support/resistance show method; trend is factual."""
     quote = price_data.get("quote", {})
-    
     price = quote.get("price", technicals.get("current", 0))
     change = quote.get("change", 0)
     change_pct = quote.get("changesPercentage", 0)
-    
     change_color = "green" if change >= 0 else "red"
-    
+
+    vol_30d = technicals.get("volatility_30d") or technicals.get("volatility")
+    vol_str = f"Historical Vol (30d, ann.): {vol_30d:.1f}%" if vol_30d is not None else "Historical Vol: N/A"
+    if implied_vol is not None:
+        iv_pct = implied_vol * 100
+        vol_str += f"  |  Implied Vol (ATM): {iv_pct:.1f}%"
+        if vol_30d is not None:
+            spread = iv_pct - vol_30d
+            vol_str += f"  (IV–HV: {spread:+.1f}%)"
+
+    sup = technicals.get("support")
+    res = technicals.get("resistance")
+    sup_method = technicals.get("support_method") or "N/A"
+    res_method = technicals.get("resistance_method") or "N/A"
+    support_str = f"${sup:,.2f} ({sup_method})" if sup is not None else "N/A"
+    resistance_str = f"${res:,.2f} ({res_method})" if res is not None else "N/A"
+    trend_label = technicals.get("trend_label") or technicals.get("trend", "N/A")
+
     content = f"""[bold]{symbol}[/bold]  ${price:,.2f}  [{change_color}]{change:+.2f} ({change_pct:+.2f}%)[/{change_color}]
 
 52W Range: ${technicals.get('low_52w', 0):,.2f} - ${technicals.get('high_52w', 0):,.2f}
-Support: ${technicals.get('support', 0):,.2f}  |  Resistance: ${technicals.get('resistance', 0):,.2f}
-Trend: {technicals.get('trend', 'N/A').upper()}  |  Volatility: {technicals.get('volatility', 0):.1f}% (ann.)"""
-    
+Support: {support_str}  |  Resistance: {resistance_str}
+Trend: {trend_label}  |  {vol_str}"""
     console.print(Panel(content, title="[bold]Price[/bold]", border_style="blue"))
 
 
-def _show_fundamentals(console: Console, fundamentals: dict):
+def _show_fundamentals(
+    console: Console,
+    fundamentals: dict,
+    technicals: dict | None = None,
+    price_data: dict | None = None,
+):
     """Display fundamentals table (detects ETFs vs stocks)."""
     profile = fundamentals.get("profile", {})
     etf_info = fundamentals.get("etf_info", {})
-    
+
     is_etf = profile.get("isEtf", False) or bool(etf_info)
-    
+    technicals = technicals or {}
+    price_data = price_data or {}
+
     if is_etf:
-        _show_etf_fundamentals(console, profile, etf_info)
+        _show_etf_fundamentals(console, profile, etf_info, price_data)
     else:
-        _show_stock_fundamentals(console, fundamentals)
+        _show_stock_fundamentals(console, fundamentals, technicals)
 
 
-def _show_etf_fundamentals(console: Console, profile: dict, etf_info: dict):
-    """Display ETF-specific fundamentals."""
+def _show_key_risks_summary(
+    console: Console,
+    symbol: str,
+    fundamentals: dict,
+    technicals: dict,
+):
+    """Auto-generated key risks box (red/green flags) from data — not LLM."""
+    profile = fundamentals.get("profile", {})
+    ratios = fundamentals.get("ratios", {})
+    etf_info = fundamentals.get("etf_info", {})
+    is_etf = profile.get("isEtf", False) or bool(etf_info)
+    lines = []
+
+    if not is_etf:
+        pe = ratios.get("peRatioTTM")
+        try:
+            pe_f = float(pe) if pe is not None else None
+        except (TypeError, ValueError):
+            pe_f = None
+        if pe_f is not None and pe_f < 0:
+            lines.append(("⚠️", "Negative earnings (TTM EPS < 0)", "red"))
+        pb = ratios.get("priceToBookRatioTTM")
+        try:
+            pb_f = float(pb) if pb is not None else None
+        except (TypeError, ValueError):
+            pb_f = None
+        if pb_f is not None and pb_f > 10:
+            lines.append(("⚠️", f"P/B of {pb_f:.0f}x (asset-light risk)", "red"))
+        net_margin = ratios.get("netProfitMarginTTM")
+        try:
+            nm_f = float(net_margin) if net_margin is not None else None
+        except (TypeError, ValueError):
+            nm_f = None
+        if nm_f is not None and nm_f < 0:
+            lines.append(("⚠️", "Negative net margin", "red"))
+        vol = technicals.get("volatility_30d") or technicals.get("volatility")
+        if vol is not None and vol > 50:
+            lines.append(("⚠️", f"{vol:.1f}% ann. volatility", "red"))
+        income = (fundamentals.get("income_statement") or [{}])[0]
+        income_prev = (fundamentals.get("income_statement") or [None, None])[1] if len(fundamentals.get("income_statement") or []) >= 2 else None
+        rev = income.get("revenue")
+        rev_prev = income_prev.get("revenue") if income_prev else None
+        if rev and rev_prev and float(rev_prev):
+            try:
+                growth = (float(rev) - float(rev_prev)) / float(rev_prev) * 100
+                if growth > 0:
+                    lines.append(("✅", f"Revenue growing {growth:.1f}% YoY", "green"))
+            except (TypeError, ValueError):
+                pass
+        trend_label = technicals.get("trend_label") or ""
+        if "Above all major" in (trend_label or ""):
+            lines.append(("✅", "Above all major moving averages", "green"))
+    else:
+        nav = etf_info.get("nav")
+        price = profile.get("price")
+        if nav and price:
+            try:
+                prem = (float(price) - float(nav)) / float(nav) * 100
+                if prem > 3:
+                    lines.append(("⚠️", f"NAV premium +{prem:.1f}%", "red"))
+                elif prem < -3:
+                    lines.append(("⚠️", f"NAV discount {prem:.1f}%", "yellow"))
+            except (TypeError, ValueError):
+                pass
+
+    if not lines:
+        return
+    from rich.panel import Panel
+    from rich.text import Text
+    text = Text()
+    for icon, msg, color in lines:
+        text.append(f"{icon}  {msg}\n", style=color)
+    console.print()
+    console.print(Panel(text, title="[bold]Key Risks[/bold]", border_style="dim"))
+
+
+def _fetch_peers(settings, symbol: str) -> list[str]:
+    """Fetch peer symbols from FMP (same sector, similar cap). Returns up to 5 symbols."""
+    try:
+        import requests
+        url = "https://financialmodelingprep.com/api/v4/stock_peers"
+        resp = requests.get(url, params={"symbol": symbol, "apikey": settings.fmp_api_key}, timeout=10)
+        if not resp.ok:
+            return []
+        data = resp.json()
+        if not data or not isinstance(data, list):
+            return []
+        peers = data[0].get("peersList", []) if isinstance(data[0], dict) else []
+        return [p for p in peers if p and p != symbol][:5]
+    except Exception:
+        return []
+
+
+def _show_peer_comparison(console: Console, settings, symbol: str, fundamentals: dict):
+    """Structured peer comparison table (Ticker, Price, Mkt Cap, EV/Rev, Rev Growth, Gross Margin)."""
+    peers = _fetch_peers(settings, symbol)
+    if not peers:
+        return
+    try:
+        import requests
+        symbols = [symbol] + list(peers)
+        # Batch quote
+        url = "https://financialmodelingprep.com/api/v3/quote/" + ",".join(symbols)
+        resp = requests.get(url, params={"apikey": settings.fmp_api_key}, timeout=15)
+        quotes = resp.json() if resp.ok and resp.json() else []
+        if not isinstance(quotes, list):
+            quotes = []
+        # Batch profile for mkt cap
+        url2 = "https://financialmodelingprep.com/api/v3/profile/" + ",".join(symbols)
+        resp2 = requests.get(url2, params={"apikey": settings.fmp_api_key}, timeout=15)
+        profiles = resp2.json() if resp2.ok and resp2.json() else []
+        if not isinstance(profiles, list):
+            profiles = []
+        by_sym = {p["symbol"]: p for p in profiles if isinstance(p, dict) and p.get("symbol")}
+        quote_by = {q["symbol"]: q for q in quotes if isinstance(q, dict) and q.get("symbol")}
+        # Key metrics for EV/Revenue etc (one call per symbol for simplicity)
+        rows = []
+        for sym in symbols:
+            q = quote_by.get(sym, {})
+            p = by_sym.get(sym, {})
+            price = q.get("price") or p.get("price")
+            mkt_cap = p.get("mktCap")
+            url_m = f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{sym}"
+            r = requests.get(url_m, params={"apikey": settings.fmp_api_key}, timeout=8)
+            metrics = (r.json() or [{}])[0] if r.ok and isinstance(r.json(), list) and r.json() else {}
+            url_r = f"https://financialmodelingprep.com/api/v3/ratios-ttm/{sym}"
+            r2 = requests.get(url_r, params={"apikey": settings.fmp_api_key}, timeout=8)
+            ratios = (r2.json() or [{}])[0] if r2.ok and isinstance(r2.json(), list) and r2.json() else {}
+            rev = metrics.get("revenuePerShare")
+            shares = p.get("volAvg")  # not shares; use enterpriseValue/revenue
+            ev = metrics.get("enterpriseValue")
+            rev_ttm = metrics.get("revenuePerShare")  # need total revenue for EV/Rev
+            income_url = f"https://financialmodelingprep.com/api/v3/income-statement/{sym}"
+            r3 = requests.get(income_url, params={"apikey": settings.fmp_api_key, "limit": 1}, timeout=8)
+            income_list = r3.json() if r3.ok else []
+            revenue = income_list[0].get("revenue") if income_list and isinstance(income_list[0], dict) else None
+            ev_rev = (float(ev) / float(revenue)) if ev and revenue and float(revenue) else None
+            growth_url = f"https://financialmodelingprep.com/api/v3/income-statement-growth/{sym}"
+            r4 = requests.get(growth_url, params={"apikey": settings.fmp_api_key, "limit": 1}, timeout=8)
+            growth_list = r4.json() if r4.ok else []
+            rev_growth = growth_list[0].get("revenueGrowth") if growth_list and isinstance(growth_list[0], dict) else None
+            if rev_growth is not None:
+                try:
+                    rev_growth = float(rev_growth) * 100
+                except (TypeError, ValueError):
+                    rev_growth = None
+            gross_margin = ratios.get("grossProfitMarginTTM") or metrics.get("grossProfitMarginTTM")
+            if gross_margin is not None:
+                try:
+                    gross_margin = float(gross_margin) * 100
+                except (TypeError, ValueError):
+                    gross_margin = None
+            rows.append({
+                "ticker": sym,
+                "price": price,
+                "mkt_cap": mkt_cap,
+                "ev_rev": ev_rev,
+                "rev_growth": rev_growth,
+                "gross_margin": gross_margin,
+            })
+    except Exception as e:
+        logger.debug("Peer comparison failed: %s", e)
+        return
+    if not rows:
+        return
+    table = Table(title="[bold]Peer Comparison[/bold]", box=None, padding=(0, 2))
+    table.add_column("Ticker", style="bold")
+    table.add_column("Price", justify="right")
+    table.add_column("Mkt Cap", justify="right")
+    table.add_column("EV/Rev", justify="right")
+    table.add_column("Rev Growth", justify="right")
+    table.add_column("Gross Margin", justify="right")
+    for r in rows:
+        mc = r.get("mkt_cap")
+        mc_str = f"${mc/1e9:.1f}B" if mc is not None else "N/A"
+        price = r.get("price")
+        price_str = f"${price:,.2f}" if price is not None else "N/A"
+        ev_rev = r.get("ev_rev")
+        ev_rev_str = f"{ev_rev:.1f}x" if ev_rev is not None else "N/A"
+        rg = r.get("rev_growth")
+        rg_str = f"{rg:+.1f}%" if rg is not None else "N/A"
+        gm = r.get("gross_margin")
+        gm_str = f"{gm:.1f}%" if gm is not None else "N/A"
+        table.add_row(r["ticker"], price_str, mc_str, ev_rev_str, rg_str, gm_str)
+    console.print()
+    console.print(table)
+
+
+def _show_etf_fundamentals(console: Console, profile: dict, etf_info: dict, price_data: dict):
+    """Display ETF-specific fundamentals. NAV premium highlighted; physical trust holdings fixed."""
     table = Table(title="[bold]ETF Profile[/bold]", box=None, padding=(0, 2))
     table.add_column("Metric", style="bold")
     table.add_column("Value", justify="right")
     table.add_column("Metric", style="bold")
     table.add_column("Value", justify="right")
-    
+
     def fmt(val, pct=False, billions=False, dollar=False):
         if val is None:
             return "N/A"
@@ -312,40 +658,68 @@ def _show_etf_fundamentals(console: Console, profile: dict, etf_info: dict):
             return f"{v:,.0f}"
         except Exception:
             return str(val)[:20]
-    
+
     aum = etf_info.get("aum") or profile.get("mktCap")
     expense = etf_info.get("expenseRatio")
     nav = etf_info.get("nav")
-    holdings = etf_info.get("holdingsCount")
+    holdings_raw = etf_info.get("holdingsCount")
     div_yield = profile.get("lastDiv")
-    price = profile.get("price")
+    price = profile.get("price") or (price_data.get("historical", [{}])[-1].get("close") if price_data.get("historical") else None)
+    if not price and price_data.get("quote"):
+        price = price_data["quote"].get("price")
     beta = profile.get("beta")
     inception = etf_info.get("inceptionDate") or profile.get("ipoDate")
-    asset_class = etf_info.get("assetClass", "N/A")
+    asset_class = (etf_info.get("assetClass") or "N/A").lower()
     company = etf_info.get("etfCompany", "N/A")
-    
-    # Compute yield % if we have div and price
-    yield_pct = None
-    if div_yield and price:
+    desc_lower = (etf_info.get("description") or profile.get("description") or "").lower()
+
+    # Holdings: physical commodity trusts often show 0 — show descriptive text
+    if holdings_raw == 0 or holdings_raw is None:
+        if "physical" in desc_lower or "commodity" in asset_class or "trust" in desc_lower or "precious" in desc_lower:
+            holdings_str = "Physical (trust structure)"
+        else:
+            holdings_str = "N/A"
+    else:
+        holdings_str = fmt(holdings_raw)
+
+    # NAV premium/discount — standalone highlighted line
+    nav_val = etf_info.get("nav")
+    current_price = float(price) if price is not None else None
+    prem_disc_pct = None
+    if nav_val is not None and current_price is not None:
         try:
-            yield_pct = (float(div_yield) / float(price)) * 100
-        except Exception:
+            nav_f = float(nav_val)
+            if nav_f > 0:
+                prem_disc_pct = ((current_price - nav_f) / nav_f) * 100
+        except (TypeError, ValueError):
             pass
-    
+
     table.add_row("AUM", fmt(aum, billions=True), "Expense Ratio", fmt(expense, pct=True))
-    table.add_row("NAV", fmt(nav, dollar=True), "Holdings", fmt(holdings))
-    table.add_row("Yield", fmt(yield_pct, pct=True) if yield_pct else fmt(div_yield, dollar=True), "Beta", fmt(beta))
-    table.add_row("Asset Class", str(asset_class)[:15], "Issuer", str(company)[:15])
+    table.add_row("NAV", fmt(nav, dollar=True), "Holdings", holdings_str)
+    table.add_row("Yield", fmt((float(div_yield) / float(price) * 100) if div_yield and price else None, pct=True) or fmt(div_yield, dollar=True), "Beta (vs SPY)", fmt(beta))
+    table.add_row("Asset Class", str(etf_info.get("assetClass", "N/A"))[:15], "Issuer", str(company)[:15])
     table.add_row("Inception", str(inception)[:10] if inception else "N/A", "Avg Volume", fmt(etf_info.get("avgVolume")))
-    
+
     console.print()
     console.print(table)
-    
-    # Show description if available
+
+    # NAV Premium/Discount — highlighted (green <1%, yellow 1–3%, red >3%)
+    if prem_disc_pct is not None:
+        if prem_disc_pct < 1 and prem_disc_pct > -1:
+            color = "green"
+        elif abs(prem_disc_pct) <= 3:
+            color = "yellow"
+        else:
+            color = "red"
+        label = "NAV Premium" if prem_disc_pct > 0 else "NAV Discount"
+        msg = " — trading significantly above NAV" if prem_disc_pct > 3 else ""
+        if prem_disc_pct < -3:
+            msg = " — trading significantly below NAV"
+        console.print(f"  [{color}]⚠ {label}: {prem_disc_pct:+.2f}%{msg}[/{color}]")
+        console.print()
+
     desc = etf_info.get("description") or profile.get("description")
     if desc:
-        from rich.text import Text
-        console.print()
         console.print(f"[dim]{desc[:200]}[/dim]")
 
 
@@ -609,18 +983,17 @@ def _show_refinancing_wall(console: Console, settings, symbol: str):
     )
 
 
-def _show_stock_fundamentals(console: Console, fundamentals: dict):
-    """Display stock fundamentals table."""
+def _show_stock_fundamentals(console: Console, fundamentals: dict, technicals: dict):
+    """Display stock fundamentals (CFA-aligned). Negative vs positive earnings; EV/Rev, growth, leverage, liquidity."""
     profile = fundamentals.get("profile", {})
     metrics = fundamentals.get("metrics", {})
     ratios = fundamentals.get("ratios", {})
-    
-    table = Table(title="[bold]Fundamentals[/bold]", box=None, padding=(0, 2))
-    table.add_column("Metric", style="bold")
-    table.add_column("Value", justify="right")
-    table.add_column("Metric", style="bold")
-    table.add_column("Value", justify="right")
-    
+    income = (fundamentals.get("income_statement") or [{}])[0]
+    income_prev = (fundamentals.get("income_statement") or [None, None])[1] if len(fundamentals.get("income_statement") or []) >= 2 else None
+    cash_flow = (fundamentals.get("cash_flow") or [{}])[0]
+    balance = fundamentals.get("balance_sheet") or {}
+    growth_list = fundamentals.get("income_growth") or []
+
     def fmt(val, pct=False, billions=False):
         if val is None:
             return "N/A"
@@ -633,50 +1006,132 @@ def _show_stock_fundamentals(console: Console, fundamentals: dict):
             return f"{v:.2f}"
         except Exception:
             return str(val)[:15]
-    
+
     mkt_cap = profile.get("mktCap")
     pe = ratios.get("peRatioTTM") or profile.get("pe")
-    ps = ratios.get("priceToSalesRatioTTM")
-    pb = ratios.get("priceToBookRatioTTM")
-    
-    profit_margin = ratios.get("netProfitMarginTTM")
+    try:
+        pe_f = float(pe) if pe is not None else None
+    except (TypeError, ValueError):
+        pe_f = None
+    negative_earnings = pe_f is not None and pe_f < 0
+
+    # Enterprise value (EV = mktCap + totalDebt - cash)
+    total_debt = balance.get("totalDebt")
+    cash = balance.get("cashAndCashEquivalents")
+    ev = metrics.get("enterpriseValue")
+    if ev is None and mkt_cap is not None:
+        try:
+            ev = float(mkt_cap) + float(total_debt or 0) - float(cash or 0)
+        except (TypeError, ValueError):
+            ev = None
+
+    revenue = income.get("revenue")
+    gross_profit = income.get("grossProfit")
+    gross_margin = (float(gross_profit) / float(revenue) * 100) if revenue and gross_profit and float(revenue) else None
+    revenue_prev = income_prev.get("revenue") if income_prev else None
+    revenue_growth_yoy = None
+    if revenue and revenue_prev and float(revenue_prev):
+        try:
+            revenue_growth_yoy = (float(revenue) - float(revenue_prev)) / float(revenue_prev) * 100
+        except (TypeError, ValueError):
+            pass
+    if revenue_growth_yoy is None and growth_list:
+        g = growth_list[0]
+        revenue_growth_yoy = g.get("revenueGrowth")  # may be decimal
+        if revenue_growth_yoy is not None:
+            try:
+                revenue_growth_yoy = float(revenue_growth_yoy) * 100
+            except (TypeError, ValueError):
+                pass
+
+    ebitda = income.get("ebitda")
+    fcf = cash_flow.get("freeCashFlow")
+    debt_equity = ratios.get("debtEquityRatio") or metrics.get("debtEquityRatio")
+    interest_coverage = ratios.get("interestCoverage") or metrics.get("interestCoverage")
+    current_ratio = ratios.get("currentRatio") or metrics.get("currentRatio") or balance.get("totalCurrentAssets") and balance.get("totalCurrentLiabilities") and (float(balance["totalCurrentAssets"]) / float(balance["totalCurrentLiabilities"]) if balance.get("totalCurrentLiabilities") else None)
+    net_margin = ratios.get("netProfitMarginTTM")
     roe = ratios.get("returnOnEquityTTM")
     roa = ratios.get("returnOnAssetsTTM")
-    
-    table.add_row("Market Cap", fmt(mkt_cap, billions=True), "P/E Ratio", fmt(pe))
-    table.add_row("P/S Ratio", fmt(ps), "P/B Ratio", fmt(pb))
-    table.add_row("Profit Margin", fmt(profit_margin, pct=True), "ROE", fmt(roe, pct=True))
-    table.add_row("ROA", fmt(roa, pct=True), "Sector", profile.get("sector", "N/A")[:15])
-    
+    ps = ratios.get("priceToSalesRatioTTM")
+    pb = ratios.get("priceToBookRatioTTM")
+
+    # 52-week percentile
+    current = technicals.get("current")
+    high_52w = technicals.get("high_52w")
+    low_52w = technicals.get("low_52w")
+    pct_52w = None
+    if current is not None and high_52w is not None and low_52w is not None and high_52w > low_52w:
+        try:
+            pct_52w = (float(current) - float(low_52w)) / (float(high_52w) - float(low_52w)) * 100
+        except (TypeError, ValueError):
+            pass
+
+    ev_rev = (float(ev) / float(revenue)) if ev and revenue and float(revenue) else None
+    ev_ebitda = (float(ev) / float(ebitda)) if ev and ebitda and float(ebitda) else None
+    fcf_yield = (float(fcf) / float(mkt_cap) * 100) if fcf and mkt_cap and float(mkt_cap) else None
+
+    table = Table(title="[bold]Fundamentals[/bold]", box=None, padding=(0, 2))
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+
+    # P/E: N/M for negative earnings
+    pe_display = "N/M (negative earnings)" if negative_earnings else fmt(pe)
+    table.add_row("Market Cap", fmt(mkt_cap, billions=True), "P/E", pe_display)
+
+    if negative_earnings:
+        table.add_row("EV/Revenue", fmt(ev_rev) if ev_rev else "N/A", "EV/EBITDA", fmt(ev_ebitda) if ev_ebitda else "N/A")
+        table.add_row("Revenue Growth (YoY)", fmt(revenue_growth_yoy, pct=True) if revenue_growth_yoy is not None else "N/A", "Gross Margin", fmt(gross_margin, pct=True) if gross_margin is not None else "N/A")
+        table.add_row("FCF", fmt(fcf, billions=True) if fcf else "N/A", "FCF Yield", fmt(fcf_yield, pct=True) if fcf_yield else "N/A")
+        table.add_row("Debt/Equity", fmt(debt_equity), "Interest Coverage", fmt(interest_coverage))
+        table.add_row("Cash & Equiv.", fmt(cash, billions=True) if cash else "N/A", "Current Ratio", fmt(current_ratio))
+    else:
+        table.add_row("Forward P/E", fmt(profile.get("forwardPE") or ratios.get("forwardPeRatio")), "P/S", fmt(ps))
+        table.add_row("P/B", fmt(pb), "PEG Ratio", fmt(ratios.get("pegRatio") or metrics.get("pegRatio")))
+        table.add_row("EV/Revenue", fmt(ev_rev) if ev_rev else "N/A", "EV/EBITDA", fmt(ev_ebitda) if ev_ebitda else "N/A")
+        table.add_row("Revenue Growth (YoY)", fmt(revenue_growth_yoy, pct=True) if revenue_growth_yoy is not None else "N/A", "Gross Margin", fmt(gross_margin, pct=True) if gross_margin is not None else "N/A")
+        table.add_row("FCF", fmt(fcf, billions=True) if fcf else "N/A", "FCF Yield", fmt(fcf_yield, pct=True) if fcf_yield else "N/A")
+        table.add_row("Debt/Equity", fmt(debt_equity), "Interest Coverage", fmt(interest_coverage))
+        table.add_row("Cash & Equiv.", fmt(cash, billions=True) if cash else "N/A", "Current Ratio", fmt(current_ratio))
+
+    table.add_row("Net Margin", fmt(net_margin, pct=True), "ROE", fmt(roe, pct=True))
+    table.add_row("ROA", fmt(roa, pct=True), "Sector", (profile.get("sector") or "N/A")[:15])
+    table.add_row("Beta (vs SPY)", fmt(profile.get("beta")), "52W Percentile", f"{pct_52w:.0f}%" if pct_52w is not None else "N/A")
+
     console.print()
     console.print(table)
 
 
 def _show_technicals(console: Console, technicals: dict):
-    """Display technicals table."""
+    """Display technicals table with volume context, 50/200 crossover, MACD."""
     table = Table(title="[bold]Technical Levels[/bold]", box=None, padding=(0, 2))
     table.add_column("Indicator", style="bold")
     table.add_column("Value", justify="right")
     table.add_column("Signal")
-    
+
     current = technicals.get("current", 0)
-    
-    # Moving averages
     ma_20 = technicals.get("ma_20")
     ma_50 = technicals.get("ma_50")
     ma_200 = technicals.get("ma_200")
-    
+
     def ma_signal(ma):
         if not ma or not current:
             return "[dim]N/A[/dim]"
         if current > ma:
             return "[green]Above[/green]"
         return "[red]Below[/red]"
-    
+
     table.add_row("20-Day MA", f"${ma_20:,.2f}" if ma_20 else "N/A", ma_signal(ma_20))
     table.add_row("50-Day MA", f"${ma_50:,.2f}" if ma_50 else "N/A", ma_signal(ma_50))
     table.add_row("200-Day MA", f"${ma_200:,.2f}" if ma_200 else "N/A", ma_signal(ma_200))
-    
+
+    # 50/200 SMA crossover
+    crossover = technicals.get("sma_crossover")
+    if crossover:
+        is_golden = "Golden" in crossover
+        table.add_row("50/200 SMA", crossover, "[green]Bullish[/green]" if is_golden else "[red]Bearish[/red]")
+
     # RSI
     rsi = technicals.get("rsi")
     rsi_signal = "[dim]N/A[/dim]"
@@ -687,9 +1142,21 @@ def _show_technicals(console: Console, technicals: dict):
             rsi_signal = "[green]Oversold[/green]"
         else:
             rsi_signal = "[yellow]Neutral[/yellow]"
-    
     table.add_row("RSI (14)", f"{rsi:.1f}" if rsi else "N/A", rsi_signal)
-    
+
+    # MACD
+    macd = technicals.get("macd_signal")
+    if macd:
+        table.add_row("MACD (12,26,9)", macd.split("(")[0].strip(), "[green]Bullish[/green]" if "Bullish" in macd else "[red]Bearish[/red]")
+
+    # Volume context
+    avg_vol = technicals.get("avg_volume")
+    vol_vs_avg = technicals.get("vol_vs_avg")
+    if avg_vol is not None:
+        avg_str = f"{avg_vol/1e6:.1f}M" if avg_vol >= 1e6 else f"{avg_vol/1e3:.0f}K"
+        vs_str = f"{vol_vs_avg:.2f}x" if vol_vs_avg is not None else "N/A"
+        table.add_row("Avg Volume", avg_str, f"Today vs Avg: {vs_str}")
+
     console.print()
     console.print(table)
 
@@ -1175,6 +1642,21 @@ def _show_llm_analysis(console: Console, settings, symbol: str, price_data: dict
                 refi_wall = _compute_refinancing_wall(settings, symbol)
                 if refi_wall:
                     snapshot["refinancing_wall"] = refi_wall
+            
+            # ----- Quantitative scenario pre-computation -----
+            try:
+                from lox.llm.scenarios.quant_scenarios import compute_quant_scenarios
+                from lox.regimes.features import build_unified_regime_state
+
+                regime_state = build_unified_regime_state(settings=settings)
+                quant = compute_quant_scenarios(
+                    historical_prices=price_data.get("historical", []),
+                    regime_state=regime_state,
+                    current_price=technicals.get("current"),
+                )
+                snapshot["quant_scenarios"] = quant
+            except Exception as exc:
+                logger.debug("Quant scenarios unavailable: %s", exc)
             
             analysis = llm_analyze_regime(
                 settings=settings,
