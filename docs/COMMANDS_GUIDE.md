@@ -43,13 +43,19 @@ Use `lox nav investor contribute` for real investor cash moves so both ledgers s
 - **`lox chat`**: start interactive chat with portfolio context loaded.
 - **`lox chat -c fiscal`**: chat with US fiscal regime data (deficits, issuance, TGA).
 - **`lox chat -c funding`**: chat with funding/liquidity context (SOFR, repo, reserves).
-- **`lox chat -c macro`**: chat with macro regime context (inflation, growth).
+- **`lox chat -c macro`**: chat with macro regime context (growth + inflation quadrant).
 - **`lox chat -c regimes`**: chat with all regime classifications loaded.
 - **Ticker deep-dive**: ask about specific tickers (e.g., "tell me about FXI") for automatic snapshot, news, and analysis.
 
-### 9) Unified Regime Analysis (NEW)
-- **`lox labs unified`**: view all 10 regime domains with scores and Monte Carlo adjustments.
-- **`lox labs unified --json`**: export flat ML feature vector for model training.
+### 9) Unified Regime Analysis
+- **`lox regime unified`**: view all 12 regime domains with scores, macro quadrant, Monte Carlo adjustments, regime changes, and portfolio implication.
+- **`lox regime unified --json`**: export flat ML feature vector for model training.
+- **`lox regime growth`**: Growth regime (payrolls, ISM, claims, industrial production).
+- **`lox regime inflation`**: Inflation regime (CPI, Core PCE, breakevens, PPI).
+- **`lox regime credit`**: Credit regime (HY OAS, BBB/AAA spreads).
+- **`lox regime consumer`**: Consumer regime (Michigan Sentiment, retail sales, mortgage rates).
+- **`lox regime positioning`**: Positioning regime (VIX term structure, put/call, AAII).
+- **`lox regime macro`**: Alias — shows Growth + Inflation + derived macro quadrant.
 - **`lox labs transitions`**: regime transition probabilities adjusted for leading indicators.
 - **`lox labs transitions --no-adjust`**: raw historical transition frequencies.
 - **`lox labs transitions --horizon 126`**: 6-month forecast horizon.

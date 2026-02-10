@@ -24,7 +24,7 @@ The sleeve output is standardized as `CandidateTrade` records so sleeves can be 
 
 1) **Resolve sleeves**
    - Parse `--sleeves` and load `SleeveConfig` objects from a registry.
-   - If `--sleeves` is omitted, default to `["macro"]` for backward compatibility.
+   - If `--sleeves` is omitted, default to `["macro"]` for backward compatibility (macro sleeve uses the unified 12-regime feature matrix covering Growth, Inflation, Volatility, Credit, Rates, Funding, Consumer, Fiscal, Positioning, Monetary, USD, and Commodities).
 
 2) **Build shared inputs once**
    - Build the shared regime matrix: `build_regime_feature_matrix(...)`

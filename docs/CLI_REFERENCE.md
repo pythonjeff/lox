@@ -15,12 +15,21 @@ lox                           # Help with examples
 |
 +-- [2] Macro & Regimes
 |   +-- dashboard             # All regimes at a glance
-|   +-- regime                # Economic regime analysis
+|   +-- regime                # Economic regime analysis (12 domains)
+|       +-- growth            # Growth (payrolls, ISM, claims)
+|       +-- inflation         # Inflation (CPI, PCE, breakevens)
 |       +-- vol               # Volatility (VIX)
-|       +-- fiscal            # Fiscal (deficits, TGA)
-|       +-- funding           # Funding markets (SOFR)
+|       +-- credit            # Credit spreads (HY OAS, BBB, AAA)
 |       +-- rates             # Yield curve
-|       +-- macro             # Macro overview
+|       +-- funding           # Funding markets (SOFR)
+|       +-- consumer          # Consumer (sentiment, spending, mortgage)
+|       +-- fiscal            # Fiscal (deficits, TGA)
+|       +-- positioning       # Positioning (VIX term, P/C, AAII)
+|       +-- monetary          # Monetary policy (reserves, RRP)
+|       +-- usd               # USD (DXY)
+|       +-- commodities       # Commodities (oil, gold, copper)
+|       +-- macro             # Alias: Growth + Inflation + quadrant
+|       +-- unified           # All 12 regimes + MC adjustments
 |
 +-- [3] Portfolio Analysis
 |   +-- scenario              # Portfolio scenarios
@@ -79,12 +88,28 @@ lox                           # Help with examples
 ## Regime Commands
 
 ```bash
-lox regime vol                    # Volatility regime
-lox regime vol --llm              # With LLM analysis
-lox regime fiscal                 # Fiscal (deficits, TGA)
-lox regime funding                # Funding markets (SOFR)
+# Core regimes (drive Monte Carlo adjustments)
+lox regime growth                 # Growth (payrolls, ISM, claims, industrial production)
+lox regime inflation              # Inflation (CPI, Core PCE, breakevens, PPI)
+lox regime vol                    # Volatility (VIX, term structure)
+lox regime credit                 # Credit spreads (HY OAS, BBB, AAA)
 lox regime rates                  # Rates/yield curve
-lox regime macro                  # Macro overview
+lox regime funding                # Funding markets (SOFR, repo)
+
+# Extended regimes (context)
+lox regime consumer               # Consumer (sentiment, spending, mortgage rates)
+lox regime fiscal                 # Fiscal (deficits, TGA)
+lox regime positioning            # Positioning (VIX term slope, put/call, AAII)
+lox regime monetary               # Monetary policy (reserves, RRP)
+lox regime usd                    # USD (DXY)
+lox regime commodities            # Commodities (oil, gold, copper)
+
+# Aliases and unified views
+lox regime macro                  # Alias: shows Growth + Inflation + macro quadrant
+lox regime unified                # All 12 regimes + MC adjustments + regime changes
+
+# Add --llm to any command for LLM analysis
+lox regime vol --llm
 ```
 
 ---
@@ -123,7 +148,7 @@ lox scenario stress               # Stress testing
 ```bash
 lox labs ticker deep -t AAPL --llm    # Full ticker deep dive
 lox labs mc-v01 --regime RISK_OFF     # Specific regime scenario
-lox labs unified                       # All 10 regimes
+lox labs unified                       # All 12 regimes
 lox labs transitions                   # Transition matrix with signal adjustments
 lox labs train-correlations            # Train Monte Carlo correlations on real data
 ```

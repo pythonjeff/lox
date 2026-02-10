@@ -2,6 +2,46 @@
 
 ---
 
+## v4 — Regime Restructuring (2026-02-10)
+
+### 12-Domain Regime System (up from 10)
+- **Split** Macro regime into **Growth** (payrolls, ISM, claims, industrial production) and **Inflation** (CPI, Core PCE, breakevens, PPI)
+- **New: Credit** regime — HY OAS levels, 30d change, BBB/AAA spreads, HY-IG spread
+- **New: Consumer** regime — Michigan Sentiment/Expectations, retail sales, personal spending, mortgage rates (absorbs old Housing regime)
+- **New: Positioning** regime — VIX term structure slope, put/call ratio, AAII sentiment
+- **Deleted** Crypto regime (persistent data unavailability)
+- **Deleted** Housing regime (metrics absorbed into Consumer)
+
+### Macro Quadrant Derivation
+- Growth + Inflation scores now produce a derived quadrant: Stagflation, Goldilocks, Reflation, Deflation Risk, or Mixed
+- Displayed in the `lox regime unified` header
+
+### Enhanced Unified Output
+- Traffic light emojis (🔴 🟡 🟢) based on regime score
+- "Key Inputs" column showing actual data values instead of prose descriptions
+- Regime Changes (30d) section tracking historical transitions
+- Monte Carlo Adjustments table with Base, Adjusted values, and driving regimes
+- LLM-generated one-sentence portfolio implication
+- Score guide legend
+
+### New CLI Commands
+- `lox regime growth` — Growth regime snapshot
+- `lox regime inflation` — Inflation regime snapshot
+- `lox regime credit` — Credit/spreads regime snapshot
+- `lox regime consumer` — Consumer health regime snapshot
+- `lox regime positioning` — Market positioning regime snapshot
+- `lox regime macro` kept as alias showing Growth + Inflation + quadrant
+
+### New Data Sources
+- Trading Economics API client (`lox/altdata/trading_economics.py`) for consumer/macro indicators
+- FRED series additions: PCEPILFE, PPIFIS, INDPRO, PCETRIM12M159SFRBDAL, BAMLC0A4CBBB, BAMLC0A1CAAA, UMCSENT, RSXFS, TOTALSL
+- Regime history persistence (`~/.lox/regime_history.json`) for change detection
+
+### Updated Weights
+- New 12-regime weighted overall score: Growth (15%), Inflation (10%), Volatility (15%), Credit (15%), Rates (10%), Funding (5%), Consumer (10%), Fiscal (5%), Positioning (4%), Monetary (5%), USD (3%), Commodities (3%)
+
+---
+
 ## v3 — Architecture Consolidation (2026-01-25)
 
 ### 5-Pillar CLI Architecture
@@ -35,7 +75,7 @@
 ## v2 — Regime System (2026-01-25)
 
 ### Unified Regime Framework
-- 10 Regime Domains: Macro, Volatility, Rates, Funding, Fiscal, Commodities, Housing, Monetary, USD, Crypto
+- 12 Regime Domains: Growth, Inflation, Volatility, Credit, Rates, Funding, Consumer, Fiscal, Positioning, Monetary, USD, Commodities
 - Unified State Builder: Single `lox labs unified` command shows all regimes with scores
 - ML Feature Extraction: Export flat feature vectors with `--json` for model training
 - Standardized Interface: All regimes return consistent `RegimeResult` with name, label, score, tags
@@ -63,7 +103,7 @@
 
 ### Market Intelligence
 - Regime Trackers: Visual range bars for VIX, HY Spread, 10Y Yield with smart thresholds
-- Regime Domain Grid: Six macro domains (Funding, USD, Commodities, Volatility, Housing, Crypto)
+- Regime Domain Grid: Core + extended domains (Growth, Inflation, Volatility, Credit, Rates, Funding, Consumer, Fiscal, Positioning, Monetary, USD, Commodities)
 - Palmer AI Analysis: LLM-generated macro context with portfolio impact assessment
 - Traffic Light System: Real-time RISK-ON / CAUTIOUS / RISK-OFF classification
 
