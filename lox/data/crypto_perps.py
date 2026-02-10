@@ -181,6 +181,9 @@ class CryptoPerpsData:
 
                 latest_short = df_short.iloc[-1]
                 latest_long = df_long.iloc[-1]
+                # Use second-to-last candle for volume comparison —
+                # the last candle is still in progress (partial volume).
+                prev_long = df_long.iloc[-2] if len(df_long) >= 2 else latest_long
 
                 return {
                     "coin": coin,
@@ -215,8 +218,8 @@ class CryptoPerpsData:
                             "ema_20": float(latest_long["ema_20"]),
                             "ema_50": float(latest_long["ema_50"]),
                             "atr_14": float(latest_long["atr_14"]),
-                            "volume": float(latest_long["volume"]),
-                            "volume_ma": float(latest_long["volume_ma"]),
+                            "volume": float(prev_long["volume"]),
+                            "volume_ma": float(prev_long["volume_ma"]),
                         },
                     },
                 }
@@ -297,9 +300,9 @@ class CryptoPerpsData:
             "",
             f"Long TF ({snap['long_tf']['timeframe']}): EMA20={lt['ema_20']:.{pd_}f} vs EMA50={lt['ema_50']:.{pd_}f}",
             f"  ATR(14): {lt['atr_14']:.{pd_}f}  |  RSI(14): {lt['rsi_14']:.1f}",
-            f"  Volume: {lt['volume']:.0f} vs MA: {lt['volume_ma']:.0f}",
-            f"  MACD(10): {fmt_arr(df_long.tail(10)['macd'], 3)}",
-            f"  RSI14(10): {fmt_arr(df_long.tail(10)['rsi_14'], 1)}",
+            f"  Volume (last closed): {lt['volume']:.0f} vs MA: {lt['volume_ma']:.0f}",
+            f"  MACD(10): {fmt_arr(df_long.tail(11).head(10)['macd'], 3)}",
+            f"  RSI14(10): {fmt_arr(df_long.tail(11).head(10)['rsi_14'], 1)}",
         ]
         return "\n".join(lines)
 
