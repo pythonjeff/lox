@@ -458,13 +458,19 @@ def extract_leading_indicators(unified_state) -> LeadingIndicatorSignals:
         if hasattr(unified_state.funding, 'metrics'):
             signals.funding_spread_bps = unified_state.funding.metrics.get('sofr_effr_spread_bps')
     
-    # Macro regime - credit spreads (often embedded in macro state)
-    if unified_state.macro:
-        if hasattr(unified_state.macro, 'metrics'):
-            hy_z = unified_state.macro.metrics.get('z_hy_oas')
-            if hy_z and hy_z > 1.0:
-                signals.credit_spreads_widening = True
-                signals.hy_oas_zscore = hy_z
+    # Credit regime - credit spreads widening signal
+    if hasattr(unified_state, 'credit') and unified_state.credit:
+        if unified_state.credit.score > 55:
+            signals.credit_spreads_widening = True
+            # Use HY OAS from credit metrics if available
+            if hasattr(unified_state.credit, 'metrics'):
+                hy_oas = unified_state.credit.metrics.get('hy_oas')
+                if hy_oas and hy_oas > 400:
+                    signals.hy_oas_zscore = (hy_oas - 350) / 100  # rough z-score proxy
+    # Fallback: check growth regime for macro-level stress
+    elif hasattr(unified_state, 'growth') and unified_state.growth:
+        if unified_state.growth.score > 65:
+            signals.credit_spreads_widening = True
     
     return signals
 

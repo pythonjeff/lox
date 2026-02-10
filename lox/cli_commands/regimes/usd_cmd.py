@@ -4,6 +4,7 @@ import typer
 from rich import print
 from rich.panel import Panel
 
+from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 
 
@@ -27,9 +28,11 @@ def run_usd_snapshot(
     )
     from lox.usd.signals import build_usd_state
     from lox.usd.features import usd_feature_vector
+    from lox.usd.regime import classify_usd_regime_from_state
 
     settings = load_settings()
     state = build_usd_state(settings=settings, start_date=start, refresh=refresh)
+    regime = classify_usd_regime_from_state(state)
 
     # Build snapshot data
     snapshot_data = {
@@ -86,8 +89,26 @@ def run_usd_snapshot(
         show_delta_summary("usd", f"USD Score: {state.inputs.usd_strength_score:.2f}", prev_regime, metrics_for_delta, delta_days)
         return
 
-    # Standard output
-    print(state)
+    # Uniform regime panel
+    inp = state.inputs
+    def _v(x, fmt="{:.2f}"):
+        return fmt.format(x) if x is not None and isinstance(x, (int, float)) else "n/a"
+    metrics = [
+        {"name": "Broad USD index", "value": _v(inp.usd_index_broad), "context": "level"},
+        {"name": "20d chg", "value": _v(inp.usd_chg_20d_pct, "{:+.1f}%"), "context": "momentum"},
+        {"name": "60d chg", "value": _v(inp.usd_chg_60d_pct, "{:+.1f}%"), "context": "momentum"},
+        {"name": "Z level", "value": _v(inp.z_usd_level, "{:+.2f}"), "context": "vs history"},
+        {"name": "Strength score", "value": _v(inp.usd_strength_score, "{:+.2f}"), "context": "composite"},
+    ]
+    print(render_regime_panel(
+        domain="USD",
+        asof=state.asof,
+        regime_label=regime.label,
+        score=regime.score,
+        percentile=None,
+        description=regime.description,
+        metrics=metrics,
+    ))
 
     if llm:
         from lox.llm.core.analyst import llm_analyze_regime

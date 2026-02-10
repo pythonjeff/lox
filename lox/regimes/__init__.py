@@ -3,6 +3,10 @@ Unified regime classification module.
 
 Provides consistent interface for all regime types and ML feature extraction.
 
+12 regimes (Feb 2026):
+  Core (MC inputs): Growth, Inflation, Volatility, Credit, Rates, Funding
+  Extended (context): Consumer, Fiscal, Positioning, Monetary, USD, Commodities
+
 Usage:
     # Get unified regime state
     from lox.regimes import build_unified_regime_state
@@ -32,6 +36,10 @@ from lox.regimes.features import (
     UnifiedRegimeState,
     build_unified_regime_state,
     extract_ml_features,
+    REGIME_WEIGHTS,
+    CORE_DOMAINS,
+    EXTENDED_DOMAINS,
+    ALL_DOMAINS,
 )
 
 from lox.regimes.transitions import (
@@ -62,6 +70,10 @@ __all__ = [
     "UnifiedRegimeState",
     "build_unified_regime_state",
     "extract_ml_features",
+    "REGIME_WEIGHTS",
+    "CORE_DOMAINS",
+    "EXTENDED_DOMAINS",
+    "ALL_DOMAINS",
     # Transitions
     "TransitionMatrix",
     "get_transition_matrix",

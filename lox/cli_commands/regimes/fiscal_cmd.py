@@ -6,6 +6,8 @@ from rich.panel import Panel
 
 from lox.config import load_settings
 from lox.fiscal.regime import classify_fiscal_regime, classify_fiscal_regime_skeleton
+from lox.fiscal.mc_calibration import calibrate_fiscal_mc
+from lox.fiscal.scoring import score_fiscal_regime
 from lox.fiscal.signals import build_fiscal_deficit_page_data, build_fiscal_state
 from lox.utils.formatting import fmt_usd_from_millions
 
@@ -145,6 +147,7 @@ def _run_fiscal_snapshot(
 ):
     """Shared implementation for fiscal snapshot."""
     from rich.console import Console
+    from lox.cli_commands.shared.regime_display import render_regime_panel
     from lox.cli_commands.shared.labs_utils import (
         handle_output_flags, parse_delta_period, show_delta_summary,
         show_alert_output, show_calendar_output, show_trades_output,
@@ -333,39 +336,62 @@ def _run_fiscal_snapshot(
             console.print(f"\n[dim]No cached data from {delta_days}d ago. Run `lox labs fiscal` daily to build history.[/dim]")
         return
 
-    body = "\n".join(
-        [
-            f"As of: [bold]{d['asof']}[/bold]",
-            f"Rolling 12m deficit: [bold]{disp}[/bold]  (positive = larger deficit)",
-            f"Rolling 12m deficit ~30d ago: [bold]{d30_val}[/bold]  (as of {d30_asof or 'n/a'})",
-            f"Rolling 12m deficit 1y ago: [bold]{d1y_val}[/bold]  (as of {d1y_asof or 'n/a'})",
-            f"Δ rolling 12m deficit (YoY): [bold]{d_yoy}[/bold]",
-            f"Deficit level (% GDP): [bold]{deficit_pct_gdp_disp}[/bold]  [dim]({_deficit_level_ctx(float(deficit_pct_gdp)) if isinstance(deficit_pct_gdp, (int, float)) else 'n/a'})[/dim]",
-            f"Deficit impulse (% GDP): [bold]{impulse_disp}[/bold]  (GDP as of {gdp_asof or 'n/a'})",
-            f"[dim]Context: {_deficit_impulse_ctx(float(impulse)) if isinstance(impulse, (int, float)) else 'n/a'}[/dim]",
-            "Net issuance (true, Δ outstanding; MSPD):",
-            f"  Bills: [bold]{bills}[/bold]",
-            f"  Coupons: [bold]{coupons}[/bold]",
-            f"  Long: [bold]{long}[/bold]",
-            f"  Long-duration share: [bold]{long_share_disp}[/bold]",
-            f"  [dim]Context: {_duration_share_ctx(float(long_share)) if isinstance(long_share, (int, float)) else 'n/a'} | Total net: {net_total_disp}[/dim]",
-            "TGA behavior (WTREGEN):",
-            f"  Level: [bold]{tga_level}[/bold]  (as of {tga_asof or 'n/a'})  [dim](z-level={tga_z_level_disp}; {_tga_level_ctx(float(tga_z_level)) if isinstance(tga_z_level, (int, float)) else 'n/a'})[/dim]",
-            f"  Δ 4-week: [bold]{tga_d_4w}[/bold]",
-            f"  Δ 13-week: [bold]{tga_d_13w}[/bold]",
-            f"  Z(Δ 4-week): [bold]{tga_z_disp}[/bold]",
-            f"  Interpretation: [bold]{tga_interp}[/bold]  [dim]({_tga_z_ctx(float(tga_z)) if isinstance(tga_z, (int, float)) else 'n/a'})[/dim]",
-            "Auction absorption (Treasury auctions):",
-            f"  Tail (proxy): [bold]{tail_disp}[/bold]  (as of {auction_asof or 'n/a'})  [dim]({_auction_tail_ctx(float(tail_bps)) if isinstance(tail_bps, (int, float)) else 'n/a'})[/dim]",
-            f"  Dealer take: [bold]{dealer_disp}[/bold]  [dim]({_dealer_take_ctx(float(dealer_take)) if isinstance(dealer_take, (int, float)) else 'n/a'})[/dim]",
-            f"Regime: [bold]{regime.label or regime.name}[/bold]",
-            f"Answer: {regime.description}",
-            f"History loaded: {d.get('lookback_years', lookback_years)}y",
-            f"Series (FRED): [dim]{fred_disp}[/dim]",
-            f"Series (FiscalData): [dim]{fiscaldata_disp}[/dim]",
+    # ── FPI scoring engine (Phase 2 upgrade) ──────────────────────────────
+    # Build full FiscalInputs via the state path so FPI has z-scores.
+    mc_impact = None
+    try:
+        fiscal_state = build_fiscal_state(settings=settings, start_date="2011-01-01", refresh=refresh)
+        scorecard = score_fiscal_regime(fiscal_state.inputs)
+        fpi_score = scorecard.fpi
+        fpi_label = scorecard.regime_label
+        fpi_desc = scorecard.regime_description
+
+        # Sub-score breakdown for the panel
+        sub_scores = [
+            {
+                "name": s.name,
+                "score": round(s.score, 1),
+                "weight": f"{s.weight*100:.0f}%",
+            }
+            for s in scorecard.sub_scores
         ]
-    )
-    print(Panel.fit(body, title="US Fiscal", border_style="cyan"))
+
+        # Calibrated MC impact
+        mc_params = calibrate_fiscal_mc(scorecard)
+        mc_impact = mc_params.description
+    except Exception:
+        # Graceful fallback to skeleton regime if scorer fails
+        fpi_score = 80 if "dominance" in regime.name else (60 if "stress" in regime.name else 40)
+        fpi_label = regime.label or regime.name
+        fpi_desc = regime.description
+        sub_scores = None
+        mc_impact = None
+
+    metrics = [
+        {"name": "Deficit 12m", "value": disp, "context": "rolling 12m"},
+        {"name": "Deficit (% GDP)", "value": deficit_pct_gdp_disp, "context": _deficit_level_ctx(float(deficit_pct_gdp)) if isinstance(deficit_pct_gdp, (int, float)) else "n/a"},
+        {"name": "Deficit impulse", "value": impulse_disp, "context": _deficit_impulse_ctx(float(impulse)) if isinstance(impulse, (int, float)) else "n/a"},
+        {"name": "Long issuance share", "value": long_share_disp, "context": _duration_share_ctx(float(long_share)) if isinstance(long_share, (int, float)) else "n/a"},
+        {"name": "TGA level", "value": tga_level, "context": f"z={tga_z_level_disp}" if isinstance(tga_z_level, (int, float)) else "n/a"},
+        {"name": "TGA (4w z-score)", "value": tga_z_disp, "context": _tga_z_ctx(float(tga_z)) if isinstance(tga_z, (int, float)) else "n/a"},
+        {"name": "Auction tail", "value": tail_disp, "context": _auction_tail_ctx(float(tail_bps)) if isinstance(tail_bps, (int, float)) else "n/a"},
+        {"name": "Dealer take", "value": dealer_disp, "context": _dealer_take_ctx(float(dealer_take)) if isinstance(dealer_take, (int, float)) else "n/a"},
+    ]
+    # Append MC impact to description if available
+    full_desc = fpi_desc
+    if mc_impact:
+        full_desc = f"{fpi_desc}\n[dim]MC impact: {mc_impact}[/dim]"
+
+    print(render_regime_panel(
+        domain="Fiscal",
+        asof=d.get("asof", ""),
+        regime_label=fpi_label,
+        score=fpi_score,
+        percentile=None,
+        description=full_desc,
+        metrics=metrics,
+        sub_scores=sub_scores,
+    ))
 
     if llm:
         from lox.llm.core.analyst import llm_analyze_regime
@@ -402,6 +428,11 @@ def _run_fiscal_snapshot(
 # ─────────────────────────────────────────────────────────────────────────────
 # CLI Registration
 # ─────────────────────────────────────────────────────────────────────────────
+
+def fiscal_snapshot(**kwargs) -> None:
+    """Entry point for `lox regime fiscal` (no subcommand)."""
+    _run_fiscal_snapshot(**kwargs)
+
 
 def register(fiscal_app: typer.Typer) -> None:
     @fiscal_app.callback(invoke_without_command=True)

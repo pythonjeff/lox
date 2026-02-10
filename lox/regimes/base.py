@@ -84,16 +84,18 @@ class RegimeResult:
 # =============================================================================
 
 REGIME_DOMAINS = [
-    "macro",
-    "volatility", 
+    "growth",
+    "inflation",
+    "volatility",
+    "credit",
     "rates",
     "funding",
+    "consumer",
     "fiscal",
-    "commodities",
-    "housing",
+    "positioning",
     "monetary",
     "usd",
-    "crypto",
+    "commodities",
 ]
 
 # Standard regime categories for cross-domain comparison

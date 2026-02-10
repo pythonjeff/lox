@@ -327,6 +327,7 @@ regime_app = typer.Typer(add_completion=False, help="Regime analysis")
 app.add_typer(regime_app, name="regime")
 
 
+# ── Keep regimes ──────────────────────────────────────────────────────────
 @regime_app.command("vol")
 def regime_vol(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
     """Volatility regime."""
@@ -355,11 +356,106 @@ def regime_rates():
     rates_snapshot()
 
 
+@regime_app.command("commodities")
+def regime_commodities(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+    """Commodities regime."""
+    from lox.cli_commands.regimes.commodities_cmd import _run_commodities_snapshot
+    _run_commodities_snapshot(llm=llm)
+
+
+@regime_app.command("monetary")
+def regime_monetary(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+    """Monetary regime."""
+    from lox.cli_commands.regimes.monetary_cmd import _run_monetary_snapshot
+    _run_monetary_snapshot(llm=llm)
+
+
+@regime_app.command("usd")
+def regime_usd(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+    """USD regime."""
+    from lox.cli_commands.regimes.usd_cmd import run_usd_snapshot
+    run_usd_snapshot(llm=llm)
+
+
+# ── NEW regimes (Feb 2026 restructure) ───────────────────────────────────
+@regime_app.command("growth")
+def regime_growth(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+    """Growth regime (split from macro)."""
+    from lox.cli_commands.regimes.growth_cmd import growth_snapshot
+    growth_snapshot(llm=llm)
+
+
+@regime_app.command("inflation")
+def regime_inflation(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+    """Inflation regime (split from macro)."""
+    from lox.cli_commands.regimes.inflation_cmd import inflation_snapshot
+    inflation_snapshot(llm=llm)
+
+
+@regime_app.command("credit")
+def regime_credit(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+    """Credit / spreads regime."""
+    from lox.cli_commands.regimes.credit_cmd import credit_snapshot
+    credit_snapshot(llm=llm)
+
+
+@regime_app.command("consumer")
+def regime_consumer(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+    """Consumer health regime (replaces housing)."""
+    from lox.cli_commands.regimes.consumer_cmd import consumer_snapshot
+    consumer_snapshot(llm=llm)
+
+
+@regime_app.command("positioning")
+def regime_positioning(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+    """Market positioning regime."""
+    from lox.cli_commands.regimes.positioning_cmd import positioning_snapshot
+    positioning_snapshot(llm=llm)
+
+
+# ── MACRO alias (shows Growth + Inflation + quadrant) ────────────────────
 @regime_app.command("macro")
 def regime_macro():
-    """Macro regime."""
-    from lox.cli_commands.regimes.macro_cmd import macro_snapshot
-    macro_snapshot()
+    """Macro regime (alias: shows Growth + Inflation + macro quadrant)."""
+    from rich.console import Console
+    from rich.panel import Panel
+
+    console = Console()
+    console.print()
+    console.print("[bold cyan]Macro regime has been split into Growth + Inflation.[/bold cyan]")
+    console.print("[dim]Showing both sub-regimes...[/dim]\n")
+
+    from lox.cli_commands.regimes.growth_cmd import growth_snapshot
+    growth_snapshot()
+
+    console.print()
+
+    from lox.cli_commands.regimes.inflation_cmd import inflation_snapshot
+    inflation_snapshot()
+
+    # Show macro quadrant
+    try:
+        from lox.regimes.features import build_unified_regime_state, _compute_macro_quadrant
+        from lox.config import load_settings as _ls
+        state = build_unified_regime_state(settings=_ls())
+        quadrant = _compute_macro_quadrant(state.growth, state.inflation)
+        g_label = state.growth.label if state.growth else "?"
+        g_score = f"{state.growth.score:.0f}" if state.growth else "?"
+        i_label = state.inflation.label if state.inflation else "?"
+        i_score = f"{state.inflation.score:.0f}" if state.inflation else "?"
+        console.print()
+        console.print(Panel(
+            f"[bold]Macro Quadrant: {quadrant}[/bold]\n"
+            f"Growth: {g_label} ({g_score}) + Inflation: {i_label} ({i_score})",
+            border_style="cyan",
+        ))
+    except Exception:
+        pass
+
+
+# Register unified / transitions directly on regime_app
+from lox.cli_commands.regimes.regimes_cmd import register as _register_regimes
+_register_regimes(regime_app)
 
 
 # ---------------------------------------------------------------------------

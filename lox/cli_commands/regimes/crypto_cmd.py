@@ -5,6 +5,7 @@ from rich import print
 from rich.console import Console
 from rich.panel import Panel
 
+from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 from lox.data.market import fetch_crypto_daily_closes
 from lox.funding.signals import build_funding_state
@@ -84,8 +85,31 @@ def run_crypto_snapshot(
     ):
         return
 
-    # Standard output
-    print(snap)
+    # Uniform regime panel (crypto has no 0-100 score; use trend-based proxy)
+    score = 70 if snap.regime == "bearish" else (30 if snap.regime == "bullish" else 50)
+    r = snap.returns
+    v = snap.volatility
+    def _v(x):
+        return f"{x:.2f}" if x is not None and isinstance(x, (int, float)) else "n/a"
+    def _vp(x):
+        return f"{x:+.1f}%" if x is not None and isinstance(x, (int, float)) else "n/a"
+    metrics = [
+        {"name": "3m return", "value": _vp(r.asset_3m), "context": "trailing"},
+        {"name": "6m return", "value": _vp(r.asset_6m), "context": "trailing"},
+        {"name": "12m return", "value": _vp(r.asset_12m), "context": "trailing"},
+        {"name": "Vol 20d ann", "value": _v(v.realized_vol_20d_ann), "context": "%" if v.realized_vol_20d_ann else "—"},
+        {"name": "Vol 60d ann", "value": _v(v.realized_vol_60d_ann), "context": "%" if v.realized_vol_60d_ann else "—"},
+        {"name": "Above 200 DMA", "value": str(snap.trend.above_200dma) if snap.trend.above_200dma is not None else "n/a", "context": "trend"},
+    ]
+    print(render_regime_panel(
+        domain="Crypto",
+        asof=snap.asof,
+        regime_label=f"{snap.symbol} — {snap.regime.title()}",
+        score=score,
+        percentile=None,
+        description=f"60d trend: {snap.regime}." + (f" Vol 60d ann: {v.realized_vol_60d_ann:.1%}." if v.realized_vol_60d_ann is not None else ""),
+        metrics=metrics,
+    ))
 
     if llm:
         from lox.llm.core.analyst import llm_analyze_regime

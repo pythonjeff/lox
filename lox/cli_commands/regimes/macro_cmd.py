@@ -5,6 +5,7 @@ import typer
 from rich import print
 from rich.panel import Panel
 
+from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import Settings, load_settings
 from lox.macro.regime import classify_macro_regime_from_state
 from lox.macro.signals import build_macro_state
@@ -112,10 +113,31 @@ def run_macro_snapshot(
         show_delta_summary("macro", regime.name, prev_regime, metrics_for_delta, delta_days)
         return
 
-    # Standard output
-    print(state)
-    print("\nMACRO REGIME")
-    print(regime)
+    # Standard output (uniform regime panel)
+    score = 70 if "stagflation" in regime.name else (30 if "goldilocks" in regime.name else 50)
+    inp = state.inputs
+
+    def _v(x, fmt="{:.1f}"):
+        return fmt.format(x) if x is not None and isinstance(x, (int, float)) else "n/a"
+    metrics = [
+        {"name": "CPI YoY", "value": _v(inp.cpi_yoy, "{:.1f}%"), "context": "inflation"},
+        {"name": "Core CPI", "value": _v(inp.core_cpi_yoy, "{:.1f}%"), "context": "core"},
+        {"name": "Payrolls 3m ann", "value": _v(inp.payrolls_3m_annualized, "{:.1f}%"), "context": "growth"},
+        {"name": "Unemployment", "value": _v(inp.unemployment_rate, "{:.1f}%"), "context": "labor"},
+        {"name": "10Y UST", "value": _v(inp.ust_10y, "{:.2f}%"), "context": "rates"},
+        {"name": "2s10s curve", "value": f"{inp.curve_2s10s*100:.0f}bp" if inp.curve_2s10s is not None else "n/a", "context": "curve"},
+        {"name": "Real yield 10y", "value": _v(inp.real_yield_proxy_10y, "{:.2f}%"), "context": "real"},
+        {"name": "VIX", "value": _v(inp.vix), "context": "vol"},
+    ]
+    print(render_regime_panel(
+        domain="Macro",
+        asof=state.asof,
+        regime_label=regime.name.replace("_", " ").title(),
+        score=score,
+        percentile=None,
+        description=regime.description,
+        metrics=metrics,
+    ))
 
     if llm:
         from lox.llm.core.analyst import llm_analyze_regime
@@ -132,6 +154,11 @@ def run_macro_snapshot(
         )
 
         print(Panel(Markdown(analysis), title="Analysis", expand=False))
+
+
+def macro_snapshot(**kwargs) -> None:
+    """Entry point for `lox regime macro` (no subcommand)."""
+    run_macro_snapshot(**kwargs)
 
 
 def register(macro_app: typer.Typer) -> None:

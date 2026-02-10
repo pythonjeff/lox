@@ -21,8 +21,9 @@ def _run_commodities_snapshot(
     import pandas as pd
     from rich.console import Console
 
-    from lox.config import load_settings
-    from lox.data.market import fetch_equity_daily_closes
+from lox.config import load_settings
+from lox.data.market import fetch_equity_daily_closes
+    from lox.cli_commands.shared.regime_display import render_regime_panel
     from lox.commodities.signals import build_commodities_state
     from lox.commodities.regime import classify_commodities_regime
     from lox.cli_commands.shared.labs_utils import (
@@ -123,75 +124,36 @@ def _run_commodities_snapshot(
             console.print(f"\n[dim]No cached data from {delta_days}d ago. Run `lox labs commodities` daily to build history.[/dim]")
         return
 
-    # Daily tradable proxies for trend context
-    proxy = {
-        "Gold (proxy)": "GLDM",
-        "Broad commod (proxy)": "DBC",
-        "Copper (proxy)": "CPER",
-        "Oil (proxy)": "USO",
-    }
-
-    trend_lines: list[str] = []
-    try:
-        px = fetch_equity_daily_closes(settings=settings, symbols=list(proxy.values()), start=start, refresh=bool(refresh))
-        px = px.sort_index().ffill()
-
-        def _ret(s: pd.Series, d: int) -> float | None:
-            s = pd.to_numeric(s, errors="coerce").dropna()
-            if s.shape[0] <= d:
-                return None
-            v = (s.iloc[-1] / s.iloc[-1 - d] - 1.0) * 100.0
-            return float(v) if np.isfinite(v) else None
-
-        def _rv(s: pd.Series, d: int = 20) -> float | None:
-            s = pd.to_numeric(s, errors="coerce").dropna()
-            if s.shape[0] <= d + 2:
-                return None
-            r = s.pct_change().dropna()
-            v = r.tail(d).std(ddof=0) * np.sqrt(252) * 100.0
-            return float(v) if np.isfinite(v) else None
-
-        for label, sym in proxy.items():
-            if sym not in px.columns:
-                continue
-            last = float(pd.to_numeric(px[sym], errors="coerce").dropna().iloc[-1])
-            r20 = _ret(px[sym], 20)
-            r60 = _ret(px[sym], 60)
-            r252 = _ret(px[sym], 252)
-            rv20 = _rv(px[sym], 20)
-            trend_lines.append(
-                f"- [b]{label}[/b] {sym}: px={last:.2f}  20d={r20:+.1f}%  60d={r60:+.1f}%  1y={r252:+.1f}%  rv20≈{(rv20 if rv20 is not None else float('nan')):.1f}%"
-            )
-    except Exception:
-        trend_lines = []
-
-    # Helper for safe float formatting
+    # Uniform regime panel
+    score = 70 if regime.name == "energy_shock" else (65 if regime.name == "commodity_reflation" else (30 if regime.name == "commodity_disinflation" else 50))
+    inp = state.inputs
     def _fmt(v, decimals=2, pct=False):
         if v is None or (isinstance(v, float) and not np.isfinite(v)):
             return "n/a"
-        suffix = "%" if pct else ""
-        return f"{v:+.{decimals}f}{suffix}" if pct else f"{v:.{decimals}f}{suffix}"
-
+        return f"{v:+.{decimals}f}%" if pct else f"{v:.{decimals}f}"
     def _z(v):
         if v is None or (isinstance(v, float) and not np.isfinite(v)):
             return "n/a"
         return f"{v:+.2f}"
-
-    body = (
-        f"[b]Regime:[/b] {regime.label}\n"
-        f"[b]WTI:[/b] ${_fmt(state.inputs.wti)}  [b]20d:[/b] {_fmt(state.inputs.wti_ret_20d_pct, 1, True)}  [b]z:[/b] {_z(state.inputs.z_wti_ret_20d)}\n"
-        f"[b]Gold:[/b] ${_fmt(state.inputs.gold)}  [b]20d:[/b] {_fmt(state.inputs.gold_ret_20d_pct, 1, True)}  [b]z:[/b] {_z(state.inputs.z_gold_ret_20d)}\n"
-        f"[b]Copper:[/b] ${_fmt(state.inputs.copper)}  [b]60d:[/b] {_fmt(state.inputs.copper_ret_60d_pct, 1, True)}  [b]z:[/b] {_z(state.inputs.z_copper_ret_60d)}\n"
-        f"[b]Broad:[/b] ${_fmt(state.inputs.broad_index)}  [b]60d:[/b] {_fmt(state.inputs.broad_ret_60d_pct, 1, True)}  [b]z:[/b] {_z(state.inputs.z_broad_ret_60d)}\n"
-        f"[b]Pressure score:[/b] {_fmt(state.inputs.commodity_pressure_score, 2)} / 1.0\n"
-        f"[b]Energy shock:[/b] {'[red]YES[/red]' if state.inputs.energy_shock else '[green]No[/green]'}  "
-        f"[b]Metals impulse:[/b] {'[yellow]YES[/yellow]' if state.inputs.metals_impulse else '[green]No[/green]'}\n\n"
-    )
-    if trend_lines:
-        body += "[b]Proxy price trends (daily):[/b]\n" + "\n".join(trend_lines) + "\n\n"
-    body += f"[dim]{regime.description}[/dim]"
-
-    print(Panel(body, title="Commodities", expand=False))
+    metrics = [
+        {"name": "WTI", "value": f"${_fmt(inp.wti)}", "context": f"20d {_fmt(inp.wti_ret_20d_pct, 1, True)} z={_z(inp.z_wti_ret_20d)}"},
+        {"name": "Gold", "value": f"${_fmt(inp.gold)}", "context": f"20d {_fmt(inp.gold_ret_20d_pct, 1, True)} z={_z(inp.z_gold_ret_20d)}"},
+        {"name": "Copper", "value": f"${_fmt(inp.copper)}", "context": f"60d {_fmt(inp.copper_ret_60d_pct, 1, True)} z={_z(inp.z_copper_ret_60d)}"},
+        {"name": "Broad index", "value": f"${_fmt(inp.broad_index)}", "context": f"60d {_fmt(inp.broad_ret_60d_pct, 1, True)} z={_z(inp.z_broad_ret_60d)}"},
+        {"name": "Pressure score", "value": _fmt(inp.commodity_pressure_score, 2), "context": "z-score composite"},
+        {"name": "Energy shock", "value": "Yes" if inp.energy_shock else "No", "context": "WTI spike"},
+        {"name": "Metals impulse", "value": "Yes" if inp.metals_impulse else "No", "context": "metals strength"},
+    ]
+    asof = state.asof if hasattr(state, "asof") else "n/a"
+    print(render_regime_panel(
+        domain="Commodities",
+        asof=asof,
+        regime_label=regime.label or regime.name,
+        score=score,
+        percentile=None,
+        description=regime.description,
+        metrics=metrics,
+    ))
 
     if llm:
         from lox.llm.core.analyst import llm_analyze_regime

@@ -66,9 +66,9 @@ def register(app: typer.Typer) -> None:
         """
         Unified regime dashboard with LLM commentary.
         
-        Shows current state of all regime pillars:
-        - Core: Macro, Volatility, Rates, Funding
-        - Extended: Fiscal, Commodities, Housing, Monetary, USD, Crypto
+        Shows current state of all 12 regime pillars:
+        - Core: Growth, Inflation, Volatility, Credit, Rates, Funding
+        - Extended: Consumer, Fiscal, Positioning, Monetary, USD, Commodities
         
         Examples:
             lox research regimes              # Quick overview
@@ -145,8 +145,10 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool):
     core_table.add_column("Signal", ratio=1)
     
     core_pillars = [
-        ("Macro", state.macro),
+        ("Growth", state.growth),
+        ("Inflation", state.inflation),
         ("Volatility", state.volatility),
+        ("Credit", state.credit),
         ("Rates", state.rates),
         ("Funding", state.funding),
     ]
@@ -184,12 +186,12 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool):
     ext_table.add_column("Signal", ratio=1)
     
     extended = [
+        ("Consumer", state.consumer),
         ("Fiscal", state.fiscal),
-        ("Commodities", state.commodities),
-        ("Housing", state.housing),
+        ("Positioning", state.positioning),
         ("Monetary", state.monetary),
         ("USD", state.usd),
-        ("Crypto", state.crypto),
+        ("Commodities", state.commodities),
     ]
     
     for name, regime in extended:
@@ -225,17 +227,20 @@ def _show_regime_detail(console: Console, settings, state, pillar: str, include_
     
     # Map pillar names
     pillar_map = {
-        "macro": ("macro", state.macro),
+        "growth": ("growth", state.growth),
+        "inflation": ("inflation", state.inflation),
+        "macro": ("growth", state.growth),  # alias for backwards compat
         "vol": ("volatility", state.volatility),
         "volatility": ("volatility", state.volatility),
+        "credit": ("credit", state.credit),
         "rates": ("rates", state.rates),
         "funding": ("funding", state.funding),
+        "consumer": ("consumer", state.consumer),
         "fiscal": ("fiscal", state.fiscal),
-        "commodities": ("commodities", state.commodities),
-        "housing": ("housing", state.housing),
+        "positioning": ("positioning", state.positioning),
         "monetary": ("monetary", state.monetary),
         "usd": ("usd", state.usd),
-        "crypto": ("crypto", state.crypto),
+        "commodities": ("commodities", state.commodities),
     }
     
     if pillar not in pillar_map:
@@ -336,8 +341,10 @@ def _show_llm_commentary(console: Console, settings, state):
             }
             
             for name, regime in [
-                ("macro", state.macro),
+                ("growth", state.growth),
+                ("inflation", state.inflation),
                 ("volatility", state.volatility),
+                ("credit", state.credit),
                 ("rates", state.rates),
                 ("funding", state.funding),
             ]:

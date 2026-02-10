@@ -4,6 +4,7 @@ import typer
 from rich import print
 from rich.panel import Panel
 
+from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 
 
@@ -100,24 +101,29 @@ def run_housing_snapshot(
         show_delta_summary("housing", regime.label, prev_regime, metrics_for_delta, delta_days)
         return
 
-    # Standard output
-    print(
-        Panel(
-            f"[b]Regime:[/b] {regime.label}\n"
-            f"[b]Mortgage 30y:[/b] {state.inputs.mortgage_30y}\n"
-            f"[b]UST 10y:[/b] {state.inputs.ust_10y}\n"
-            f"[b]Mortgage spread:[/b] {state.inputs.mortgage_spread}\n"
-            f"[b]Z mortgage spread:[/b] {state.inputs.z_mortgage_spread}\n"
-            f"[b]Z MBS rel (MBB-IEF) 60d:[/b] {state.inputs.z_mbs_rel_ret_60d}\n"
-            f"[b]Z Homebuilders rel (ITB-SPY) 60d:[/b] {state.inputs.z_homebuilder_rel_ret_60d}\n"
-            f"[b]Z REIT rel (VNQ-SPY) 60d:[/b] {state.inputs.z_reit_rel_ret_60d}\n"
-            f"[b]Housing pressure score:[/b] {state.inputs.housing_pressure_score}\n\n"
-            f"[dim]{regime.description}[/dim]\n"
-            f"[dim]{state.notes}[/dim]",
-            title="Housing / MBS snapshot",
-            expand=False,
-        )
-    )
+    # Uniform regime panel
+    inp = state.inputs
+    score = 70 if "stress" in regime.name else (30 if "easing" in regime.name else 50)
+    def _v(x):
+        return f"{x:.2f}" if x is not None and isinstance(x, (int, float)) else "n/a"
+    metrics = [
+        {"name": "Mortgage 30y", "value": _v(inp.mortgage_30y), "context": "%" if inp.mortgage_30y is not None else "—"},
+        {"name": "UST 10y", "value": _v(inp.ust_10y), "context": "%" if inp.ust_10y is not None else "—"},
+        {"name": "Mortgage spread", "value": _v(inp.mortgage_spread), "context": "bp" if inp.mortgage_spread is not None else "—"},
+        {"name": "Z mortgage spread", "value": _v(inp.z_mortgage_spread), "context": "vs history"},
+        {"name": "Z MBS rel 60d", "value": _v(inp.z_mbs_rel_ret_60d), "context": "MBB-IEF"},
+        {"name": "Z Homebuilders 60d", "value": _v(inp.z_homebuilder_rel_ret_60d), "context": "ITB-SPY"},
+        {"name": "Pressure score", "value": _v(inp.housing_pressure_score), "context": "composite"},
+    ]
+    print(render_regime_panel(
+        domain="Housing",
+        asof=state.asof,
+        regime_label=regime.label,
+        score=score,
+        percentile=None,
+        description=regime.description + (" " + (state.notes or "")) if state.notes else regime.description,
+        metrics=metrics,
+    ))
 
     if llm:
         from lox.llm.core.analyst import llm_analyze_regime

@@ -6,6 +6,7 @@ import typer
 from rich import print
 from rich.panel import Panel
 
+from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 from lox.funding.features import funding_feature_vector
 from lox.funding.models import FundingInputs
@@ -136,80 +137,27 @@ def run_funding_snapshot(
             console.print(f"\n[dim]No cached data from {delta_days}d ago. Run `lox labs funding` daily to build history.[/dim]")
         return
 
+    # Uniform regime panel
+    score = 80 if "stress" in regime.name else (60 if "tightening" in regime.name else 40)
     corridor_name = fi.spread_corridor_name or "SOFR-EFFR"
-    baseline = _fmt_bps(fi.baseline_median_bps)
-    tight_thr = _fmt_bps(fi.tight_threshold_bps)
-    stress_thr = _fmt_bps(fi.stress_threshold_bps)
-    
-    # Calculate spread position relative to thresholds
-    spread_val = fi.spread_corridor_bps or 0
-    baseline_val = fi.baseline_median_bps or 0
-    tight_val = fi.tight_threshold_bps or 0
-    stress_val = fi.stress_threshold_bps or 0
-    
-    # Color and indicator based on spread vs thresholds
-    spread_vs_baseline = spread_val - baseline_val
-    if spread_val >= stress_val:
-        spread_color = "bold red"
-        spread_indicator = "🔴 STRESS"
-        spread_bar = "▓▓▓▓▓▓▓▓▓▓"
-    elif spread_val >= tight_val:
-        spread_color = "bold yellow"
-        spread_indicator = "🟡 TIGHT"
-        # Calculate position between tight and stress
-        pct = (spread_val - tight_val) / max(stress_val - tight_val, 0.1)
-        filled = int(min(pct, 1.0) * 10)
-        spread_bar = "▓" * filled + "░" * (10 - filled)
-    elif spread_val >= baseline_val:
-        spread_color = "bold cyan"
-        spread_indicator = "🔵 ELEVATED"
-        # Calculate position between baseline and tight
-        pct = (spread_val - baseline_val) / max(tight_val - baseline_val, 0.1)
-        filled = int(min(pct, 1.0) * 10)
-        spread_bar = "▓" * filled + "░" * (10 - filled)
-    else:
-        spread_color = "bold green"
-        spread_indicator = "🟢 NORMAL"
-        spread_bar = "░░░░░░░░░░"
-    
-    # Direction vs baseline
-    if spread_vs_baseline > 1:
-        direction = f"[red]↑ +{spread_vs_baseline:.1f}bp vs baseline[/red]"
-    elif spread_vs_baseline < -1:
-        direction = f"[green]↓ {spread_vs_baseline:.1f}bp vs baseline[/green]"
-    else:
-        direction = "[dim]≈ at baseline[/dim]"
-
-    body = "\n".join(
-        [
-            f"As of: [bold]{state.asof}[/bold]",
-            "",
-            "Core secured rates:",
-            f"  SOFR: [bold]{_fmt_pct(fi.sofr)}[/bold] | TGCR: [bold]{_fmt_pct(fi.tgcr)}[/bold] | BGCR: [bold]{_fmt_pct(fi.bgcr)}[/bold]",
-            f"  EFFR (DFF): [bold]{_fmt_pct(fi.effr)}[/bold] | IORB: [bold]{_fmt_pct(fi.iorb)}[/bold] | OBFR: [bold]{_fmt_pct(fi.obfr)}[/bold]",
-            "",
-            f"┌─ SPREAD MONITOR ─────────────────────────────────────────┐",
-            f"│  Corridor ({corridor_name}): [{spread_color}]{_fmt_bps(fi.spread_corridor_bps)}[/{spread_color}]  {spread_indicator}",
-            f"│  {direction}",
-            f"│",
-            f"│  [dim]Normal[/dim]  ─────[dim]Tight[/dim]─────[dim]Stress[/dim]",
-            f"│  {baseline}    {tight_thr}    {stress_thr}",
-            f"│  [{spread_color}]{spread_bar}[/{spread_color}] ← current",
-            f"└──────────────────────────────────────────────────────────┘",
-            "",
-            f"Additional spreads:",
-            f"  SOFR–EFFR: [bold]{_fmt_bps(fi.spread_sofr_effr_bps)}[/bold] | BGCR–TGCR: [bold]{_fmt_bps(fi.spread_bgcr_tgcr_bps)}[/bold]",
-            "",
-            f"Dynamics (20d):",
-            f"  Spike (5d max): [bold]{_fmt_bps(fi.spike_5d_bps)}[/bold] | Vol (std): [bold]{_fmt_bps(fi.vol_20d_bps)}[/bold] | Persistence (>stress): [bold]{_fmt_ratio(fi.persistence_20d)}[/bold]",
-            "",
-            f"Regime: [bold]{regime.label or regime.name}[/bold]",
-            f"[dim]{regime.description}[/dim]",
-            "",
-            f"[dim]Series: {', '.join(sorted(set(FUNDING_FRED_SERIES.values()) | set(['IORB'])))}[/dim]",
-        ]
-    )
-    print(Panel.fit(body, title="US Funding", border_style="cyan"))
+    metrics = [
+        {"name": "SOFR", "value": _fmt_pct(fi.sofr), "context": "secured"},
+        {"name": "EFFR", "value": _fmt_pct(fi.effr), "context": "unsecured"},
+        {"name": f"Corridor ({corridor_name})", "value": _fmt_bps(fi.spread_corridor_bps), "context": "spread"},
+        {"name": "SOFR–EFFR", "value": _fmt_bps(fi.spread_sofr_effr_bps), "context": "basis"},
+        {"name": "Spike 5d", "value": _fmt_bps(fi.spike_5d_bps), "context": "max 5d"},
+        {"name": "Vol 20d", "value": _fmt_bps(fi.vol_20d_bps), "context": "std"},
+        {"name": "Persistence 20d", "value": _fmt_ratio(fi.persistence_20d), "context": ">stress"},
+    ]
+    print(render_regime_panel(
+        domain="Funding",
+        asof=state.asof,
+        regime_label=regime.label or regime.name,
+        score=score,
+        percentile=None,
+        description=regime.description,
+        metrics=metrics,
+    ))
 
     if llm:
         from lox.llm.core.analyst import llm_analyze_regime
@@ -226,6 +174,11 @@ def run_funding_snapshot(
         )
         
         print(Panel(Markdown(analysis), title="Analysis", expand=False))
+
+
+def funding_snapshot(**kwargs) -> None:
+    """Entry point for `lox regime funding` (no subcommand)."""
+    run_funding_snapshot(**kwargs)
 
 
 def register(funding_app: typer.Typer) -> None:
