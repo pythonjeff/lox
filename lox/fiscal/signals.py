@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, Tuple
 
+import numpy as np
 import pandas as pd
 
 from lox.config import Settings
@@ -22,11 +23,14 @@ FISCAL_FRED_SERIES: Dict[str, str] = {
     # Treasury General Account (weekly, level). Already used in liquidity module.
     "TGA": "WTREGEN",
     # Interest payments proxy (quarterly BEA series, flow). Optional, can be swapped later.
-    # If you prefer a monthly MTS interest outlays series, plug it in here.
     "INTEREST_EXPENSE": "A091RC1Q027SBEA",
+    # Quant upgrade: federal receipts (deficit sustainability), demand structure, bond stress
+    "TAX_RECEIPTS": "MTSR133FMS",  # Monthly Treasury Statement receipts (monthly, millions)
+    "FOREIGN_HOLDINGS": "FDHBFIN",  # Foreign holdings of US Treasuries (monthly, millions)
+    "CUSTODY": "WSHOSHO",  # Fed custody holdings (weekly, millions) — proxy for foreign CB demand
 }
 
-_OPTIONAL_SERIES = {"INTEREST_EXPENSE"}  # allow dataset to work even if this series isn't cached/available
+_OPTIONAL_SERIES = {"INTEREST_EXPENSE", "TAX_RECEIPTS", "FOREIGN_HOLDINGS", "CUSTODY"}
 
 # ---------------------------------------------------------------------------
 # Treasury net issuance (true) via MSPD: Δ outstanding (monthly)
@@ -658,6 +662,33 @@ def build_fiscal_dataset(settings: Settings, start_date: str = "2011-01-01", ref
     sd["DEFICIT_12M_CHG_6M"] = sd["DEFICIT_12M"] - sd["DEFICIT_12M"].shift(6)
     sd["DEFICIT_12M_PROJ_6M"] = sd["DEFICIT_12M"] + sd["DEFICIT_12M_CHG_6M"]
     derived_frames["DEFICIT_12M"] = sd[["date", "DEFICIT_12M"]]
+    # Deficit trend slope (12m OLS slope) for momentum sub-score
+    if len(sd) >= 12:
+        x = np.arange(12, dtype=float)
+        def _ols_slope(y: pd.Series) -> float:
+            if y.isna().all() or len(y) < 12:
+                return np.nan
+            yv = y.tail(12).values.astype(float)
+            if np.any(np.isnan(yv)):
+                return np.nan
+            xm, ym = x.mean(), yv.mean()
+            slope = np.sum((x - xm) * (yv - ym)) / (np.sum((x - xm) ** 2) + 1e-12)
+            return float(slope)
+        sd["DEFICIT_TREND_SLOPE"] = sd["DEFICIT_12M"].rolling(12).apply(_ols_slope, raw=False)
+        derived_frames["DEFICIT_TREND_SLOPE"] = sd[["date", "DEFICIT_TREND_SLOPE"]]
+
+    # Federal receipts (deficit sustainability)
+    if "TAX_RECEIPTS" in raw and not raw["TAX_RECEIPTS"].empty:
+        rec = raw["TAX_RECEIPTS"].copy().rename(columns={"value": "TAX_RECEIPTS"})
+        rec["RECEIPTS_12M"] = _rolling_12m_sum_monthly(rec["TAX_RECEIPTS"])
+        sd_dates = sd[["date", "DEFICIT_12M"]].dropna(subset=["DEFICIT_12M"])
+        rec = rec.merge(sd_dates, on="date", how="inner")
+        rec["DEFICIT_PCT_RECEIPTS"] = np.where(
+            rec["RECEIPTS_12M"].abs() > 1e-6,
+            rec["DEFICIT_12M"] / rec["RECEIPTS_12M"],
+            np.nan,
+        )
+        derived_frames["DEFICIT_PCT_RECEIPTS"] = rec[["date", "DEFICIT_PCT_RECEIPTS"]]
 
     # Interest expense YoY (optional, likely quarterly)
     if "INTEREST_EXPENSE" in raw and not raw["INTEREST_EXPENSE"].empty:
@@ -704,6 +735,10 @@ def build_fiscal_dataset(settings: Settings, start_date: str = "2011-01-01", ref
     level_series: Dict[str, pd.DataFrame] = {}
     if "TGA" in raw:
         level_series["TGA"] = raw["TGA"].rename(columns={"value": "TGA"})[["date", "TGA"]]
+    if "FOREIGN_HOLDINGS" in raw:
+        level_series["FOREIGN_HOLDINGS"] = raw["FOREIGN_HOLDINGS"].rename(columns={"value": "FOREIGN_HOLDINGS"})[["date", "FOREIGN_HOLDINGS"]]
+    if "CUSTODY" in raw:
+        level_series["CUSTODY"] = raw["CUSTODY"].rename(columns={"value": "CUSTODY"})[["date", "CUSTODY"]]
 
     # merge_series_daily expects frames with `value` column; build compatible frames
     merge_map: Dict[str, pd.DataFrame] = {}
@@ -721,6 +756,12 @@ def build_fiscal_dataset(settings: Settings, start_date: str = "2011-01-01", ref
     # TGA dynamics
     if "TGA" in merged.columns:
         merged["TGA_CHG_28D"] = merged["TGA"] - merged["TGA"].shift(28)
+    # Foreign holdings 6m change (demand structure)
+    if "FOREIGN_HOLDINGS" in merged.columns:
+        merged["FOREIGN_HOLDINGS_CHG_6M"] = merged["FOREIGN_HOLDINGS"] - merged["FOREIGN_HOLDINGS"].shift(126)
+    # Custody 4w change (Fed custody proxy for foreign CB demand)
+    if "CUSTODY" in merged.columns:
+        merged["CUSTODY_CHG_4W"] = merged["CUSTODY"] - merged["CUSTODY"].shift(28)
 
     # ---------------------------------------------------------------------
     # Ensure stable columns exist even if some upstream sources are unavailable.
@@ -731,6 +772,10 @@ def build_fiscal_dataset(settings: Settings, start_date: str = "2011-01-01", ref
         "LONG_DURATION_ISS_SHARE",
         "AUCTION_TAIL_BPS",
         "DEALER_TAKE_PCT",
+        "DEFICIT_PCT_RECEIPTS",
+        "DEFICIT_TREND_SLOPE",
+        "FOREIGN_HOLDINGS_CHG_6M",
+        "CUSTODY_CHG_4W",
     ]:
         if c not in merged.columns:
             merged[c] = float("nan")
@@ -974,6 +1019,16 @@ def build_fiscal_state(settings: Settings, start_date: str = "2011-01-01", refre
         else None,
         auction_tail_bps=float(last["AUCTION_TAIL_BPS"]) if pd.notna(last["AUCTION_TAIL_BPS"]) else None,
         dealer_take_pct=float(last["DEALER_TAKE_PCT"]) if pd.notna(last["DEALER_TAKE_PCT"]) else None,
+        bid_to_cover_avg=None,  # TODO: extract from FiscalData auction response when schema available
+        deficit_pct_receipts=float(last["DEFICIT_PCT_RECEIPTS"]) if "DEFICIT_PCT_RECEIPTS" in last and pd.notna(last["DEFICIT_PCT_RECEIPTS"]) else None,
+        foreign_holdings_pct=None,  # TODO: require total debt series for share
+        foreign_holdings_chg_6m=float(last["FOREIGN_HOLDINGS_CHG_6M"]) if "FOREIGN_HOLDINGS_CHG_6M" in last and pd.notna(last["FOREIGN_HOLDINGS_CHG_6M"]) else None,
+        custody_holdings_chg_4w=float(last["CUSTODY_CHG_4W"]) if "CUSTODY_CHG_4W" in last and pd.notna(last["CUSTODY_CHG_4W"]) else None,
+        wam_years=None,  # TODO: compute from MSPD maturity buckets
+        wam_chg_12m=None,
+        deficit_trend_slope=float(last["DEFICIT_TREND_SLOPE"]) if "DEFICIT_TREND_SLOPE" in last and pd.notna(last["DEFICIT_TREND_SLOPE"]) else None,
+        move_index=None,  # TODO: FMP ^MOVE
+        move_index_z=None,
         z_deficit_12m=float(last["Z_DEFICIT_12M"]) if pd.notna(last["Z_DEFICIT_12M"]) else None,
         z_tga_chg_28d=float(last["Z_TGA_CHG_28D"]) if "Z_TGA_CHG_28D" in last and pd.notna(last["Z_TGA_CHG_28D"]) else None,
         z_interest_expense_yoy=float(last["Z_INTEREST_EXPENSE_YOY"])

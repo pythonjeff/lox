@@ -22,6 +22,20 @@ class FiscalInputs(BaseModel):
     # Auctions (optional)
     auction_tail_bps: Optional[float] = None
     dealer_take_pct: Optional[float] = None  # 0..100
+    bid_to_cover_avg: Optional[float] = None  # recent auction avg bid-to-cover ratio
+
+    # Demand / sustainability (quant upgrade)
+    deficit_pct_receipts: Optional[float] = None  # deficit / federal tax receipts
+    foreign_holdings_pct: Optional[float] = None  # foreign share of marketable debt
+    foreign_holdings_chg_6m: Optional[float] = None  # 6m change in foreign holdings
+    custody_holdings_chg_4w: Optional[float] = None  # 4w change in Fed custody (weekly)
+    wam_years: Optional[float] = None  # weighted avg maturity of outstanding debt
+    wam_chg_12m: Optional[float] = None  # 12m change in WAM
+    deficit_trend_slope: Optional[float] = None  # 12m OLS slope of deficit trajectory
+
+    # Bond market stress
+    move_index: Optional[float] = None  # MOVE index level
+    move_index_z: Optional[float] = None  # MOVE z-score (3yr window)
 
     # Standardized readings (best-effort)
     z_deficit_12m: Optional[float] = None

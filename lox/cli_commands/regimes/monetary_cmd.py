@@ -4,6 +4,7 @@ import typer
 from rich import print
 from rich.panel import Panel
 
+from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 from lox.monetary.models import MonetaryInputs
 from lox.monetary.regime import classify_monetary_regime
@@ -159,31 +160,25 @@ def _run_monetary_snapshot(
             console.print(f"\n[dim]No cached data from {delta_days}d ago. Run `lox labs monetary` daily to build history.[/dim]")
         return
 
-    series = d.get("series_used") if isinstance(d.get("series_used"), list) else []
-    series_disp = ", ".join(str(x) for x in series) if series else "n/a"
-
-    body = "\n".join(
-        [
-            f"As of: [bold]{d.get('asof','n/a')}[/bold]",
-            f"EFFR (DFF): [bold]{effr_disp}[/bold]",
-            "Total reserves (TOTRESNS):",
-            f"  Level: [bold]{res_level}[/bold]  [dim](z={_ctx_z(float(res_z)) if isinstance(res_z,(int,float)) else 'n/a'})[/dim]",
-            f"  Reserves / GDP: [bold]{res_pct_gdp_disp}[/bold]  [dim](normalization anchor)[/dim]",
-            f"  Δ 13-week: [bold]{res_chg_13w}[/bold]",
-            "Fed balance sheet (WALCL):",
-            f"  Level: [bold]{fa_level}[/bold]",
-            f"  Δ 13-week: [bold]{fa_chg_13w}[/bold]  [dim](z={_ctx_qt(float(fa_z)) if isinstance(fa_z,(int,float)) else 'n/a'})[/dim]",
-            f"  [dim]Qualifier: reserves Δ13w={res_chg_13w}; ON RRP Δ13w={rrp_chg_13w}[/dim]",
-            "ON RRP usage (RRPONTSYD):",
-            f"  Level: [bold]{rrp_level}[/bold]  [dim](z={_ctx_z(float(rrp_z)) if isinstance(rrp_z,(int,float)) else 'n/a'})[/dim]",
-            f"  Δ 13-week: [bold]{rrp_chg_13w}[/bold]",
-            f"Regime: [bold]{regime.label or regime.name}[/bold]",
-            f"Answer: {regime.description}",
-            f"History loaded: {d.get('lookback_years', lookback_years)}y",
-            f"Series (FRED): [dim]{series_disp}[/dim]",
-        ]
-    )
-    print(Panel.fit(body, title="US Monetary", border_style="cyan"))
+    # Uniform regime panel
+    score = 70 if "qt_biting" in regime.name or "scarcity" in regime.name else (30 if "abundant" in regime.name else 50)
+    metrics = [
+        {"name": "EFFR", "value": effr_disp, "context": "policy rate"},
+        {"name": "Reserves level", "value": res_level, "context": _ctx_z(float(res_z)) if isinstance(res_z, (int, float)) else "n/a"},
+        {"name": "Reserves % GDP", "value": res_pct_gdp_disp, "context": "anchor"},
+        {"name": "Reserves Δ13w", "value": res_chg_13w, "context": "change"},
+        {"name": "Fed assets Δ13w", "value": fa_chg_13w, "context": _ctx_qt(float(fa_z)) if isinstance(fa_z, (int, float)) else "n/a"},
+        {"name": "ON RRP level", "value": rrp_level, "context": _ctx_z(float(rrp_z)) if isinstance(rrp_z, (int, float)) else "n/a"},
+    ]
+    print(render_regime_panel(
+        domain="Monetary",
+        asof=d.get("asof", "n/a"),
+        regime_label=regime.label or regime.name,
+        score=score,
+        percentile=None,
+        description=regime.description,
+        metrics=metrics,
+    ))
 
     if llm:
         from lox.llm.core.analyst import llm_analyze_regime

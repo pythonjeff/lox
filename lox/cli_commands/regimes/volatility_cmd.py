@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import typer
 from rich import print
-from rich.panel import Panel
-from rich.table import Table
+
+from lox.cli_commands.shared.regime_display import render_regime_panel
 
 
 def _run_volatility_snapshot(start: str = "2011-01-01", refresh: bool = False, llm: bool = False):
@@ -15,23 +15,36 @@ def _run_volatility_snapshot(start: str = "2011-01-01", refresh: bool = False, l
     settings = load_settings()
     state = build_volatility_state(settings=settings, start_date=start, refresh=refresh)
     regime = classify_volatility_regime(state.inputs)
+    inp = state.inputs
 
-    print(
-        Panel(
-            f"[b]Regime:[/b] {regime.label}\n"
-            f"[b]VIX:[/b] {state.inputs.vix}\n"
-            f"[b]5d chg%:[/b] {state.inputs.vix_chg_5d_pct}\n"
-            f"[b]Term (VIX-3m proxy):[/b] {state.inputs.vix_term_spread}\n"
-            f"[b]Term source:[/b] {state.inputs.vix_term_source}\n"
-            f"[b]Z VIX:[/b] {state.inputs.z_vix}\n"
-            f"[b]Z 5d chg:[/b] {state.inputs.z_vix_chg_5d}\n"
-            f"[b]Persist 20d:[/b] {state.inputs.persist_20d}\n"
-            f"[b]Pressure score:[/b] {state.inputs.vol_pressure_score}\n\n"
-            f"[dim]{regime.description}[/dim]",
-            title="Volatility (Full)",
-            expand=False,
-        )
+    # Score 0-100: shock=80, elevated=50, normal=30 (align with features.py)
+    score = 80 if "shock" in regime.name else (50 if "elevated" in regime.name else 30)
+
+    def _v(x):
+        return f"{x:.2f}" if x is not None and isinstance(x, (int, float)) else "n/a"
+    def _v_pct(x):
+        return f"{x:+.1f}%" if x is not None and isinstance(x, (int, float)) else "n/a"
+
+    metrics = [
+        {"name": "VIX", "value": _v(inp.vix), "context": "level"},
+        {"name": "5d chg %", "value": _v_pct(inp.vix_chg_5d_pct), "context": "momentum"},
+        {"name": "Term (VIX-3m)", "value": _v(inp.vix_term_spread), "context": inp.vix_term_source or "—"},
+        {"name": "Z VIX", "value": _v(inp.z_vix), "context": "vs history"},
+        {"name": "Z 5d chg", "value": _v(inp.z_vix_chg_5d), "context": "vs history"},
+        {"name": "Persist 20d", "value": _v(inp.persist_20d), "context": "spike persistence"},
+        {"name": "Pressure score", "value": _v(inp.vol_pressure_score), "context": "composite z"},
+    ]
+
+    panel = render_regime_panel(
+        domain="Volatility",
+        asof=state.asof,
+        regime_label=regime.label or regime.name,
+        score=score,
+        percentile=None,
+        description=regime.description,
+        metrics=metrics,
     )
+    print(panel)
 
     if llm:
         from lox.llm.core.analyst import llm_analyze_regime
@@ -59,6 +72,11 @@ def _run_volatility_snapshot(start: str = "2011-01-01", refresh: bool = False, l
         
         from rich.markdown import Markdown
         print(Panel(Markdown(analysis), title="Analysis", expand=False))
+
+
+def volatility_snapshot(llm: bool = False, start: str = "2011-01-01", refresh: bool = False):
+    """Entry point for `lox regime vol` (no subcommand)."""
+    _run_volatility_snapshot(start=start, refresh=refresh, llm=llm)
 
 
 def register(vol_app: typer.Typer) -> None:

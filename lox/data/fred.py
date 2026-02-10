@@ -17,10 +17,15 @@ DEFAULT_SERIES = {
     "CPIAUCSL": FredSeries("CPIAUCSL", "monthly"),
     "CPILFESL": FredSeries("CPILFESL", "monthly"),
     "MEDCPIM158SFRBCLE": FredSeries("MEDCPIM158SFRBCLE", "monthly"),  # Median CPI (Cleveland Fed)
+    "PCEPILFE": FredSeries("PCEPILFE", "monthly"),  # Core PCE Price Index (Fed's preferred)
+    "PPIFIS": FredSeries("PPIFIS", "monthly"),  # PPI Final Demand
+    "PCETRIM12M159SFRBDAL": FredSeries("PCETRIM12M159SFRBDAL", "monthly"),  # Trimmed Mean PCE (Dallas Fed)
     # labor market
     "PAYEMS": FredSeries("PAYEMS", "monthly"),  # Total Nonfarm Payrolls (level)
     "UNRATE": FredSeries("UNRATE", "monthly"),  # Unemployment rate
     "ICSA": FredSeries("ICSA", "weekly"),  # Initial jobless claims
+    # growth
+    "INDPRO": FredSeries("INDPRO", "monthly"),  # Industrial Production Index
     # inflation "expectations"
     "T5YIE": FredSeries("T5YIE", "daily"),  # 5Y breakeven
     "T10YIE": FredSeries("T10YIE", "daily"),  # 10Y breakeven
@@ -32,6 +37,8 @@ DEFAULT_SERIES = {
     # credit spreads (systemic stress)
     "BAMLH0A0HYM2": FredSeries("BAMLH0A0HYM2", "daily"),  # ICE BofA US High Yield OAS
     "BAMLC0A0CM": FredSeries("BAMLC0A0CM", "daily"),  # ICE BofA US Corporate OAS (IG)
+    "BAMLC0A4CBBB": FredSeries("BAMLC0A4CBBB", "daily"),  # ICE BofA BBB Corporate OAS
+    "BAMLC0A1CAAA": FredSeries("BAMLC0A1CAAA", "daily"),  # ICE BofA AAA Corporate OAS
     # volatility
     "VIXCLS": FredSeries("VIXCLS", "daily"),  # CBOE VIX (1-month implied vol)
     # VXMTCLS (VIX Mid-Term) removed due to persistent FRED API issues
@@ -39,9 +46,13 @@ DEFAULT_SERIES = {
     "DTWEXBGS": FredSeries("DTWEXBGS", "daily"),  # Trade Weighted US Dollar Index: Broad, Goods and Services
     # commodities
     "DCOILWTICO": FredSeries("DCOILWTICO", "daily"),  # WTI Crude Oil Price
-    # housing
+    # housing / consumer
     "MORTGAGE30US": FredSeries("MORTGAGE30US", "weekly"),  # 30-Year Fixed Rate Mortgage Average
     "CSUSHPISA": FredSeries("CSUSHPISA", "monthly"),  # S&P/Case-Shiller U.S. National Home Price Index
+    "UMCSENT": FredSeries("UMCSENT", "monthly"),  # Michigan Consumer Sentiment
+    "RSXFS": FredSeries("RSXFS", "monthly"),  # Retail Sales ex Food Services
+    "TOTALSL": FredSeries("TOTALSL", "monthly"),  # Consumer Credit Outstanding
+    "EXHOSLUSM495S": FredSeries("EXHOSLUSM495S", "monthly"),  # Existing Home Sales
 }
 
 # Optional series that won't crash if unavailable
@@ -51,6 +62,16 @@ OPTIONAL_SERIES = {
     # "VXMTCLS",  # VIX Mid-Term - Removed due to FRED API issues
     "BAMLH0A0HYM2",  # Credit spreads (sometimes delayed)
     "BAMLC0A0CM",
+    "BAMLC0A4CBBB",  # BBB OAS
+    "BAMLC0A1CAAA",  # AAA OAS
+    "PCEPILFE",  # Core PCE
+    "PPIFIS",  # PPI Final Demand
+    "PCETRIM12M159SFRBDAL",  # Trimmed Mean PCE
+    "INDPRO",  # Industrial Production
+    "UMCSENT",  # Michigan Consumer Sentiment
+    "RSXFS",  # Retail Sales ex Food Services
+    "TOTALSL",  # Consumer Credit Outstanding
+    "EXHOSLUSM495S",  # Existing Home Sales
 }
 
 

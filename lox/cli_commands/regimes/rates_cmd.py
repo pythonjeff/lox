@@ -4,6 +4,7 @@ import typer
 from rich import print
 from rich.panel import Panel
 
+from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 from lox.rates.regime import classify_rates_regime
 from lox.rates.signals import RATES_FRED_SERIES, build_rates_state
@@ -115,19 +116,24 @@ def _run_rates_snapshot(
             console.print(f"\n[dim]No cached data from {delta_days}d ago. Run `lox labs rates` daily to build history.[/dim]")
         return
 
-    # Standard panel output
-    body = "\n".join(
-        [
-            f"As of: [bold]{state.asof}[/bold]",
-            f"2y: [bold]{_fmt_pct(ri.ust_2y)}[/bold] | 10y: [bold]{_fmt_pct(ri.ust_10y)}[/bold] | 3m: [bold]{_fmt_pct(ri.ust_3m)}[/bold]",
-            f"Curve 2s10s: [bold]{_fmt_bps(ri.curve_2s10s)}[/bold] (z={_fmt_z(ri.z_curve_2s10s)})",
-            f"10y Δ20d: [bold]{_fmt_bps(ri.ust_10y_chg_20d)}[/bold] (z={_fmt_z(ri.z_ust_10y_chg_20d)})",
-            f"Regime: [bold]{regime.label or regime.name}[/bold]",
-            f"Answer: {regime.description}",
-            f"Series (FRED): [dim]{', '.join(sorted(set(RATES_FRED_SERIES.values())))}[/dim]",
-        ]
-    )
-    print(Panel.fit(body, title="US Rates", border_style="magenta"))
+    # Uniform regime panel
+    score = 80 if "shock" in regime.name else (60 if "inverted" in regime.name else 40)
+    metrics = [
+        {"name": "2Y", "value": _fmt_pct(ri.ust_2y), "context": "UST"},
+        {"name": "10Y", "value": _fmt_pct(ri.ust_10y), "context": "UST"},
+        {"name": "3M", "value": _fmt_pct(ri.ust_3m), "context": "UST"},
+        {"name": "Curve 2s10s", "value": _fmt_bps(ri.curve_2s10s), "context": f"z={_fmt_z(ri.z_curve_2s10s)}"},
+        {"name": "10Y Δ20d", "value": _fmt_bps(ri.ust_10y_chg_20d), "context": f"z={_fmt_z(ri.z_ust_10y_chg_20d)}"},
+    ]
+    print(render_regime_panel(
+        domain="Rates",
+        asof=state.asof,
+        regime_label=regime.label or regime.name,
+        score=score,
+        percentile=None,
+        description=regime.description,
+        metrics=metrics,
+    ))
 
     if llm:
         from lox.llm.core.analyst import llm_analyze_regime
@@ -144,6 +150,11 @@ def _run_rates_snapshot(
         )
         
         print(Panel(Markdown(analysis), title="Analysis", expand=False))
+
+
+def rates_snapshot(**kwargs) -> None:
+    """Entry point for `lox regime rates` (no subcommand)."""
+    _run_rates_snapshot(**kwargs)
 
 
 def register(rates_app: typer.Typer) -> None:
