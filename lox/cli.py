@@ -46,6 +46,16 @@ TRADING
   lox scan -t NVDA           Options chain scanner
 
 \b
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRYPTO PERPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  lox crypto data             Prices, OI, funding
+  lox crypto research         LLM-powered analysis
+  lox crypto trade BTC BUY 1  Trade on Aster DEX
+  lox crypto positions        Open positions
+  lox crypto balance          Account balance
+
+\b
 Run 'lox <command> --help' for details.
 """
 )
@@ -326,6 +336,10 @@ app.add_typer(weekly_app, name="weekly")
 regime_app = typer.Typer(add_completion=False, help="Regime analysis")
 app.add_typer(regime_app, name="regime")
 
+# Crypto perps
+crypto_app = typer.Typer(add_completion=False, help="Crypto perps: data, research, trading")
+app.add_typer(crypto_app, name="crypto")
+
 
 # ── Keep regimes ──────────────────────────────────────────────────────────
 @regime_app.command("vol")
@@ -496,7 +510,10 @@ def _register_commands() -> None:
     register_account(app)
     register_weekly_report(weekly_app)
     register_investor_report(weekly_app)
-    
+
+    from lox.cli_commands.crypto.crypto_cmd import register as register_crypto
+    register_crypto(crypto_app)
+
     _COMMANDS_REGISTERED = True
 
 

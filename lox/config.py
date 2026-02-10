@@ -19,11 +19,21 @@ class Settings(BaseSettings):
     # If unset, the SDK/defaults will be used.
     ALPACA_OPTIONS_FEED: str | None = None
     OPENAI_API_KEY: str | None = None
+    OPENAI_BASE_URL: str | None = None  # e.g. https://openrouter.ai/api/v1 for OpenRouter
     OPENAI_MODEL: str = "gpt-4o-mini"
     FRED_API_KEY: str | None = None
     FMP_API_KEY: str | None = None
     TRADING_ECONOMICS_API_KEY: str | None = None
     MASSIVE_API_KEY: str | None = None  # Polygon.io / Massive - options OI, volume, greeks
+
+    # Crypto perps
+    CCXT_EXCHANGE: str = "okx"
+    CRYPTO_COINS: str = "BTC,ETH,SOL"
+
+    # Aster DEX (optional, for trading)
+    ASTER_USER_ADDRESS: str | None = None
+    ASTER_SIGNER_ADDRESS: str | None = None
+    ASTER_PRIVATE_KEY: str | None = None
 
     # Backwards-compatible snake_case accessors used across the codebase.
     # Pydantic v2 uses field names as attribute names; these properties allow both styles.
