@@ -1,0 +1,3 @@
+# Heroku requires this file for the Python buildpack.
+# All actual dependencies are defined in pyproject.toml.
+-e ".[dashboard]"
