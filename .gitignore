@@ -15,8 +15,12 @@ htmlcov/
 # Spreadsheets (privacy)
 *.xlsx
 
-# Data files - all CSVs, JSON, and caches are local-only
+# Data files - most CSVs, JSON, and caches are local-only
 data/*.csv
+# ...but NAV ledger files must be tracked (needed by dashboard on Heroku)
+!data/nav_sheet.csv
+!data/nav_flows.csv
+!data/nav_investor_flows.csv
 data/*.json
 data/cache/
 data/live/

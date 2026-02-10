@@ -26,9 +26,9 @@ def get_data_dir() -> str:
     env = os.environ.get("AOT_DATA_DIR", "").strip()
     if env:
         return os.path.abspath(env)
-    # From nav/store.py: nav -> lox -> src -> project root
+    # From lox/nav/store.py: nav -> lox -> project root
     _root = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "..")
+        os.path.join(os.path.dirname(__file__), "..", "..")
     )
     return os.path.join(_root, "data")
 
