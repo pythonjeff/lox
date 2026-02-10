@@ -1,7 +1,7 @@
 [project]
 name = "lox"
 version = "0.1.0"
-description = "Execution-aware AI-assisted options selector using Alpaca."
+description = "Discretionary macro research platform with systematic tools for regime-aware portfolio management."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -13,10 +13,23 @@ dependencies = [
   "pydantic>=2.7.0",
   "pydantic-settings>=2.3.0",
   "requests>=2.31",
+  "httpx>=0.25.0",
   "rich>=13.7.1",
   "typer>=0.12.3",
   "openai>=1.40.0",
-  "scikit-learn>=1.3"
+  "scikit-learn>=1.3",
+  "fredapi>=0.5.0",
+  "matplotlib>=3.8.0",
+]
+
+[project.optional-dependencies]
+dashboard = [
+  "flask>=3.0.0",
+  "gunicorn>=21.0.0",
+  "flask-sqlalchemy>=3.1.0",
+  "flask-login>=0.6.3",
+  "flask-bcrypt>=1.0.1",
+  "psycopg2-binary>=2.9.0",
 ]
 
 [project.scripts]
