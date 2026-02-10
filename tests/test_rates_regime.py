@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from ai_options_trader.rates.models import RatesInputs
-from ai_options_trader.rates.regime import classify_rates_regime
+from lox.rates.models import RatesInputs
+from lox.rates.regime import classify_rates_regime
 
 
 def test_rates_regime_inverted_curve():

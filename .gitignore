@@ -26,7 +26,7 @@ data/lox_users.db-shm
 data/lox_users.db-wal
 
 # Source code cache
-src/ai_options_trader/data/cache/
+lox/data/cache/
 
 # Dashboard cache
 dashboard/data/cache/

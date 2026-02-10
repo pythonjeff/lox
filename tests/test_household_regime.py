@@ -7,16 +7,16 @@ from __future__ import annotations
 
 import pytest
 
-from ai_options_trader.household.models import (
+from lox.household.models import (
     HouseholdInputs,
     HouseholdState,
     SectoralBalances,
 )
-from ai_options_trader.household.regime import (
+from lox.household.regime import (
     HouseholdRegime,
     classify_household_regime,
 )
-from ai_options_trader.household.features import (
+from lox.household.features import (
     household_feature_vector,
     HOUSEHOLD_REGIME_NAMES,
 )

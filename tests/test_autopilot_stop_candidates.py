@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ai_options_trader.cli_commands.autopilot_cmd import _stop_candidates
+from lox.cli_commands.autopilot_cmd import _stop_candidates
 
 
 def test_stop_candidates_threshold():

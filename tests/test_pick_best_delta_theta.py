@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from ai_options_trader.options.budget_scan import AffordableOption, pick_best_delta_theta
+from lox.options.budget_scan import AffordableOption, pick_best_delta_theta
 
 
 def _o(

@@ -1,5 +1,5 @@
-from ai_options_trader.commodities.models import CommoditiesInputs
-from ai_options_trader.commodities.regime import classify_commodities_regime
+from lox.commodities.models import CommoditiesInputs
+from lox.commodities.regime import classify_commodities_regime
 
 
 def test_commodities_regime_neutral():

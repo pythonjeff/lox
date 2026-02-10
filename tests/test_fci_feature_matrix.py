@@ -1,6 +1,6 @@
 import pandas as pd
 
-from ai_options_trader.regimes.fci import build_fci_feature_matrix
+from lox.regimes.fci import build_fci_feature_matrix
 
 
 def test_build_fci_feature_matrix_smoke():

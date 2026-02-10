@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from ai_options_trader.strategies.aggregator import PortfolioAggregator
-from ai_options_trader.strategies.base import CandidateTrade
+from lox.strategies.aggregator import PortfolioAggregator
+from lox.strategies.base import CandidateTrade
 
 
 def _c(

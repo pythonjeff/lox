@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from ai_options_trader.tariff.signals import build_tariff_regime_state
-from ai_options_trader.tariff.theory import TariffRegimeSpec
+from lox.tariff.signals import build_tariff_regime_state
+from lox.tariff.theory import TariffRegimeSpec
 
 
 def _sample_inputs() -> tuple[pd.DataFrame, pd.DataFrame]:

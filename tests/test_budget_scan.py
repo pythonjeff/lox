@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from ai_options_trader.data.alpaca import OptionCandidate
-from ai_options_trader.options.budget_scan import affordable_options_for_ticker, pick_best_affordable
+from lox.data.alpaca import OptionCandidate
+from lox.options.budget_scan import affordable_options_for_ticker, pick_best_affordable
 
 
 def _c(

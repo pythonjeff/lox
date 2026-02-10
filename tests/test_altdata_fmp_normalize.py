@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ai_options_trader.altdata.fmp import normalize_earnings_calendar
+from lox.altdata.fmp import normalize_earnings_calendar
 
 
 def test_normalize_earnings_calendar_handles_common_fields():

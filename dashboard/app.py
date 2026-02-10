@@ -23,12 +23,12 @@ env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(env_path)
 print(f"[Dashboard] Loaded .env from: {env_path}")
 
-from ai_options_trader.config import load_settings
-from ai_options_trader.data.alpaca import make_clients
-from ai_options_trader.data.market import fetch_equity_daily_closes
-from ai_options_trader.nav.store import read_nav_sheet
-from ai_options_trader.nav.investors import read_investor_flows
-from ai_options_trader.utils.occ import parse_occ_option_symbol
+from lox.config import load_settings
+from lox.data.alpaca import make_clients
+from lox.data.market import fetch_equity_daily_closes
+from lox.nav.store import default_nav_flows_path, default_nav_sheet_path, read_nav_sheet
+from lox.nav.investors import default_investor_flows_path, investor_report, read_investor_flows
+from lox.utils.occ import parse_occ_option_symbol
 import re
 import pandas as pd
 
@@ -399,9 +399,7 @@ def _get_original_capital():
     """Get original capital from investor flows (preferred) or env var fallback."""
     # Prefer investor flows as source of truth - auto-updates with deposits
     try:
-        # Use absolute path to handle dashboard running from different directories
-        investor_flows_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_investor_flows.csv")
-        flows = read_investor_flows(path=investor_flows_path)
+        flows = read_investor_flows(path=default_investor_flows_path())
         capital_sum = sum(float(f.amount) for f in flows if float(f.amount) > 0)
         if capital_sum > 0:
             return capital_sum
@@ -506,8 +504,8 @@ def _get_live_twr(live_equity: float) -> float | None:
     since the last snapshot to avoid inflating returns with new capital.
     """
     try:
-        nav_sheet_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_sheet.csv")
-        nav_flows_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_flows.csv")
+        nav_sheet_path = default_nav_sheet_path()
+        nav_flows_path = default_nav_flows_path()
         
         if not os.path.exists(nav_sheet_path):
             return None
@@ -737,8 +735,7 @@ def get_positions_data(force_refresh: bool = False):
         aum = original_capital
         investor_count = 0
         try:
-            investor_flows_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_investor_flows.csv")
-            flows = read_investor_flows(path=investor_flows_path)
+            flows = read_investor_flows(path=default_investor_flows_path())
             investor_codes = set(f.code for f in flows if float(f.amount) > 0)
             investor_count = len(investor_codes)
         except Exception:
@@ -788,8 +785,7 @@ def get_positions_data(force_refresh: bool = False):
             pass
         
         try:
-            investor_flows_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_investor_flows.csv")
-            flows = read_investor_flows(path=investor_flows_path)
+            flows = read_investor_flows(path=default_investor_flows_path())
             capital_sum = sum(float(f.amount) for f in flows if float(f.amount) > 0)
             if capital_sum > 0:
                 original_capital = capital_sum
@@ -1004,52 +1000,13 @@ def api_investors():
 def get_investor_data():
     """
     Unitized NAV investor ledger (hedge fund style) using LIVE Alpaca equity.
-    
-    - Each deposit records units purchased at the NAV/unit price when deposited
-    - Current value = units × current NAV/unit (from live equity)
-    - Properly accounts for deposit timing
-    - No manual snapshots needed
+    Delegates to nav.investors.investor_report() for single source of truth.
     """
     try:
-        import csv
-        
-        # Path to investor flows
-        investor_flows_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_investor_flows.csv")
-        
-        if not os.path.exists(investor_flows_path):
+        if not os.path.exists(default_investor_flows_path()):
             return {"error": "Investor flows file not found", "investors": [], "fund_return": 0, "total_capital": 0}
-        
-        # Read investor flows with units
-        flows = []
-        with open(investor_flows_path, "r") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                amount = float(row.get("amount", 0))
-                nav_per_unit = float(row.get("nav_per_unit", 1.0) or 1.0)
-                units = float(row.get("units", 0) or 0)
-                # Backward compatibility: if no units, calculate from amount
-                if units == 0:
-                    units = amount / nav_per_unit if nav_per_unit > 0 else amount
-                flows.append({
-                    "code": row.get("code", ""),
-                    "amount": amount,
-                    "units": units,
-                })
-        
-        # Sum units and deposits per investor
-        units_by = {}
-        basis_by = {}
-        for f in flows:
-            code = f["code"]
-            units_by[code] = float(units_by.get(code, 0.0)) + float(f["units"])
-            basis_by[code] = float(basis_by.get(code, 0.0)) + float(f["amount"])
-        
-        total_units = sum(units_by.values())
-        total_capital = sum(b for b in basis_by.values() if b > 0)
-        
-        # ============================================
-        # LIVE: Get current equity from Alpaca
-        # ============================================
+
+        # Get live equity (Alpaca or nav_sheet fallback)
         live_equity = None
         try:
             positions_data = get_positions_data()
@@ -1059,63 +1016,43 @@ def get_investor_data():
                 trading, _ = make_clients(settings)
                 account = trading.get_account()
                 if account:
-                    live_equity = float(getattr(account, 'equity', 0) or 0)
+                    live_equity = float(getattr(account, "equity", 0) or 0)
         except Exception as e:
             print(f"[Investors] Live equity fetch error: {e}")
-        
-        # Fallback to nav_sheet if live fails
-        if not live_equity or live_equity <= 0:
-            nav_sheet_path = os.path.join(os.path.dirname(__file__), "..", "data", "nav_sheet.csv")
-            if os.path.exists(nav_sheet_path):
-                with open(nav_sheet_path, "r") as f:
-                    reader = csv.DictReader(f)
-                    rows = list(reader)
-                    if rows:
-                        live_equity = float(rows[-1].get("equity", 0))
-        
-        # Current NAV per unit
-        nav_per_unit = live_equity / total_units if total_units > 0 and live_equity else 1.0
-        
-        # Fund-level return
-        fund_return = ((live_equity - total_capital) / total_capital * 100) if total_capital > 0 else 0.0
-        fund_pnl = live_equity - total_capital if live_equity else 0
-        
-        # Calculate unitized values for each investor
+
+        rep = investor_report(
+            nav_sheet_path=default_nav_sheet_path(),
+            investor_flows_path=default_investor_flows_path(),
+            live_equity=live_equity,
+        )
+        rows = rep.get("rows") or []
+        total_capital = float(rep.get("total_capital") or 0)
+        fund_return_decimal = float(rep.get("fund_return") or 0)
+        equity = float(rep.get("equity") or 0)
+
+        # Map to dashboard shape: return_pct in percent, ownership in percent (0–100)
         investors = []
-        for code in sorted(units_by.keys()):
-            units = float(units_by.get(code, 0.0))
-            basis = float(basis_by.get(code, 0.0))
-            if units <= 0:
-                continue
-            
-            # Value = units × current NAV/unit
-            value = units * nav_per_unit
-            
-            # P&L and individual return
-            pnl = value - basis
-            ret = (pnl / basis * 100) if basis > 0 else 0.0
-            
-            # Ownership = investor's units / total units
-            ownership = (units / total_units * 100) if total_units > 0 else 0.0
-            
+        for r in rows:
+            ret = float(r.get("return") or 0)
+            ownership = float(r.get("ownership") or 0)
             investors.append({
-                "code": code,
-                "ownership": round(ownership, 1),
-                "units": round(units, 2),
-                "basis": round(basis, 2),
-                "value": round(value, 2),
-                "pnl": round(pnl, 2),
-                "return_pct": round(ret, 1),
+                "code": r.get("code", ""),
+                "ownership": round(ownership * 100, 1),
+                "units": round(float(r.get("units", 0)), 2),
+                "basis": round(float(r.get("basis", 0)), 2),
+                "value": round(float(r.get("value", 0)), 2),
+                "pnl": round(float(r.get("pnl", 0)), 2),
+                "return_pct": round(ret * 100, 1),
             })
-        
+
         return {
             "investors": investors,
-            "nav_per_unit": round(nav_per_unit, 4),
-            "total_units": round(total_units, 2),
-            "fund_return": round(fund_return, 2),
+            "nav_per_unit": round(float(rep.get("nav_per_unit") or 1.0), 4),
+            "total_units": round(float(rep.get("total_units") or 0), 2),
+            "fund_return": round(fund_return_decimal * 100, 2),
             "total_capital": round(total_capital, 2),
-            "equity": round(live_equity, 2) if live_equity else 0,
-            "fund_pnl": round(fund_pnl, 2),
+            "equity": round(equity, 2),
+            "fund_pnl": round(equity - total_capital, 2),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "live": True,
         }
@@ -2097,7 +2034,7 @@ def _build_portfolio_from_alpaca(positions_data, cash_available):
     
     Returns a Portfolio with Position objects including calculated greeks.
     """
-    from ai_options_trader.portfolio.positions import Portfolio, Position
+    from lox.portfolio.positions import Portfolio, Position
     from datetime import datetime
     
     portfolio_positions = []
@@ -2173,7 +2110,7 @@ def _run_monte_carlo_simulation(portfolio, vix_val, hy_val, regime_label, n_scen
     Returns rich metrics including attribution and tail risk analysis.
     """
     import numpy as np
-    from ai_options_trader.llm.scenarios.monte_carlo_v01 import MonteCarloV01, ScenarioAssumptions
+    from lox.llm.scenarios.monte_carlo_v01 import MonteCarloV01, ScenarioAssumptions
     
     # Map dashboard regime to MC regime
     regime_map = {

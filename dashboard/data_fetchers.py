@@ -16,7 +16,7 @@ def get_hy_oas(settings):
         if not settings or not getattr(settings, 'FRED_API_KEY', None):
             return None
         
-        from ai_options_trader.data.fred import FredClient
+        from lox.data.fred import FredClient
         fred = FredClient(api_key=settings.FRED_API_KEY)
         df = fred.fetch_series(series_id="BAMLH0A0HYM2", start_date="2018-01-01", refresh=False)
         
@@ -137,7 +137,7 @@ def get_cpi_inflation(settings):
         if not settings or not getattr(settings, 'FRED_API_KEY', None):
             return None
         
-        from ai_options_trader.data.fred import FredClient
+        from lox.data.fred import FredClient
         fred = FredClient(api_key=settings.FRED_API_KEY)
         # CPIAUCSL is the CPI index, we need YoY change
         df = fred.fetch_series(series_id="CPIAUCSL", start_date="2022-01-01", refresh=False)
@@ -191,7 +191,7 @@ def get_yield_curve_spread(settings):
         if not settings or not getattr(settings, 'FRED_API_KEY', None):
             return None
         
-        from ai_options_trader.data.fred import FredClient
+        from lox.data.fred import FredClient
         fred = FredClient(api_key=settings.FRED_API_KEY)
         df = fred.fetch_series(series_id="T10Y2Y", start_date="2022-01-01", refresh=False)
         

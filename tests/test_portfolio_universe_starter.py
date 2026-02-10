@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ai_options_trader.portfolio.universe import STARTER_UNIVERSE
+from lox.portfolio.universe import STARTER_UNIVERSE
 
 
 def test_starter_universe_contains_required_proxies():

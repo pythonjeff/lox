@@ -37,7 +37,7 @@ def backfill_regime_history(app):
     Fetches historical VIX from FMP and HY OAS from FRED, then classifies
     each trading day and persists to the regime_snapshots table.
     """
-    from ai_options_trader.config import load_settings
+    from lox.config import load_settings
 
     with app.app_context():
         settings = load_settings()
@@ -89,7 +89,7 @@ def backfill_regime_history(app):
         try:
             fred_key = getattr(settings, 'FRED_API_KEY', None)
             if fred_key:
-                from ai_options_trader.data.fred import FredClient
+                from lox.data.fred import FredClient
                 fred = FredClient(api_key=fred_key)
                 df = fred.fetch_series(
                     series_id="BAMLH0A0HYM2",
@@ -110,7 +110,7 @@ def backfill_regime_history(app):
         try:
             fred_key = getattr(settings, 'FRED_API_KEY', None)
             if fred_key:
-                from ai_options_trader.data.fred import FredClient
+                from lox.data.fred import FredClient
                 fred = FredClient(api_key=fred_key)
                 df = fred.fetch_series(
                     series_id="T10Y2Y",

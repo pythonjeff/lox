@@ -1,6 +1,6 @@
 import pandas as pd
 
-from ai_options_trader.portfolio.panel_eval import walk_forward_panel_eval
+from lox.portfolio.panel_eval import walk_forward_panel_eval
 
 
 def test_panel_eval_smoke_no_crash():

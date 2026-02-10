@@ -1,5 +1,5 @@
-from ai_options_trader.fiscal.models import FiscalInputs
-from ai_options_trader.fiscal.regime import classify_fiscal_regime
+from lox.fiscal.models import FiscalInputs
+from lox.fiscal.regime import classify_fiscal_regime
 
 
 def test_fiscal_regime_benign_funding_default():

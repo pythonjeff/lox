@@ -1,5 +1,5 @@
-from ai_options_trader.monetary.models import MonetaryInputs
-from ai_options_trader.monetary.regime import classify_monetary_regime
+from lox.monetary.models import MonetaryInputs
+from lox.monetary.regime import classify_monetary_regime
 
 
 def test_monetary_regime_abundant_reserves():

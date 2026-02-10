@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import pytest
 
-from ai_options_trader.news.models import NewsSentimentInputs, NewsSentimentState
-from ai_options_trader.news.regime import NewsSentimentRegime, classify_news_regime
-from ai_options_trader.news.features import news_feature_vector, NEWS_REGIME_NAMES
+from lox.news.models import NewsSentimentInputs, NewsSentimentState
+from lox.news.regime import NewsSentimentRegime, classify_news_regime
+from lox.news.features import news_feature_vector, NEWS_REGIME_NAMES
 
 
 class TestNewsSentimentClassification:
@@ -152,7 +152,7 @@ class TestSentimentEnhanced:
     
     def test_rule_based_negative_keywords(self):
         """Test negative keyword detection."""
-        from ai_options_trader.llm.core.sentiment import rule_based_sentiment
+        from lox.llm.core.sentiment import rule_based_sentiment
         
         result = rule_based_sentiment("Company misses earnings, CEO resigns amid fraud investigation")
         assert result.label == "negative"
@@ -160,7 +160,7 @@ class TestSentimentEnhanced:
     
     def test_rule_based_positive_keywords(self):
         """Test positive keyword detection."""
-        from ai_options_trader.llm.core.sentiment import rule_based_sentiment
+        from lox.llm.core.sentiment import rule_based_sentiment
         
         result = rule_based_sentiment("Company beats earnings, raises guidance with record revenue")
         assert result.label == "positive"
@@ -168,7 +168,7 @@ class TestSentimentEnhanced:
     
     def test_rule_based_mixed_signals(self):
         """Test mixed sentiment handling."""
-        from ai_options_trader.llm.core.sentiment import rule_based_sentiment
+        from lox.llm.core.sentiment import rule_based_sentiment
         
         result = rule_based_sentiment("Strong growth but misses on margins")
         # Could be positive, negative, or neutral depending on weight
@@ -176,7 +176,7 @@ class TestSentimentEnhanced:
     
     def test_aggregate_sentiment(self):
         """Test aggregate sentiment calculation."""
-        from ai_options_trader.llm.core.sentiment import (
+        from lox.llm.core.sentiment import (
             analyze_article_sentiment,
             aggregate_sentiment,
         )

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ai_options_trader.portfolio.universe import get_universe
+from lox.portfolio.universe import get_universe
 
 
 def test_housing_universe_is_defined_and_resolvable():
