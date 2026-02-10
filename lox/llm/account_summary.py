@@ -31,7 +31,7 @@ def llm_account_summary(
     except Exception as e:  # pragma: no cover
         raise RuntimeError("openai package is not installed. Try: pip install -e .") from e
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = OpenAI(api_key=settings.openai_api_key, base_url=settings.OPENAI_BASE_URL)
     chosen_model = model or settings.openai_model
 
     payload = {
