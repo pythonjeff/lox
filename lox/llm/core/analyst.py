@@ -644,6 +644,113 @@ def _compute_historical_context(
     return historical
 
 
+# =========================================================================
+# Ticker-specific scenario section builder
+# =========================================================================
+
+def _build_ticker_scenario_section(ticker: str, snapshot_dict: dict[str, Any]) -> str:
+    """
+    Build the SCENARIO ANALYSIS prompt section for a single ticker.
+
+    If ``snapshot_dict`` contains a ``quant_scenarios`` key (pre-computed by
+    the regime-conditional bootstrap engine), the table rows are pre-filled
+    and the LLM is instructed to supply narrative triggers only.
+
+    Otherwise falls back to the original prompt that asks the LLM to generate
+    everything (targets + triggers).
+    """
+    qs = snapshot_dict.get("quant_scenarios")
+
+    if qs and isinstance(qs, dict) and "scenarios" in qs:
+        return _quant_scenario_section(ticker, qs)
+
+    # ---- Fallback: no pre-computed scenarios available --------------------
+    return f"""### SCENARIO ANALYSIS ({ticker}-Specific)
+
+Provide **4-5 scenarios** for {ticker} over the next 3 months. Each scenario must include a **specific price target for {ticker}** and the **valuation methodology** used to derive it (e.g. "based on 35x EV/Revenue at $7.7B revenue" or "based on DCF 12% WACC" — not just a number).
+
+**Probability assignments need basis:** Do not use a generic 20/45/25/10 template. Justify with historical base rates or analytical reasoning (e.g. "Bull 20% — historically, stocks at this valuation sustain >30% growth only ~20% of the time").
+
+**Ground targets** in snapshot and 52w range; the Key Trigger must justify the magnitude.
+
+| Scenario | Probability | Key Trigger | {ticker} Target (3M) | Methodology | {ticker} Price Range |
+|----------|-------------|-------------|---------------------|-------------|---------------------|
+| BULL | X% | [catalyst] | $XX.XX | [e.g. 35x EV/Rev] | $XX - $XX |
+| BASE | X% | [trajectory] | $XX.XX | [e.g. current multiple] | $XX - $XX |
+| BEAR | X% | [risk catalyst] | $XX.XX | [e.g. 15x EV/Rev] | $XX - $XX |
+| TAIL RISK | X% | [extreme] | $XX.XX | [e.g. stress multiple] | $XX - $XX |
+
+**Add one Expected value line:** E[V] = (Bull% × Bull target) + (Base% × Base) + (Bear% × Bear) + (Tail% × Tail) = $X.XX
+
+**Rules:** Probabilities sum to 100%. Targets must state methodology. Probabilities must be justified, not arbitrary. Calibrate to snapshot volatility.
+"""
+
+
+def _quant_scenario_section(ticker: str, qs: dict[str, Any]) -> str:
+    """
+    Build a scenario section where price targets, ranges, and probabilities
+    are already computed.  The LLM is told to use these numbers exactly and
+    only supply the narrative Key Trigger for each row.
+    """
+    sc = qs["scenarios"]
+    bull = sc.get("BULL", {})
+    base = sc.get("BASE", {})
+    bear = sc.get("BEAR", {})
+    tail = sc.get("TAIL_RISK", {})
+
+    def _fmt(s: dict) -> tuple[str, str, str]:
+        """Return (probability, target, range) formatted strings."""
+        prob = f"{s.get('probability', '?')}%"
+        tgt = f"${s.get('target', '?')}"
+        rng = s.get("range", [])
+        rng_str = f"${rng[0]} - ${rng[1]}" if len(rng) == 2 else "?"
+        return prob, tgt, rng_str
+
+    bp, bt, br = _fmt(bull)
+    bap, bat, bar_ = _fmt(base)
+    bep, bet, ber = _fmt(bear)
+    tp, tt, tr = _fmt(tail)
+
+    method = qs.get("method", "bootstrap")
+    n_sims = qs.get("n_simulations", "N/A")
+    horizon = qs.get("horizon", "3M")
+    vol = qs.get("realized_vol_annual", "?")
+    regime_adj = qs.get("regime_adjustments") or {}
+    drift_adj = regime_adj.get("equity_drift_adj", 0)
+    vol_adj = regime_adj.get("equity_vol_adj", 1.0)
+
+    adj_desc = "none"
+    if regime_adj:
+        parts = []
+        if drift_adj:
+            parts.append(f"drift {drift_adj:+.1%}")
+        if vol_adj != 1.0:
+            parts.append(f"vol x{vol_adj:.2f}")
+        if parts:
+            adj_desc = ", ".join(parts)
+
+    return f"""### SCENARIO ANALYSIS ({ticker}-Specific, Quantitative)
+
+**Pre-computed targets** — generated via regime-conditional block-bootstrap ({n_sims:,} simulations, {horizon} horizon, realized vol {vol}%, regime adjustments: {adj_desc}).
+
+**IMPORTANT — Use the price targets and probabilities below exactly as given.** They are derived from the historical return distribution conditioned on the current macro regime. Do NOT change the numbers. Your job is to provide the **Key Trigger** narrative for each row — a specific, plausible catalyst from the news, calendar, or fundamental data that would drive {ticker} to that level.
+
+| Scenario | Probability | Key Trigger (YOU FILL THIS IN) | {ticker} Target (3M) | {ticker} Price Range |
+|----------|-------------|-------------------------------|---------------------|---------------------|
+| BULL | {bp} | [provide a specific catalyst that would drive {ticker} to {bt}] | {bt} | {br} |
+| BASE | {bap} | [current trajectory / status quo narrative] | {bat} | {bar_} |
+| BEAR | {bep} | [provide a specific risk catalyst that would push {ticker} to {bet}] | {bet} | {ber} |
+| TAIL RISK | {tp} | [provide an extreme but plausible scenario for {ticker} at {tt}] | {tt} | {tr} |
+
+**Rules:**
+1. Do NOT modify the price targets, ranges, or probabilities — they are quantitatively derived.
+2. **Key Trigger must justify the target:** Explain *why* {ticker} reaches that level. Reference specific upcoming events from the catalyst calendar, earnings, macro releases, or sector dynamics.
+3. If a target seems stretched relative to recent history, acknowledge that in the trigger (e.g., "would require [specific condition] — historically rare but regime-consistent").
+4. Triggers should be specific to {ticker}, not generic macro platitudes.
+5. **Add one Expected value line** (CFA-correct): E[V] = (Bull% × Bull target) + (Base% × Base target) + (Bear% × Bear target) + (Tail% × Tail target) = $X.XX
+"""
+
+
 def llm_analyze_regime(
     *,
     settings: Settings,
@@ -806,53 +913,36 @@ def llm_analyze_regime(
     # Build ticker-specific or regime-generic prompt sections
     if ticker:
         subject = f"{ticker}"
-        scenario_section = f"""### SCENARIO ANALYSIS ({ticker}-Specific)
-
-Provide **4-5 scenarios** for {ticker} over the next 3 months. Each scenario must include a **specific price target for {ticker}** — NOT SPX, TLT, or VIX.
-
-**Ground targets in the snapshot:** Use `snapshot.price`, `snapshot.52w_high`, and `snapshot.52w_low` from the payload. Targets can extend beyond 52w range if the asset has traded there historically, but only when justified (see below).
-
-**CRITICAL — The Key Trigger must justify the magnitude:** Every price target must be supported by a **specific, plausible driver** for that move. Do not pair a large target (e.g. a run to all-time highs) with a vague trigger like "continued inflows" or "geopolitical tensions." If there is no clear catalyst in the data that would realistically drive {ticker} to a given level, use a more conservative target for that scenario, or label it explicitly as low-probability / speculative. The trigger should explain *why* price gets there, not just name themes.
-
-| Scenario | Probability | Key Trigger | {ticker} Target (3M) | {ticker} Price Range |
-|----------|-------------|-------------|---------------------|---------------------|
-| BULL | X% | [specific catalyst that justifies this target] | $XX.XX | $XX - $XX |
-| BASE | X% | [current trajectory] | $XX.XX | $XX - $XX |
-| BEAR | X% | [risk catalyst] | $XX.XX | $XX - $XX |
-| TAIL RISK | X% | [extreme scenario] | $XX.XX | $XX - $XX |
-
-**Rules:**
-1. Probabilities must sum to 100%
-2. Price targets: use snapshot and 52w range; extensions beyond 52w are allowed only when historically plausible and when the trigger justifies the move.
-3. **Key Trigger must justify the target:** No big number without a concrete driver. If there's no real drive to a level in the current setup, use a lower target or call out that the scenario is speculative.
-4. Triggers should reference specific upcoming events from the catalyst calendar where possible.
-5. Calibrate move sizes to the asset's recent volatility (from snapshot).
-"""
+        scenario_section = _build_ticker_scenario_section(ticker, snapshot_dict)
         catalyst_section = f"""### CATALYST CALENDAR ({ticker} Impact)
 
-For each upcoming calendar event, estimate the **impact on {ticker} specifically**:
+**Company-specific catalysts first:** Next earnings date, product/contract announcements, analyst days — these matter most for a single name. Then macro events.
 
-| Date | Event | Expected | Impact on {ticker} if Miss | Impact on {ticker} if Beat |
-|------|-------|----------|--------------------------|--------------------------|
-| [date] | [event] | [forecast] | {ticker} [direction + price move] | {ticker} [direction + price move] |
+**Do NOT fabricate specific dollar impacts** for macro events on {ticker} (e.g. avoid "{ticker} -$2.00 if Retail Sales < 0.2%" unless you have empirical data). Instead use:
+- **Qualitative direction**: "Retail sales miss would likely pressure cyclicals; {ticker} could underperform."
+- Or **sector sensitivity**: "Industrials (XLI) typically move ±0.5% on retail sales misses; {ticker} beta to sector ~1.8x."
+- Or **historical**: "In the last 4 retail sales reports, {ticker} moved an average of ±X% on release day" (only if supported by data).
 
-*Be specific: "{ticker} -$0.50 if CPI > 3.5%" not generic "rates could rise"*
+| Date | Event | Type (Co/Macro) | Expected | Impact if Miss | Impact if Beat |
+|------|-------|-----------------|----------|----------------|-----------------|
+| [earnings date if known] | [company event] | Company | — | [qualitative] | [qualitative] |
+| [date] | [macro event] | Macro | [forecast] | [directional, no fabricated $] | [directional] |
 """
         trade_section = f"""### TRADE EXPRESSIONS ({ticker}-Focused)
 
-Provide **5 specific trade ideas for {ticker}** (or closely related instruments). These should be actionable and specific to {ticker}.
+Provide **4-5 specific trade ideas for {ticker}**. **Do NOT suggest outright shorting shares** (unlimited risk; inappropriate for a research tool). Use long equity, options, or relative value only.
 
-**Required mix:**
-- 1-2 **Directional** plays on {ticker} itself (long/short shares or ETF)
-- 1-2 **Options** strategies on {ticker} (spreads, straddles, covered calls, etc.)
-- 1 **Relative value** or **pair trade** ({ticker} vs a related instrument)
+**Required:**
+- 1-2 **Long** directional (shares or calls) with entry/target/stop
+- 1-2 **Options** (spreads, straddles, covered calls) — for each options trade include: **max risk in dollars**, **key Greeks (delta, theta)**, **break-even at expiry**
+- 1 **Relative value** or pair trade ({ticker} vs related instrument)
+- **Position sizing:** For at least one idea, add portfolio context: e.g. "At 5% allocation with $140 stop, max loss = 9.7% × 5% = 0.49% of portfolio."
+- **Options:** State "Max risk = net debit. Max gain = [width] - debit." and delta/theta/days to expiry where relevant.
 
 **For each trade:**
-| Direction | Instrument | Strategy | Conviction | Entry | Target | Stop | Timeframe |
-|-----------|-----------|----------|------------|-------|--------|------|-----------|
-| Long/Short | {ticker} or option | [strategy detail] | HIGH/MED/LOW | $XX.XX | $XX.XX | $XX.XX | Xd/Xw |
-
-*Use the support/resistance levels and technical data from the snapshot for entry/target/stop.*
+| Direction | Instrument | Strategy | Conviction | Entry | Target | Stop | Max Risk / Greeks | Timeframe |
+|-----------|-----------|----------|------------|-------|--------|------|-------------------|-----------|
+| Long | {ticker} or option | [detail] | HIGH/MED/LOW | $XX | $XX | $XX | [dollar risk or delta/theta] | Xd/Xw |
 """
     else:
         subject = domain.upper()
@@ -930,14 +1020,11 @@ Your task: Produce a **research-grade brief** suitable for portfolio managers.{'
 ## OUTPUT FORMAT
 
 ### REGIME STATUS
-- Current regime: [label] — [1-line interpretation grounded in metrics]
+- Current regime: [label] — [1-line interpretation]. **Source signal:** [e.g. "based on: ISM expanding, earnings beats broadening, VIX below 20th percentile"] so the reader knows how the regime was derived.
 - Confidence: [HIGH/MEDIUM/LOW] — [rationale based on signal consistency]
 
-### KEY METRICS
-List 4-6 metrics with specific values from the snapshot. Note:
-- Extremes (percentiles, z-scores if available)
-- Direction of change
-- Historical context if evident
+### THESIS SUMMARY
+Replace a repeat of the structured data with **2-3 sentences of synthesis**: WHY this stock is interesting right now, what the market is pricing in, and what could change the view. Do NOT restate price, market cap, or 52-week range — that is already in the tables above. Synthesize and add insight.
 
 ### NEWS & MARKET CONTEXT
 Synthesize the provided news into 5-8 bullets. **Cite sources using [N] format** (N = article index).
@@ -958,12 +1045,11 @@ Reference 1-2 **historical analogs** if applicable:
 
 {trade_section}
 ### RISKS & INVALIDATION
-4-5 bullets. **Be specific to this asset and snapshot — avoid generic filler.**
+4-5 bullets. **Be specific; use qualitative language — do NOT fabricate specific dollar impacts** (e.g. avoid "CPI would push [ticker] -$2.00" unless you have empirical data). Frame as **"What would make me wrong?"** (strongest bear case, intellectual honesty).
 
-- What would **invalidate the base view**? Name a specific level, release, or threshold (e.g. "[ticker] below $XX invalidates the thesis" or "CPI print above X% would likely push [ticker] -Y%" — use the actual ticker symbol when reporting on a single name).
-- Tie risks to **named calendar events** from the payload and estimate direction/magnitude.
-- Include at least one **idiosyncratic** risk (sector, supply, positioning, or name-specific), not only macro.
-- **Do NOT use** generic bullets such as "geopolitical events could impact prices", "Fed policy could change", "risk-off could hurt", or "economic data could move the market" unless you add a concrete trigger and estimated effect.
+- What would **invalidate the base view**? A specific level or release is fine; for macro events use **directional** language (e.g. "Higher-than-expected inflation would pressure growth valuations broadly; [ticker] is exposed given negative earnings and high multiple").
+- Tie risks to **named calendar events** and **idiosyncratic** risks (sector, supply, positioning, concentration). Include **concentration risk** if relevant (e.g. % of revenue from top customers, key contracts).
+- Do NOT use generic bullets without a concrete trigger. Do NOT invent precise $ move amounts for macro events on single names.
 
 ### SOURCES
 List the primary data sources and APIs consulted for this analysis.
@@ -974,16 +1060,18 @@ List the primary data sources and APIs consulted for this analysis.
 3. Use ONLY provided data — do not hallucinate facts
 4. Be direct and opinionated — this is for trading decisions
 5. If data is missing, explicitly note the gap and adjust confidence
-6. **QUANTITATIVE RIGOR**: Every outlook statement needs:
-   - A probability estimate (even if approximate: "~60%")
-   - A specific target level or range
-   - A timeframe
-7. Calibrate move sizes using:
-   - Recent volatility from snapshot (e.g., 20d std dev)
-   - Historical percentiles if provided
-   - Typical event-day moves for calendar releases
-8. Total length: 700-1000 words (tables count toward limit)
-{('9. ALL scenarios, catalysts, and trade ideas MUST reference ' + ticker + ' directly. Do NOT substitute generic SPX/TLT/VIX targets.') if ticker else ''}
+6. **QUANTITATIVE RIGOR**: Every outlook statement needs a probability, target/range, and timeframe. Calibrate moves using snapshot volatility and historical percentiles.
+7. Total length: 700-1000 words (tables count toward limit)
+{('8. ALL scenarios, catalysts, and trade ideas MUST reference ' + ticker + ' directly. Do NOT substitute generic SPX/TLT/VIX targets.') if ticker else ''}
+
+## IMPORTANT RULES FOR ANALYSIS (CFA-aligned)
+1. **Never restate** data already in the structured tables (price, market cap, 52-week range). Your job is to SYNTHESIZE and provide INSIGHT, not summarize.
+2. **Price targets** must include the valuation methodology (e.g. "based on 25x forward EV/EBITDA" or "based on DCF with 12% WACC"). If targets are pre-computed (quant scenarios), say so and add E[V] = sum(probability × target) in one line.
+3. **Scenario probabilities** must be justified with historical base rates or analytical reasoning, not arbitrary. If same probabilities for every ticker, they are useless.
+4. **Never fabricate** specific dollar price impacts for macro events on individual stocks unless you have empirical data. Use qualitative directional language.
+5. Identify the **1-2 metrics that matter MOST** for this company right now (e.g. pre-profit: revenue growth and path to profitability; mature: earnings growth and capital returns).
+6. Frame risks as **"what would make the bull thesis wrong"** and include concentration risk where relevant.
+7. For **options** suggestions: always include max risk in dollars, key Greeks (delta, theta), and break-even price at expiry.
 
 ## DATA PAYLOAD
 {payload_json}
