@@ -12,6 +12,9 @@ htmlcov/
 .DS_Store
 .cursor/
 
+# Spreadsheets (privacy)
+*.xlsx
+
 # Data files - cache and live data are gitignored
 data/cache/
 data/live/
