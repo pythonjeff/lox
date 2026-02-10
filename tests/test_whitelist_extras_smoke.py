@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from ai_options_trader.portfolio.panel import build_macro_panel_dataset
+from lox.portfolio.panel import build_macro_panel_dataset
 
 
 def test_whitelist_extras_smoke():

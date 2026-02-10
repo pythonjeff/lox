@@ -1,4 +1,4 @@
-from ai_options_trader.fiscal.regime import classify_fiscal_regime_skeleton
+from lox.fiscal.regime import classify_fiscal_regime_skeleton
 
 
 def test_fiscal_snapshot_regime_always_classifies_even_with_missing_inputs():

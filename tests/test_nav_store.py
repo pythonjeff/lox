@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_options_trader.nav.store import append_cashflow, append_nav_snapshot, read_nav_sheet
+from lox.nav.store import append_cashflow, append_nav_snapshot, read_nav_sheet
 
 
 def test_nav_snapshot_twr_with_flows(tmp_path: Path):

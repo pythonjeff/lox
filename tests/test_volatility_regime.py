@@ -1,5 +1,5 @@
-from ai_options_trader.volatility.models import VolatilityInputs
-from ai_options_trader.volatility.regime import classify_volatility_regime
+from lox.volatility.models import VolatilityInputs
+from lox.volatility.regime import classify_volatility_regime
 
 
 def test_volatility_regime_normal():

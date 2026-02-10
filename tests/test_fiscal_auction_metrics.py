@@ -1,6 +1,6 @@
 import pandas as pd
 
-from ai_options_trader.fiscal.signals import _compute_auction_tail_and_dealer_take
+from lox.fiscal.signals import _compute_auction_tail_and_dealer_take
 
 
 def test_compute_auction_metrics_monthly_weighted_avg_and_pct_detection():

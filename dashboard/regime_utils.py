@@ -40,8 +40,8 @@ def get_regime_domains_data(settings):
 def _get_funding_regime(settings):
     """Get funding/liquidity regime status."""
     try:
-        from ai_options_trader.funding.signals import build_funding_state
-        from ai_options_trader.funding.regime import classify_funding_regime
+        from lox.funding.signals import build_funding_state
+        from lox.funding.regime import classify_funding_regime
         
         state = build_funding_state(settings=settings, start_date="2020-01-01", refresh=False)
         regime = classify_funding_regime(state.inputs)
@@ -96,7 +96,7 @@ def _get_commodities_regime(settings):
     Post-2020: Gold ranged $1,680 (Mar 2020) to ATH $2,700+ (Oct 2024)
     """
     try:
-        from ai_options_trader.commodities.signals import build_commodities_state
+        from lox.commodities.signals import build_commodities_state
         
         state = build_commodities_state(settings=settings, start_date="2020-01-01", refresh=False)
         gold_price = state.inputs.gold
@@ -113,7 +113,7 @@ def _get_commodities_regime(settings):
             return {"label": f"GOLD ${gold_price:,.0f}", "color": color}
         
         # Fallback to regime classifier
-        from ai_options_trader.commodities.regime import classify_commodities_regime
+        from lox.commodities.regime import classify_commodities_regime
         regime = classify_commodities_regime(state.inputs)
         label = regime.label or regime.name
         color = "red" if any(x in label.lower() for x in ["spike", "inflation"]) else \
@@ -128,8 +128,8 @@ def _get_commodities_regime(settings):
 def _get_volatility_regime(settings):
     """Get volatility regime status."""
     try:
-        from ai_options_trader.volatility.signals import build_volatility_state
-        from ai_options_trader.volatility.regime import classify_volatility_regime
+        from lox.volatility.signals import build_volatility_state
+        from lox.volatility.regime import classify_volatility_regime
         
         state = build_volatility_state(settings=settings, start_date="2020-01-01", refresh=False)
         regime = classify_volatility_regime(state.inputs)
@@ -150,7 +150,7 @@ def _get_housing_regime(settings):
     Post-2020 thresholds: <5% green, 5-6.5% yellow, >6.5% red
     """
     try:
-        from ai_options_trader.housing.signals import build_housing_state
+        from lox.housing.signals import build_housing_state
         
         state = build_housing_state(settings=settings, start_date="2020-01-01", refresh=False)
         mortgage_rate = state.inputs.mortgage_30y

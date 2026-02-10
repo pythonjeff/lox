@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from ai_options_trader.volatility.vx_front_end import parse_vx_front_end_from_settlement_csv
+from lox.volatility.vx_front_end import parse_vx_front_end_from_settlement_csv
 
 
 def test_parse_vx_front_end_prefers_monthlies_over_weeklies():

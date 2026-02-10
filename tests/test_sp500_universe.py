@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ai_options_trader.universe.sp500 import _parse_symbols_from_fmp
+from lox.universe.sp500 import _parse_symbols_from_fmp
 
 
 def test_parse_symbols_from_fmp():

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from ai_options_trader.options.moonshot import rank_moonshots, rank_moonshots_unconditional
+from lox.options.moonshot import rank_moonshots, rank_moonshots_unconditional
 
 
 def test_rank_moonshots_prefers_true_extreme_in_analogs():

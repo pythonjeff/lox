@@ -1,6 +1,6 @@
 from datetime import date
 import pytest
-from ai_options_trader.utils.occ import parse_occ_option_symbol
+from lox.utils.occ import parse_occ_option_symbol
 
 def test_parse_occ_call():
     exp, t, k = parse_occ_option_symbol("NVDA251219C00100000", "NVDA")

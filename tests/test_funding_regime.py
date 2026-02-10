@@ -1,5 +1,5 @@
-from ai_options_trader.funding.models import FundingInputs
-from ai_options_trader.funding.regime import classify_funding_regime
+from lox.funding.models import FundingInputs
+from lox.funding.regime import classify_funding_regime
 
 
 def test_funding_regime_normal_default():

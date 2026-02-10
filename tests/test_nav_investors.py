@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_options_trader.nav.investors import append_investor_flow, investor_report
-from ai_options_trader.nav.store import append_nav_snapshot
+from lox.nav.investors import append_investor_flow, investor_report
+from lox.nav.store import append_nav_snapshot
 
 
 def test_investor_unitization_basic(tmp_path: Path):
@@ -135,7 +135,7 @@ def test_investor_import_xlsx_excel_serial_dates(tmp_path: Path):
 
     inv_flows = str(tmp_path / "nav_investor_flows.csv")
     rep = append_investor_flow  # keep lint quiet about unused imports
-    from ai_options_trader.nav.investors import import_investors_csv, read_investor_flows
+    from lox.nav.investors import import_investors_csv, read_investor_flows
 
     out = import_investors_csv(csv_path=str(xlsx), investor_flows_path=inv_flows, note="seed")
     assert out["rows"] == 1
@@ -152,7 +152,7 @@ def test_investor_import_ts_override(tmp_path: Path):
     inv_csv.write_text("code,amount,joined\nJL,100,2026-01-01\nTG,200,2026-01-02\n")
 
     inv_flows = str(tmp_path / "nav_investor_flows.csv")
-    from ai_options_trader.nav.investors import import_investors_csv, read_investor_flows
+    from lox.nav.investors import import_investors_csv, read_investor_flows
 
     out = import_investors_csv(csv_path=str(inv_csv), investor_flows_path=inv_flows, ts_override="2026-02-01", note="seed")
     assert out["rows"] == 2

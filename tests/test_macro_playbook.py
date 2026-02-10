@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from ai_options_trader.ideas.macro_playbook import rank_macro_playbook
+from lox.ideas.macro_playbook import rank_macro_playbook
 
 
 def test_macro_playbook_ranks_by_regime_conditioned_forward_returns():

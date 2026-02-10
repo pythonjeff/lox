@@ -1,5 +1,5 @@
 """
-Pytest configuration and shared fixtures for ai_options_trader tests.
+Pytest configuration and shared fixtures for lox tests.
 
 Usage:
     @pytest.fixture functions are automatically available to all tests.
@@ -18,7 +18,7 @@ import pytest
 
 def pytest_configure():
     """
-    Ensure `src/` is on sys.path for the src-layout package import (`ai_options_trader`).
+    Ensure `src/` is on sys.path for the src-layout package import (`lox`).
     This keeps tests runnable without requiring an editable install.
     """
     root = Path(__file__).resolve().parents[1]
@@ -162,7 +162,7 @@ def make_option_candidate(
     Usage:
         candidate = make_option_candidate(delta=0.40, bid=3.0, ask=3.10)
     """
-    from ai_options_trader.data.alpaca import OptionCandidate
+    from lox.data.alpaca import OptionCandidate
     
     mid = (bid + ask) / 2
     return OptionCandidate(
