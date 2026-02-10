@@ -15,7 +15,9 @@ htmlcov/
 # Spreadsheets (privacy)
 *.xlsx
 
-# Data files - cache and live data are gitignored
+# Data files - all CSVs, JSON, and caches are local-only
+data/*.csv
+data/*.json
 data/cache/
 data/live/
 data/tracker.sqlite3
@@ -31,8 +33,5 @@ lox/data/cache/
 # Dashboard cache
 dashboard/data/cache/
 
-# Keep NAV tracking files
-!data/nav_sheet.csv
-!data/nav_investor_flows.csv
-!data/nav_flows.csv
-!data/README.md
+# Misc
+node_modules/
