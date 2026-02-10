@@ -20,9 +20,11 @@ lox --help
 ```bash
 lox status                    # Portfolio health
 lox dashboard                 # All regimes at a glance
+lox regime unified            # All 12 regimes + MC adjustments
+lox regime growth             # Growth regime
+lox regime vol                # Volatility regime
 lox research ticker NVDA      # Full research report
 lox scan -t NVDA --want put   # Options chain
-lox regime vol                # Volatility regime
 lox research regimes          # All regimes overview
 ```
 
@@ -51,6 +53,7 @@ cd dashboard && python app.py
 | [OpenAI](https://platform.openai.com/api-keys) | LLM analysis |
 | [FRED](https://fred.stlouisfed.org/docs/api/api_key.html) | Macro/economic time series |
 | [FMP](https://financialmodelingprep.com/developer/docs/) | News, calendar, quotes |
+| [Trading Economics](https://tradingeconomics.com/api/) | Consumer/macro indicators (optional, falls back to FRED) |
 
 ## License
 

@@ -24,7 +24,7 @@ lox/                          # Main package (installed via pip install -e .)
 |-- config.py                 # Settings / .env loader
 |-- cli_commands/             # Command implementations
 |   |-- core/                 # status, nav, account, dashboard, weekly report
-|   |-- regimes/              # vol, fiscal, funding, rates, macro, etc.
+|   |-- regimes/              # vol, fiscal, funding, rates, growth, inflation, credit, consumer, positioning, etc.
 |   |-- research/             # ticker, regimes (unified), portfolio
 |   +-- utils/                # Shared formatting helpers
 |-- altdata/                  # External data clients (FMP, SEC, news, earnings)
@@ -36,16 +36,18 @@ lox/                          # Main package (installed via pip install -e .)
 |   |-- features.py           # Unified regime state builder
 |   |-- transitions.py        # Regime transition probabilities
 |   +-- feature_matrix.py     # ML feature extraction
-|-- commodities/              # Commodities regime (oil, gold, copper)
-|-- fiscal/                   # Fiscal regime (deficits, TGA, issuance)
-|-- funding/                  # Funding regime (SOFR, repo)
-|-- housing/                  # Housing regime
-|-- macro/                    # Macro regime (employment, growth)
-|-- monetary/                 # Monetary policy regime
-|-- rates/                    # Rates/yield curve regime
-|-- usd/                      # USD regime
+|-- growth/                   # Growth regime (payrolls, ISM, claims, industrial production)
+|-- inflation/                # Inflation regime (CPI, Core PCE, breakevens, PPI)
 |-- volatility/               # Volatility regime (VIX, term structure)
-|-- crypto/                   # Crypto regime (BTC)
+|-- credit/                   # Credit regime (HY OAS, BBB/AAA spreads)
+|-- rates/                    # Rates/yield curve regime
+|-- funding/                  # Funding regime (SOFR, repo)
+|-- consumer/                 # Consumer regime (sentiment, spending, mortgage rates)
+|-- fiscal/                   # Fiscal regime (deficits, TGA, issuance)
+|-- positioning/              # Positioning regime (VIX term structure, put/call, AAII)
+|-- monetary/                 # Monetary policy regime
+|-- usd/                      # USD regime
+|-- commodities/              # Commodities regime (oil, gold, copper)
 |-- nav/                      # NAV tracking and investor ledger
 +-- utils/                    # Shared utilities (dates, OCC parsing, logging)
 
@@ -69,9 +71,10 @@ examples/                     # Usage examples
 
 | Source | Module | Data |
 |--------|--------|------|
-| **FRED** | `lox/data/fred.py` | Macro time series (rates, employment, inflation) |
+| **FRED** | `lox/data/fred.py` | Macro time series (rates, employment, inflation, credit spreads) |
 | **Alpaca** | `lox/data/alpaca.py` | Real-time quotes, positions, options, news |
 | **FMP** | `lox/altdata/fmp.py` | Stock news, calendar, quotes, fundamentals (centralized client) |
+| **Trading Economics** | `lox/altdata/trading_economics.py` | Consumer/macro indicators (Michigan Sentiment, ISM, AAII, retail sales) |
 | **Polygon** | `lox/data/polygon.py` | Options data (OI, greeks) |
 
 ---
@@ -80,7 +83,7 @@ examples/                     # Usage examples
 
 | Component | Module | Purpose |
 |-----------|--------|---------|
-| **Regime Classification** | `lox/regimes/` | 10 regime domains with unified state builder |
+| **Regime Classification** | `lox/regimes/` | 12 regime domains with unified state builder |
 | **LLM Analyst** | `lox/llm/core/analyst.py` | PhD-level research briefs with news, scenario, and trade synthesis |
 | **Monte Carlo** | `lox/regimes/transitions.py` | Regime-conditional scenario simulation with trained correlations |
 | **Ticker Research** | `lox/cli_commands/research/ticker_cmd.py` | Fundamentals, technicals, SEC filings, LLM analysis |
@@ -89,13 +92,15 @@ examples/                     # Usage examples
 
 ## Regime System
 
-10 regime domains, each following a consistent pattern:
+12 regime domains, each following a consistent pattern:
 
-1. **Signals module** (`signals.py`): Fetches raw data from FRED/Alpaca/FMP, computes z-scores and indicators.
+1. **Signals module** (`signals.py`): Fetches raw data from FRED/Alpaca/FMP/Trading Economics, computes z-scores and indicators.
 2. **Regime classifier** (`regime.py`): Maps indicators to a named regime with label, score (0-100), and tags.
 3. **Features module** (`features.py`): Exports flat feature vectors for ML.
 
-Domains: Macro, Volatility, Rates, Funding, Fiscal, Commodities, Housing, Monetary, USD, Crypto.
+Domains: Growth, Inflation, Volatility, Credit, Rates, Funding, Consumer, Fiscal, Positioning, Monetary, USD, Commodities.
+
+Score interpretation: 0 = strong risk-on signal, 100 = strong risk-off signal. The unified view derives a "Macro Quadrant" (Stagflation, Goldilocks, Reflation, Deflation Risk, or Mixed) from the Growth + Inflation scores.
 
 The unified state builder (`lox/regimes/features.py`) computes all regimes and produces a single `UnifiedRegimeState` with an overall risk score.
 
