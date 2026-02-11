@@ -1,3 +1,1 @@
-from __future__ import annotations
-
-
+"""Crypto regime classification and Monte Carlo scenario analysis."""
