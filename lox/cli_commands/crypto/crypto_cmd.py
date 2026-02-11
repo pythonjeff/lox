@@ -2,12 +2,15 @@
 
 Commands:
     lox crypto data           Fetch and display perps data
-    lox crypto research       Research analysis with LLM (macro regime)
+    lox crypto research       Research analysis with LLM
     lox crypto analyze        Perps trading analysis (alpha-arena framework)
     lox crypto trade          Place a trade on Aster DEX
     lox crypto positions      Show open DEX positions
     lox crypto balance        Show DEX account balance
     lox crypto close          Close a position
+
+Regime analysis:
+    lox regime crypto         Crypto regime classification (moved to regime commands)
 """
 from __future__ import annotations
 
@@ -387,6 +390,142 @@ def register(crypto_app: typer.Typer) -> None:
         except Exception as e:
             console.print(Panel(f"[red]Failed to close position[/red]\n\n{e}", title="Error", expand=False))
             raise typer.Exit(code=1)
+
+    # ------------------------------------------------------------------
+    # lox crypto scenario
+    # ------------------------------------------------------------------
+    @crypto_app.command("scenario")
+    def scenario_cmd(
+        coins: str = typer.Option("BTC,ETH,SOL", "--coins", "-c", help="Comma-separated coins"),
+        exchange: str = typer.Option("", "--exchange", "-e", help="Override CCXT exchange"),
+        horizon: int = typer.Option(90, "--horizon", "-h", help="Simulation horizon in days"),
+        paths: int = typer.Option(5000, "--paths", "-n", help="Number of MC paths"),
+        leverage: float = typer.Option(1.0, "--leverage", "-l", help="Leverage multiplier"),
+        regime: str = typer.Option("all", "--regime", "-r", help="Regime: risk_on, neutral, risk_off, all"),
+    ):
+        """Monte Carlo scenario analysis for crypto perps."""
+        console = Console()
+        settings = load_settings()
+        if exchange:
+            settings.CCXT_EXCHANGE = exchange
+
+        coin_list = [c.strip().upper() for c in coins.split(",")]
+
+        from lox.data.crypto_perps import CryptoPerpsData
+        from lox.crypto.monte_carlo import run_crypto_mc, run_multi_regime_mc
+
+        console.print(f"\n[bold cyan]Fetching current prices from {settings.CCXT_EXCHANGE.upper()}...[/bold cyan]\n")
+
+        fetcher = CryptoPerpsData(settings)
+
+        # Get current prices
+        prices: dict[str, float] = {}
+        for coin in coin_list:
+            try:
+                ticker = fetcher.fetch_ticker(coin)
+                if ticker and ticker.get("last"):
+                    prices[coin] = ticker["last"]
+            except Exception:
+                pass
+
+        if not prices:
+            console.print("[yellow]No price data returned.[/yellow]")
+            return
+
+        # Run MC
+        regimes_to_run = ["risk_on", "neutral", "risk_off"] if regime == "all" else [regime]
+
+        for coin, price in prices.items():
+            pd_ = 2 if price >= 100 else (4 if price >= 1 else 5)
+            lev_str = f" @ {leverage:.0f}x" if leverage > 1 else ""
+
+            if regime == "all":
+                results = run_multi_regime_mc(
+                    coin=coin, current_price=price,
+                    horizon_days=horizon, n_paths=paths, leverage=leverage,
+                )
+            else:
+                results = {
+                    regime: run_crypto_mc(
+                        coin=coin, current_price=price, regime=regime,
+                        horizon_days=horizon, n_paths=paths, leverage=leverage,
+                    )
+                }
+
+            # Summary table
+            table = Table(
+                title=f"{coin} Monte Carlo — ${price:,.{pd_}f}{lev_str} — {horizon}d horizon — {paths:,} paths",
+                show_header=True, expand=False,
+            )
+            table.add_column("Regime", style="cyan bold")
+            table.add_column("Mean", justify="right")
+            table.add_column("Median", justify="right")
+            table.add_column("VaR 95%", justify="right")
+            table.add_column("CVaR 95%", justify="right")
+            table.add_column("P(up)", justify="right")
+            table.add_column("P(2x)", justify="right")
+            table.add_column("P(½)", justify="right")
+            table.add_column("Avg MDD", justify="right")
+
+            for r_name, r in results.items():
+                mean_c = "green" if r.mean_return > 0 else "red"
+                med_c = "green" if r.median_return > 0 else "red"
+                regime_label = {"risk_on": "🟢 Risk-On", "neutral": "🟡 Neutral", "risk_off": "🔴 Risk-Off"}.get(r_name, r_name)
+
+                table.add_row(
+                    regime_label,
+                    f"[{mean_c}]{r.mean_return:+.1f}%[/{mean_c}]",
+                    f"[{med_c}]{r.median_return:+.1f}%[/{med_c}]",
+                    f"[red]{r.var_95:+.1f}%[/red]",
+                    f"[red]{r.cvar_95:+.1f}%[/red]",
+                    f"{r.prob_positive:.0f}%",
+                    f"{r.prob_2x:.1f}%",
+                    f"[red]{r.prob_half:.1f}%[/red]",
+                    f"[red]{r.avg_max_drawdown:.1f}%[/red]",
+                )
+
+            console.print(table)
+
+            # Price distribution table
+            dist_table = Table(
+                title=f"{coin} Price Distribution @ {horizon}d",
+                show_header=True, expand=False,
+            )
+            dist_table.add_column("Regime", style="cyan bold")
+            dist_table.add_column("5th %ile", justify="right")
+            dist_table.add_column("25th", justify="right")
+            dist_table.add_column("50th (median)", justify="right")
+            dist_table.add_column("75th", justify="right")
+            dist_table.add_column("95th %ile", justify="right")
+
+            for r_name, r in results.items():
+                regime_label = {"risk_on": "🟢 Risk-On", "neutral": "🟡 Neutral", "risk_off": "🔴 Risk-Off"}.get(r_name, r_name)
+                dist_table.add_row(
+                    regime_label,
+                    f"[red]${r.price_5:,.{pd_}f}[/red]",
+                    f"${r.price_25:,.{pd_}f}",
+                    f"[bold]${r.price_50:,.{pd_}f}[/bold]",
+                    f"${r.price_75:,.{pd_}f}",
+                    f"[green]${r.price_95:,.{pd_}f}[/green]",
+                )
+
+            console.print(dist_table)
+
+            # Parameters footnote
+            if regime != "all":
+                r = list(results.values())[0]
+                console.print(
+                    f"[dim]  Params: drift={r.params['drift']:.0%} ann, "
+                    f"vol={r.params['vol']:.0%} ann, "
+                    f"jump_freq={r.params['jump_freq']:.0f}/yr, "
+                    f"jump_mean={r.params['jump_mean']:.0%}[/dim]"
+                )
+
+            console.print()
+
+        console.print("[dim]Score guide: Risk-On = crypto bull (low rates, ample liquidity) | "
+                      "Neutral = mixed macro | Risk-Off = tightening, credit stress[/dim]")
+        console.print("[dim]V1 benchmarks — parameters will improve with real historical calibration.[/dim]\n")
 
     # ------------------------------------------------------------------
     # lox crypto analyze

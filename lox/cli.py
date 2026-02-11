@@ -49,6 +49,7 @@ TRADING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CRYPTO PERPS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  lox regime crypto           Crypto regime analysis
   lox crypto data             Prices, OI, funding
   lox crypto research         LLM-powered analysis
   lox crypto trade BTC BUY 1  Trade on Aster DEX
@@ -431,6 +432,146 @@ def regime_positioning(llm: bool = typer.Option(False, "--llm", help="Include LL
     """Market positioning regime."""
     from lox.cli_commands.regimes.positioning_cmd import positioning_snapshot
     positioning_snapshot(llm=llm)
+
+
+@regime_app.command("crypto")
+def regime_crypto(
+    coins: str = typer.Option("BTC,ETH,SOL", "--coins", "-c", help="Comma-separated coins"),
+    exchange: str = typer.Option("", "--exchange", "-e", help="Override CCXT exchange"),
+    short_tf: str = typer.Option("15m", "--short-tf", help="Short timeframe"),
+    long_tf: str = typer.Option("4h", "--long-tf", help="Long timeframe"),
+    llm: bool = typer.Option(False, "--llm", help="Add LLM analysis"),
+):
+    """Crypto regime — funding, technicals, momentum."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from lox.config import load_settings
+
+    console = Console()
+    settings = load_settings()
+    if exchange:
+        settings.CCXT_EXCHANGE = exchange
+
+    coin_list = [c.strip().upper() for c in coins.split(",")]
+
+    from lox.data.crypto_perps import CryptoPerpsData
+    from lox.crypto.regime import classify_crypto_regime
+
+    console.print(f"\n[bold cyan]Fetching perps data from {settings.CCXT_EXCHANGE.upper()}...[/bold cyan]\n")
+
+    fetcher = CryptoPerpsData(settings)
+    snapshots = fetcher.multi_snapshot(coins=coin_list, short_tf=short_tf, long_tf=long_tf)
+
+    if not snapshots:
+        console.print("[yellow]No data returned.[/yellow]")
+        return
+
+    regime = classify_crypto_regime(snapshots)
+
+    # Traffic light
+    if regime.score >= 60:
+        emoji = "🔴"
+        score_color = "red"
+    elif regime.score >= 45:
+        emoji = "🟡"
+        score_color = "yellow"
+    else:
+        emoji = "🟢"
+        score_color = "green"
+
+    # Score bar
+    filled = int(regime.score / 100 * 50)
+    bar = "█" * filled + "░" * (50 - filled)
+
+    panel_lines = [
+        f"{emoji} {regime.label}   Score: [{score_color}]{regime.score:.0f}/100[/{score_color}]   {bar}",
+        "",
+        regime.description,
+        "",
+    ]
+
+    # Per-coin detail
+    for coin, snap in snapshots.items():
+        price = snap["price"]
+        pd_ = 2 if price >= 100 else (4 if price >= 1 else 5)
+
+        lt = snap.get("long_tf", {}).get("latest", {})
+        rsi = lt.get("rsi_14", 0)
+        ema20 = lt.get("ema_20", 0)
+        ema50 = lt.get("ema_50", 0)
+        trend = "[green]Bull[/green]" if ema20 > ema50 else "[red]Bear[/red]"
+
+        fr_text = "n/a"
+        if snap.get("funding") and snap["funding"].get("funding_rate") is not None:
+            ann = snap["funding"]["funding_rate"] * 3 * 365 * 100
+            fr_text = f"{ann:+.0f}% ann"
+
+        chg = "n/a"
+        if snap.get("ticker") and snap["ticker"].get("change_pct_24h") is not None:
+            pct = snap["ticker"]["change_pct_24h"]
+            chg_color = "green" if pct >= 0 else "red"
+            chg = f"[{chg_color}]{pct:+.1f}%[/{chg_color}]"
+
+        panel_lines.append(
+            f"  {coin:>4}  ${price:,.{pd_}f}  {chg}  RSI: {rsi:.0f}  Funding: {fr_text}  {trend}"
+        )
+
+    if regime.tags:
+        panel_lines.append("")
+        panel_lines.append(f"  Tags: {', '.join(regime.tags)}")
+
+    panel_lines.append("")
+    panel_lines.append("[dim]Score guide: 0 = crypto risk-on → 100 = crypto risk-off[/dim]")
+
+    console.print(Panel(
+        "\n".join(panel_lines),
+        title="Crypto Regime",
+        expand=False,
+    ))
+
+    if llm:
+        if not settings.openai_api_key:
+            console.print("[yellow]OPENAI_API_KEY not set — skipping LLM[/yellow]")
+            return
+
+        from lox.data.crypto_perps import CryptoPerpsData as CPD
+        from rich.markdown import Markdown
+
+        console.print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
+
+        llm_data = CPD.format_multi_for_llm(snapshots)
+
+        try:
+            from openai import OpenAI
+        except ImportError:
+            console.print("[red]openai package required for --llm[/red]")
+            return
+
+        client = OpenAI(api_key=settings.openai_api_key, base_url=settings.OPENAI_BASE_URL)
+
+        prompt = (
+            f"The crypto perps regime is: {regime.label} (score {regime.score:.0f}/100). "
+            f"Signals: {regime.description}. Tags: {', '.join(regime.tags)}.\n\n"
+            f"Market data:\n{llm_data}\n\n"
+            "Given this regime classification and market data, provide:\n"
+            "1. Key risk factors right now (2-3 bullets)\n"
+            "2. What would change the regime (catalysts in each direction)\n"
+            "3. Positioning implications for perps traders (1-2 sentences)\n"
+            "Be specific with numbers. Max 200 words."
+        )
+
+        resp = client.chat.completions.create(
+            model=settings.openai_model,
+            messages=[
+                {"role": "system", "content": "You are a crypto macro analyst. Be concise and data-driven."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=1000,
+        )
+
+        analysis = resp.choices[0].message.content or ""
+        console.print(Panel(Markdown(analysis), title="Regime Analysis", expand=False))
 
 
 # ── MACRO alias (shows Growth + Inflation + quadrant) ────────────────────
