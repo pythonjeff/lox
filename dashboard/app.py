@@ -2428,12 +2428,12 @@ def _generate_palmer_analysis():
     if not settings or not hasattr(settings, 'openai_api_key') or not settings.openai_api_key:
         return {"error": "OpenAI API key not configured", "analysis": None}
     
-    # Get current macro data
-    hy_oas = get_hy_oas(settings)
+    # Get current macro data (refresh FRED cache on each Palmer run)
+    hy_oas = get_hy_oas(settings, refresh=True)
     vix = get_vix(settings)
     yield_10y = get_10y_yield(settings)
-    cpi = get_cpi_inflation(settings)
-    yield_curve = get_yield_curve_spread(settings)
+    cpi = get_cpi_inflation(settings, refresh=True)
+    yield_curve = get_yield_curve_spread(settings, refresh=True)
     
     # Get today's economic calendar
     fed_fiscal_events, calendar_date = fetch_fed_fiscal_calendar(settings)

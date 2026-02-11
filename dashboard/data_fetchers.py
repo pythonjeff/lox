@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 FUND_INCEPTION_DATE = "2026-01-09"
 
 
-def get_hy_oas(settings):
+def get_hy_oas(settings, refresh: bool = False):
     """Get HY OAS (credit spreads) - key for HYG puts."""
     try:
         if not settings or not getattr(settings, 'FRED_API_KEY', None):
@@ -18,7 +18,7 @@ def get_hy_oas(settings):
         
         from lox.data.fred import FredClient
         fred = FredClient(api_key=settings.FRED_API_KEY)
-        df = fred.fetch_series(series_id="BAMLH0A0HYM2", start_date="2018-01-01", refresh=False)
+        df = fred.fetch_series(series_id="BAMLH0A0HYM2", start_date="2018-01-01", refresh=refresh)
         
         if df is None or df.empty:
             return None
@@ -131,7 +131,7 @@ def get_10y_yield(settings):
         return None
 
 
-def get_cpi_inflation(settings):
+def get_cpi_inflation(settings, refresh: bool = False):
     """Get CPI YoY inflation rate from FRED."""
     try:
         if not settings or not getattr(settings, 'FRED_API_KEY', None):
@@ -140,7 +140,7 @@ def get_cpi_inflation(settings):
         from lox.data.fred import FredClient
         fred = FredClient(api_key=settings.FRED_API_KEY)
         # CPIAUCSL is the CPI index, we need YoY change
-        df = fred.fetch_series(series_id="CPIAUCSL", start_date="2022-01-01", refresh=False)
+        df = fred.fetch_series(series_id="CPIAUCSL", start_date="2022-01-01", refresh=refresh)
         
         if df is None or df.empty:
             return None
@@ -185,7 +185,7 @@ def get_cpi_inflation(settings):
         return None
 
 
-def get_yield_curve_spread(settings):
+def get_yield_curve_spread(settings, refresh: bool = False):
     """Get 2s10s yield curve spread from FRED (T10Y2Y series)."""
     try:
         if not settings or not getattr(settings, 'FRED_API_KEY', None):
@@ -193,7 +193,7 @@ def get_yield_curve_spread(settings):
         
         from lox.data.fred import FredClient
         fred = FredClient(api_key=settings.FRED_API_KEY)
-        df = fred.fetch_series(series_id="T10Y2Y", start_date="2022-01-01", refresh=False)
+        df = fred.fetch_series(series_id="T10Y2Y", start_date="2022-01-01", refresh=refresh)
         
         if df is None or df.empty:
             return None
