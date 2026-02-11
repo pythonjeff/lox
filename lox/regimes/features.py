@@ -186,14 +186,26 @@ class UnifiedRegimeState:
                 params["equity_drift_adj"] -= 0.02
                 params["jump_prob_adj"] *= 1.3
 
-        # ── Funding regime adjustments ────────────────────────────────────
+        # ── Funding regime adjustments (continuous score) ─────────────────
         if self.funding:
-            if "stress" in self.funding.name:
+            if self.funding.score >= 75:
                 params["spread_drift_adj"] += 0.01
                 params["equity_drift_adj"] -= 0.03
                 params["jump_prob_adj"] *= 1.5
-            elif "tightening" in self.funding.name:
+                drivers["spread_drift_adj"].append(f"Funding({self.funding.score:.0f}) +1%")
+                drivers["equity_drift_adj"].append(f"Funding({self.funding.score:.0f}) -3%")
+                drivers["jump_prob_adj"].append(f"Funding({self.funding.score:.0f}) +50%")
+            elif self.funding.score >= 65:
+                # Structural tightening: RRP depleted + reserves thin
+                params["spread_drift_adj"] += 0.005
+                params["equity_drift_adj"] -= 0.015
+                params["jump_prob_adj"] *= 1.25
+                drivers["spread_drift_adj"].append(f"Funding({self.funding.score:.0f}) +0.5%")
+                drivers["equity_drift_adj"].append(f"Funding({self.funding.score:.0f}) -1.5%")
+                drivers["jump_prob_adj"].append(f"Funding({self.funding.score:.0f}) +25%")
+            elif self.funding.score >= 55:
                 params["spread_drift_adj"] += 0.003
+                drivers["spread_drift_adj"].append(f"Funding({self.funding.score:.0f}) +0.3%")
 
         # ── Consumer regime adjustments ───────────────────────────────────
         if self.consumer and self.consumer.score > 65:
@@ -501,23 +513,30 @@ def build_unified_regime_state(
         from lox.funding.regime import classify_funding_regime
 
         funding_state = build_funding_state(settings=settings, start_date=start_date, refresh=refresh)
+        # Pass full inputs (corridor dynamics + structural liquidity amplifiers)
         funding_regime = classify_funding_regime(funding_state.inputs)
 
-        score = 80 if "stress" in funding_regime.name else (60 if "tightening" in funding_regime.name else 40)
         inp = funding_state.inputs
+        tags = []
+        if funding_regime.score >= 75:
+            tags.append("risk_off")
+        if funding_regime.score >= 65:
+            tags.append("structural_tightening")
+
         state.funding = RegimeResult(
             name=funding_regime.name,
             label=funding_regime.label,
             description=funding_regime.description if hasattr(funding_regime, "description") else "",
-            score=score,
+            score=funding_regime.score,
             domain="funding",
-            tags=["risk_off"] if "stress" in funding_regime.name else [],
+            tags=tags,
             metrics={
                 "SOFR": f"{inp.sofr:.2f}%" if inp.sofr is not None else None,
                 "EFFR": f"{inp.effr:.2f}%" if inp.effr is not None else None,
                 "IORB": f"{inp.iorb:.2f}%" if inp.iorb is not None else None,
                 "Corridor": f"{inp.spread_corridor_bps:+.1f}bp" if inp.spread_corridor_bps is not None else None,
                 "RRP": f"${inp.on_rrp_usd_bn / 1000:.0f}B" if inp.on_rrp_usd_bn is not None else None,
+                "Reserves": f"${inp.bank_reserves_usd_bn / 1_000_000:.1f}T" if inp.bank_reserves_usd_bn is not None else None,
             },
         )
     except Exception as e:

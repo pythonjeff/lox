@@ -9,7 +9,6 @@ from rich.panel import Panel
 from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 from lox.funding.features import funding_feature_vector
-from lox.funding.models import FundingInputs
 from lox.funding.regime import classify_funding_regime
 from lox.funding.signals import FUNDING_FRED_SERIES, build_funding_state
 
@@ -50,21 +49,8 @@ def run_funding_snapshot(
     def _fmt_ratio(x: object) -> str:
         return f"{100.0*float(x):.0f}%" if isinstance(x, (int, float)) else "n/a"
 
-    # Classify from derived inputs only (no hard-coded levels).
-    regime = classify_funding_regime(
-        FundingInputs(
-            spread_corridor_bps=fi.spread_corridor_bps,
-            spike_5d_bps=fi.spike_5d_bps,
-            persistence_20d=fi.persistence_20d,
-            vol_20d_bps=fi.vol_20d_bps,
-            tight_threshold_bps=fi.tight_threshold_bps,
-            stress_threshold_bps=fi.stress_threshold_bps,
-            persistence_tight=fi.persistence_tight,
-            persistence_stress=fi.persistence_stress,
-            vol_tight_bps=fi.vol_tight_bps,
-            vol_stress_bps=fi.vol_stress_bps,
-        )
-    )
+    # Classify using full inputs (corridor dynamics + structural liquidity amplifiers).
+    regime = classify_funding_regime(fi)
 
     # Build snapshot and features
     snapshot_data = {
@@ -137,9 +123,18 @@ def run_funding_snapshot(
             console.print(f"\n[dim]No cached data from {delta_days}d ago. Run `lox labs funding` daily to build history.[/dim]")
         return
 
-    # Uniform regime panel
-    score = 80 if "stress" in regime.name else (60 if "tightening" in regime.name else 40)
+    # Uniform regime panel — use continuous score from classifier
+    score = regime.score
     corridor_name = fi.spread_corridor_name or "SOFR-EFFR"
+
+    def _fmt_usd_bn(x: object, div: float = 1000.0) -> str:
+        """Format millions to $NB display."""
+        return f"${float(x) / div:,.0f}B" if isinstance(x, (int, float)) else "n/a"
+
+    def _fmt_usd_tn(x: object, div: float = 1_000_000.0) -> str:
+        """Format millions to $N.NT display."""
+        return f"${float(x) / div:.1f}T" if isinstance(x, (int, float)) else "n/a"
+
     metrics = [
         {"name": "SOFR", "value": _fmt_pct(fi.sofr), "context": "secured"},
         {"name": "EFFR", "value": _fmt_pct(fi.effr), "context": "unsecured"},
@@ -148,6 +143,9 @@ def run_funding_snapshot(
         {"name": "Spike 5d", "value": _fmt_bps(fi.spike_5d_bps), "context": "max 5d"},
         {"name": "Vol 20d", "value": _fmt_bps(fi.vol_20d_bps), "context": "std"},
         {"name": "Persistence 20d", "value": _fmt_ratio(fi.persistence_20d), "context": ">stress"},
+        {"name": "ON RRP", "value": _fmt_usd_bn(fi.on_rrp_usd_bn), "context": "buffer"},
+        {"name": "Bank Reserves", "value": _fmt_usd_tn(fi.bank_reserves_usd_bn), "context": "level"},
+        {"name": "TGA 4wk Δ", "value": _fmt_usd_bn(fi.tga_chg_4w) if fi.tga_chg_4w is not None else "n/a", "context": "drain"},
     ]
     print(render_regime_panel(
         domain="Funding",
@@ -186,6 +184,7 @@ def register(funding_app: typer.Typer) -> None:
     @funding_app.callback(invoke_without_command=True)
     def funding_default(
         ctx: typer.Context,
+        refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
         llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
@@ -196,7 +195,7 @@ def register(funding_app: typer.Typer) -> None:
     ):
         """Short-term funding markets (SOFR, repo spreads) — price of money in daily markets"""
         if ctx.invoked_subcommand is None:
-            run_funding_snapshot(llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
+            run_funding_snapshot(refresh=refresh, llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
 
     @funding_app.command("snapshot")
     def funding_snapshot(

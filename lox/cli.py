@@ -343,10 +343,16 @@ def regime_fiscal():
 
 
 @regime_app.command("funding")
-def regime_funding():
+def regime_funding(
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
+    llm: bool = typer.Option(False, "--llm", help="Get LLM analysis"),
+    features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector"),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+    delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
+):
     """Funding regime."""
     from lox.cli_commands.regimes.funding_cmd import funding_snapshot
-    funding_snapshot()
+    funding_snapshot(refresh=refresh, llm=llm, features=features, json_out=json_out, delta=delta)
 
 
 @regime_app.command("rates")
