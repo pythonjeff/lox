@@ -410,7 +410,7 @@ def aggregate_sentiment(articles: Sequence[ArticleSentiment]) -> AggregateSentim
 # LLM-Based Sentiment (Enhanced)
 # =============================================================================
 
-def llm_sentiment(api_key: str, model: str, headline_blob: str) -> SentimentResult:
+def llm_sentiment(api_key: str, model: str, headline_blob: str, base_url: str | None = None) -> SentimentResult:
     """
     Use LLM for nuanced sentiment analysis.
     
@@ -419,8 +419,8 @@ def llm_sentiment(api_key: str, model: str, headline_blob: str) -> SentimentResu
     - When rule-based confidence is low
     - High-stakes trading decisions
     """
-    client = OpenAI(api_key=api_key)
-    
+    client = OpenAI(api_key=api_key, base_url=base_url)
+
     prompt = """You are a senior financial analyst at a hedge fund. Analyze the sentiment of the following news for near-term stock price impact.
 
 Consider:
@@ -467,13 +467,14 @@ def llm_sentiment_batch(
     model: str,
     articles: Sequence[dict],
     max_articles: int = 10,
+    base_url: str | None = None,
 ) -> AggregateSentiment:
     """
     Batch LLM sentiment analysis for multiple articles.
     
     More efficient than individual calls for aggregate analysis.
     """
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, base_url=base_url)
     
     # Build context
     articles_text = "\n\n".join([
