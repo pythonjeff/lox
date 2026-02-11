@@ -53,6 +53,15 @@ DEFAULT_SERIES = {
     "RSXFS": FredSeries("RSXFS", "monthly"),  # Retail Sales ex Food Services
     "TOTALSL": FredSeries("TOTALSL", "monthly"),  # Consumer Credit Outstanding
     "EXHOSLUSM495S": FredSeries("EXHOSLUSM495S", "monthly"),  # Existing Home Sales
+    "PSAVERT": FredSeries("PSAVERT", "monthly"),  # Personal Savings Rate (consumer health)
+    "DRCCLACBS": FredSeries("DRCCLACBS", "quarterly"),  # Credit Card Delinquency Rate (consumer stress)
+    # positioning / volatility
+    # CBOE SKEW Index — fetch separately in positioning regime (not all FRED keys have access)
+    # "SKEW": FredSeries("SKEW", "daily"),
+    # leading indicators
+    "USSLIND": FredSeries("USSLIND", "monthly"),  # Conference Board LEI (composite leading indicator)
+    # monetary / lending
+    "DRTSCLCC": FredSeries("DRTSCLCC", "quarterly"),  # SLOOS: Tightening Standards for C&I Loans
 }
 
 # Optional series that won't crash if unavailable
@@ -72,6 +81,11 @@ OPTIONAL_SERIES = {
     "RSXFS",  # Retail Sales ex Food Services
     "TOTALSL",  # Consumer Credit Outstanding
     "EXHOSLUSM495S",  # Existing Home Sales
+    "PSAVERT",  # Personal Savings Rate
+    "DRCCLACBS",  # Credit Card Delinquency Rate
+    # "SKEW",  # CBOE SKEW Index — fetched separately
+    "USSLIND",  # Conference Board LEI
+    "DRTSCLCC",  # SLOOS Lending Standards
 }
 
 
