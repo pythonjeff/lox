@@ -239,13 +239,25 @@ DOMAIN_CONTEXT = {
         "data_sources": ["FRED MORTGAGE30US", "FRED HOUST", "Case-Shiller"],
     },
     "crypto": {
-        "description": "Crypto regime (BTC/ETH levels, momentum, correlation to risk assets)",
-        "key_metrics": ["BTC price", "ETH price", "BTC momentum", "crypto vs SPY correlation"],
+        "description": "Crypto perpetual futures regime (BTC/ETH/SOL prices, funding rates, OI, momentum, correlation to risk assets)",
+        "key_metrics": ["BTC price", "ETH price", "SOL price", "funding rates", "open interest", "RSI", "MACD", "EMA trend", "BTC momentum", "crypto vs SPY correlation"],
         "related_tickers": ["GBTC", "ETHE", "BITO", "COIN", "MARA", "RIOT"],
-        "news_keywords": ["bitcoin", "crypto", "ethereum", "blockchain", "SEC", "regulation", "halving", "ETF"],
-        "macro_keywords": ["Fed", "liquidity", "risk", "institutional"],
-        "trading_focus": "crypto direct, miners, crypto-correlated equities",
-        "data_sources": ["Alpaca Crypto Data", "CoinGecko"],
+        "news_keywords": ["bitcoin", "crypto", "ethereum", "blockchain", "SEC", "regulation", "halving", "ETF", "perpetual", "futures", "funding rate", "liquidation", "DeFi", "stablecoin"],
+        "macro_keywords": ["Fed", "liquidity", "risk", "institutional", "stablecoin", "USDT"],
+        "trading_focus": "crypto perps (BTC, ETH, SOL), funding rate arb, momentum, mean reversion, miners, crypto-correlated equities",
+        "data_sources": ["CCXT (OKX/Bybit/Binance)", "Aster DEX", "Alpaca Crypto Data"],
+        "sector_implications": {
+            "risk_on_crypto": {
+                "benefit": ["COIN", "MARA", "RIOT", "BITO", "GBTC"],
+                "hurt": ["UUP (dollar)", "TLT (bonds)"],
+                "rationale": "Crypto rallies correlate with risk-on, liquidity expansion",
+            },
+            "crypto_stress": {
+                "benefit": ["TLT (bonds)", "UUP (dollar)"],
+                "hurt": ["COIN", "MARA", "RIOT", "GBTC", "BITO"],
+                "rationale": "Crypto drawdowns correlate with risk-off, deleveraging",
+            },
+        },
     },
     "tariff": {
         "description": "Tariff/cost-push regime (trade policy impact on specific sectors)",
@@ -802,7 +814,7 @@ def llm_analyze_regime(
     except Exception as e:
         raise RuntimeError("openai package is not installed. Try: pip install openai") from e
     
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = OpenAI(api_key=settings.openai_api_key, base_url=settings.OPENAI_BASE_URL)
     chosen_model = model or settings.openai_model
     
     # Convert snapshot to dict if needed
@@ -1109,7 +1121,7 @@ def quick_llm_summary(
     except Exception as e:
         raise RuntimeError("openai package is not installed.") from e
     
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = OpenAI(api_key=settings.openai_api_key, base_url=settings.OPENAI_BASE_URL)
     chosen_model = model or settings.openai_model
     
     # Convert to dict

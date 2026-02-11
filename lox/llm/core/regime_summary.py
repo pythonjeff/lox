@@ -33,7 +33,7 @@ def llm_regime_summary(
     except Exception as e:  # pragma: no cover
         raise RuntimeError("openai package is not installed. Try: pip install -e .") from e
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = OpenAI(api_key=settings.openai_api_key, base_url=settings.OPENAI_BASE_URL)
 
     # Pydantic models: model_dump(); dataclasses: asdict()
     macro_state_dict = macro_state.model_dump() if hasattr(macro_state, "model_dump") else macro_state
