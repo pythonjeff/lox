@@ -109,21 +109,17 @@ def growth_snapshot(*, llm: bool = False) -> None:
     ))
 
     if llm:
-        from lox.llm.core.analyst import llm_analyze_regime
-        from rich.markdown import Markdown
-        from rich.panel import Panel
+        from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
 
-        print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
         snapshot = {
             "payrolls_3m_ann": payrolls_3m_level, "ism": ism_val, "claims_4wk": claims_4wk,
             "indpro_yoy": indpro_yoy, "unemployment_rate": unemployment_rate,
             "lei_yoy": lei_yoy,
         }
-        analysis = llm_analyze_regime(
+        print_llm_regime_analysis(
             settings=settings,
             domain="growth",
             snapshot=snapshot,
             regime_label=result.label,
             regime_description=result.description,
         )
-        print(Panel(Markdown(analysis), title="Analysis", expand=False))

@@ -583,6 +583,126 @@ body {
     font-style: italic;
 }
 
+.thesis-text-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.thesis-text.thesis-truncated {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.thesis-text.thesis-expanded {
+    -webkit-line-clamp: unset;
+}
+
+.thesis-expand-btn {
+    font-size: 11px;
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    align-self: flex-start;
+}
+
+.thesis-expand-btn:hover {
+    text-decoration: underline;
+}
+
+/* Thesis Indicators (expandable) */
+.thesis-indicators-wrapper {
+    margin-bottom: 12px;
+}
+
+.thesis-indicators-toggle {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--bg-container);
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.thesis-indicators-toggle:hover {
+    background: #e8e8e8;
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.toggle-chevron {
+    font-size: 11px;
+    transition: transform 0.15s;
+}
+
+.thesis-indicators-table-wrap {
+    margin-top: 8px;
+    overflow-x: auto;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+
+.thesis-indicators-table {
+    width: 100%;
+    font-size: 11px;
+    border-collapse: collapse;
+}
+
+.thesis-indicators-table th,
+.thesis-indicators-table td {
+    padding: 6px 8px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.thesis-indicators-table th {
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.thesis-indicators-table td:nth-child(n+2) {
+    color: var(--text-secondary);
+}
+
+.thesis-indicators-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.indicator-status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    vertical-align: middle;
+}
+
+.indicator-status-dot.green {
+    background: var(--green);
+}
+
+.indicator-status-dot.red {
+    background: var(--red);
+}
+
+.indicator-status-dot.yellow,
+.indicator-status-dot.neutral {
+    background: var(--yellow);
+}
+
 /* ============================================
    REGIME METRICS STRIP
    ============================================ */

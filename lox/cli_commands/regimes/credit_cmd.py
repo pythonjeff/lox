@@ -109,22 +109,18 @@ def credit_snapshot(*, llm: bool = False) -> None:
     ))
 
     if llm:
-        from lox.llm.core.analyst import llm_analyze_regime
-        from rich.markdown import Markdown
-        from rich.panel import Panel
+        from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
 
-        print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
         snapshot = {
             "hy_oas": hy_oas_val, "bbb_oas": bbb_oas_val, "aaa_oas": aaa_oas_val,
             "hy_5d_chg": hy_5d_chg, "hy_30d_chg": hy_30d_chg,
             "bbb_30d_chg": bbb_30d_chg, "vix": vix_val,
             "hy_1y_pctl": hy_1y_pctl,
         }
-        analysis = llm_analyze_regime(
+        print_llm_regime_analysis(
             settings=settings,
             domain="credit",
             snapshot=snapshot,
             regime_label=result.label,
             regime_description=result.description,
         )
-        print(Panel(Markdown(analysis), title="Analysis", expand=False))

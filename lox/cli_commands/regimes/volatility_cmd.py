@@ -47,10 +47,8 @@ def _run_volatility_snapshot(start: str = "2011-01-01", refresh: bool = False, l
     print(panel)
 
     if llm:
-        from lox.llm.core.analyst import llm_analyze_regime
-        
-        print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
-        
+        from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
+
         snapshot_data = {
             "vix": state.inputs.vix,
             "vix_chg_5d_pct": state.inputs.vix_chg_5d_pct,
@@ -61,17 +59,13 @@ def _run_volatility_snapshot(start: str = "2011-01-01", refresh: bool = False, l
             "persist_20d": state.inputs.persist_20d,
             "vol_pressure_score": state.inputs.vol_pressure_score,
         }
-        
-        analysis = llm_analyze_regime(
+        print_llm_regime_analysis(
             settings=settings,
             domain="volatility",
             snapshot=snapshot_data,
             regime_label=regime.label,
             regime_description=regime.description,
         )
-        
-        from rich.markdown import Markdown
-        print(Panel(Markdown(analysis), title="Analysis", expand=False))
 
 
 def volatility_snapshot(llm: bool = False, start: str = "2011-01-01", refresh: bool = False):

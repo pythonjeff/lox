@@ -111,20 +111,14 @@ def run_usd_snapshot(
     ))
 
     if llm:
-        from lox.llm.core.analyst import llm_analyze_regime
-        from rich.markdown import Markdown
-
-        print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
-
-        analysis = llm_analyze_regime(
+        from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
+        print_llm_regime_analysis(
             settings=settings,
             domain="usd",
             snapshot=snapshot_data,
             regime_label=f"USD Score: {state.inputs.usd_strength_score:.2f}",
             regime_description=state.notes,
         )
-
-        print(Panel(Markdown(analysis), title="Analysis", expand=False))
 
 
 def register(usd_app: typer.Typer) -> None:

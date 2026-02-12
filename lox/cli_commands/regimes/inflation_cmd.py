@@ -129,11 +129,8 @@ def inflation_snapshot(*, llm: bool = False) -> None:
     ))
 
     if llm:
-        from lox.llm.core.analyst import llm_analyze_regime
-        from rich.markdown import Markdown
-        from rich.panel import Panel
+        from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
 
-        print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
         snapshot = {
             "cpi_yoy": cpi_yoy, "core_pce_yoy": core_pce_yoy, "core_cpi_yoy": core_cpi_yoy,
             "trimmed_mean_pce_yoy": trimmed_mean_pce_yoy, "median_cpi_yoy": median_cpi_yoy,
@@ -141,11 +138,10 @@ def inflation_snapshot(*, llm: bool = False) -> None:
             "breakeven_5y": breakeven_5y, "breakeven_5y5y": breakeven_5y5y,
             "ppi_yoy": ppi_yoy, "oil_price_yoy_pct": oil_price_yoy_pct,
         }
-        analysis = llm_analyze_regime(
+        print_llm_regime_analysis(
             settings=settings,
             domain="inflation",
             snapshot=snapshot,
             regime_label=result.label,
             regime_description=result.description,
         )
-        print(Panel(Markdown(analysis), title="Analysis", expand=False))

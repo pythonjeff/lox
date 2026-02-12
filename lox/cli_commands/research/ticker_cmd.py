@@ -1596,8 +1596,6 @@ def _show_llm_analysis(console: Console, settings, symbol: str, price_data: dict
         progress.add_task("llm", total=None)
         
         try:
-            from lox.llm.core.analyst import llm_analyze_regime
-            
             # Build snapshot
             snapshot = {
                 "symbol": symbol,
@@ -1658,24 +1656,19 @@ def _show_llm_analysis(console: Console, settings, symbol: str, price_data: dict
             except Exception as exc:
                 logger.debug("Quant scenarios unavailable: %s", exc)
             
-            analysis = llm_analyze_regime(
+            from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
+            print_llm_regime_analysis(
                 settings=settings,
-                domain="growth",  # Use growth domain for equities
+                domain="growth",
                 snapshot=snapshot,
                 regime_label=f"{symbol} Analysis",
+                regime_description=f"Equity analysis for {symbol}",
                 include_news=True,
-                include_prices=False,  # Already have price data
+                include_prices=False,
                 include_calendar=True,
-                ticker=symbol,  # Ticker-specific scenarios & trade ideas
+                ticker=symbol,
+                console=console,
             )
-            
-            console.print()
-            from rich.markdown import Markdown
-            console.print(Panel(
-                Markdown(analysis),
-                title="[bold]AI Analysis[/bold]",
-                border_style="blue",
-            ))
             
         except Exception as e:
             console.print(f"\n[dim]Analysis unavailable: {e}[/dim]")
