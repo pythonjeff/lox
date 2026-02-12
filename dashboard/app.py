@@ -258,10 +258,10 @@ TRADE_INDICATORS_CONFIG = {
     # ═══════════════════════════════════════════════════════
 
     # SLV $65.50P Feb 20 2026 (1 contract) — Silver overextended (near-term)
-    # SLV tracks LBMA Silver Price (London Fix). Silver spot $86.10, SLV ~$74.77.
+    # SLV tracks LBMA Silver Price (London Fix). source: "silver_spot" auto-updates via FMP XAGUSD.
     "SLV_65.5_P_2026-02-20": [
         {"name": "SLV Price", "current_value": "$74.77", "target_value": "<$65.50", "invalidation_value": ">$82", "direction": "below"},
-        {"name": "Silver Spot (LBMA)", "current_value": "$86.10", "target_value": "<$72", "invalidation_value": ">$95", "direction": "below"},
+        {"name": "Silver Spot (LBMA)", "current_value": "$86.10", "target_value": "<$72", "invalidation_value": ">$95", "direction": "below", "source": "silver_spot"},
         {"name": "Gold/Silver Ratio", "current_value": "88", "target_value": ">95", "invalidation_value": "<80", "direction": "above"},
         {"name": "DXY (USD Index)", "current_value": "106", "target_value": ">110", "invalidation_value": "<100", "direction": "above"},
         {"name": "Real Rates (10Y TIPS)", "current_value": "2.0%", "target_value": ">2.5%", "invalidation_value": "<1.5%", "direction": "above"},
@@ -270,7 +270,7 @@ TRADE_INDICATORS_CONFIG = {
     # SLV $65P Mar 13 2026 (1 contract)
     "SLV_65_P_2026-03-13": [
         {"name": "SLV Price", "current_value": "$74.77", "target_value": "<$65", "invalidation_value": ">$82", "direction": "below"},
-        {"name": "Silver Spot (LBMA)", "current_value": "$86.10", "target_value": "<$72", "invalidation_value": ">$95", "direction": "below"},
+        {"name": "Silver Spot (LBMA)", "current_value": "$86.10", "target_value": "<$72", "invalidation_value": ">$95", "direction": "below", "source": "silver_spot"},
         {"name": "Gold/Silver Ratio", "current_value": "88", "target_value": ">95", "invalidation_value": "<80", "direction": "above"},
         {"name": "DXY (USD Index)", "current_value": "106", "target_value": ">110", "invalidation_value": "<100", "direction": "above"},
         {"name": "Global Mfg PMI", "current_value": "50.1", "target_value": "<49", "invalidation_value": ">52", "direction": "below"},
@@ -279,7 +279,7 @@ TRADE_INDICATORS_CONFIG = {
     # SLV $52P Sep 18 2026 (1 contract) — Deep OTM silver crash
     "SLV_52_P_2026-09-18": [
         {"name": "SLV Price", "current_value": "$74.77", "target_value": "<$52", "invalidation_value": ">$90", "direction": "below"},
-        {"name": "Silver Spot (LBMA)", "current_value": "$86.10", "target_value": "<$57", "invalidation_value": ">$100", "direction": "below"},
+        {"name": "Silver Spot (LBMA)", "current_value": "$86.10", "target_value": "<$57", "invalidation_value": ">$100", "direction": "below", "source": "silver_spot"},
         {"name": "Gold/Silver Ratio", "current_value": "88", "target_value": ">100", "invalidation_value": "<75", "direction": "above"},
         {"name": "DXY (USD Index)", "current_value": "106", "target_value": ">112", "invalidation_value": "<98", "direction": "above"},
         {"name": "Real Rates (10Y TIPS)", "current_value": "2.0%", "target_value": ">3.0%", "invalidation_value": "<1.0%", "direction": "above"},
@@ -297,6 +297,68 @@ TRADE_INDICATORS_CONFIG = {
         {"name": "TLT Price", "current_value": "88.08", "target_value": "<84", "invalidation_value": ">92", "direction": "below"},
     ],
 }
+
+# ============ LIVE INDICATOR SOURCES ============
+# Cached fetchers for auto-updating indicator current_value fields.
+# Each source key maps to a callable that returns a display string or None.
+INDICATOR_SOURCE_CACHE = {}
+INDICATOR_SOURCE_CACHE_LOCK = threading.Lock()
+INDICATOR_SOURCE_TTL = 1800  # 30 minutes — refreshes with Palmer
+
+
+def _fetch_fmp_commodity(symbol: str) -> float | None:
+    """Fetch a commodity quote from FMP. Returns price or None."""
+    try:
+        fmp_key = os.environ.get("FMP_API_KEY")
+        if not fmp_key:
+            return None
+        import requests as _req
+        url = f"https://financialmodelingprep.com/api/v3/quote/{symbol}?apikey={fmp_key}"
+        r = _req.get(url, timeout=10)
+        data = r.json()
+        if data and isinstance(data, list) and len(data) > 0:
+            return float(data[0].get("price", 0))
+    except Exception as e:
+        print(f"[Indicators] FMP commodity fetch error ({symbol}): {e}")
+    return None
+
+
+def _get_live_source_value(source_key: str) -> str | None:
+    """
+    Resolve a source key to a live display value, with caching.
+
+    Supported sources:
+        silver_spot   — LBMA silver via FMP XAGUSD
+        silver_futures — Silver futures via FMP SIUSD
+        gold_spot      — Gold spot via FMP XAUUSD
+    """
+    now = time.time()
+    with INDICATOR_SOURCE_CACHE_LOCK:
+        cached = INDICATOR_SOURCE_CACHE.get(source_key)
+        if cached and (now - cached["ts"]) < INDICATOR_SOURCE_TTL:
+            return cached["value"]
+
+    value = None
+    if source_key == "silver_spot":
+        price = _fetch_fmp_commodity("XAGUSD")
+        if price:
+            value = f"${price:.2f}"
+    elif source_key == "silver_futures":
+        price = _fetch_fmp_commodity("SIUSD")
+        if price:
+            value = f"${price:.2f}"
+    elif source_key == "gold_spot":
+        price = _fetch_fmp_commodity("XAUUSD")
+        if price:
+            value = f"${price:.2f}"
+    else:
+        return None
+
+    if value:
+        with INDICATOR_SOURCE_CACHE_LOCK:
+            INDICATOR_SOURCE_CACHE[source_key] = {"value": value, "ts": now}
+    return value
+
 
 BENCHMARK_CACHE = {"data": None, "timestamp": None}
 BENCHMARK_CACHE_LOCK = threading.Lock()
@@ -679,7 +741,8 @@ def _indicator_status(indicator):
 
 
 def _get_indicators_for_position(position_dict):
-    """Return indicators list with status, normalized for API. Key by position key or symbol."""
+    """Return indicators list with status, normalized for API. Key by position key or symbol.
+    If an indicator has a 'source' field, its current_value is auto-updated from live data."""
     symbols = [position_dict.get("symbol")]
     key = _position_indicator_key(position_dict)
     if key:
@@ -697,6 +760,12 @@ def _get_indicators_for_position(position_dict):
         i["current_value"] = i.get("current_value") or i.get("current")
         i["target_value"] = i.get("target_value") or i.get("target")
         i["invalidation_value"] = i.get("invalidation_value") or i.get("invalidation")
+        # Auto-update from live source if configured
+        source = i.get("source")
+        if source:
+            live_val = _get_live_source_value(source)
+            if live_val:
+                i["current_value"] = live_val
         i["status"] = _indicator_status(i)
         out.append(i)
     return out
