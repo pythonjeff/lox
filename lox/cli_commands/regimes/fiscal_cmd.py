@@ -394,10 +394,7 @@ def _run_fiscal_snapshot(
     ))
 
     if llm:
-        from lox.llm.core.analyst import llm_analyze_regime
-        from rich.markdown import Markdown
-
-        print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
+        from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
 
         snapshot_data = {
             "deficit_12m": d.get("deficit_12m"),
@@ -413,16 +410,13 @@ def _run_fiscal_snapshot(
             "auction_tail_bps": tail_bps,
             "dealer_take_pct": dealer_take,
         }
-
-        analysis = llm_analyze_regime(
+        print_llm_regime_analysis(
             settings=settings,
             domain="fiscal",
             snapshot=snapshot_data,
             regime_label=regime.label or regime.name,
             regime_description=regime.description,
         )
-
-        print(Panel(Markdown(analysis), title="Analysis", expand=False))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

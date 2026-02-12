@@ -96,16 +96,11 @@ def consumer_snapshot(*, llm: bool = False) -> None:
     ))
 
     if llm:
-        from lox.llm.core.analyst import llm_analyze_regime
-        from rich.markdown import Markdown
-        from rich.panel import Panel
-
-        print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
-        analysis = llm_analyze_regime(
+        from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
+        print_llm_regime_analysis(
             settings=settings,
             domain="consumer",
             snapshot={"michigan": michigan_sent, "retail_mom": retail_mom, "mortgage_30y": mortgage_30y},
             regime_label=result.label,
             regime_description=result.description,
         )
-        print(Panel(Markdown(analysis), title="Analysis", expand=False))

@@ -115,3 +115,38 @@ def render_regime_panel(
         title=f"{domain} Regime",
         border_style="cyan",
     )
+
+
+def print_llm_regime_analysis(
+    *,
+    settings: Any,
+    domain: str,
+    snapshot: dict[str, Any] | Any,
+    regime_label: str | None = None,
+    regime_description: str | None = None,
+    panel_title: str = "Analysis",
+    console: Any = None,
+    **llm_kwargs: Any,
+) -> None:
+    """
+    Uniform LLM analysis block for all regime commands.
+    Uses the compact, metrics-focused prompt (300–400 words, tables, minimal prose).
+    """
+    from rich import print as rprint
+    from rich.markdown import Markdown
+
+    from lox.llm.core.analyst import llm_analyze_regime
+
+    _print = console.print if console is not None else rprint
+    _print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
+
+    analysis = llm_analyze_regime(
+        settings=settings,
+        domain=domain,
+        snapshot=snapshot,
+        regime_label=regime_label,
+        regime_description=regime_description,
+        **llm_kwargs,
+    )
+
+    _print(Panel(Markdown(analysis), title=panel_title, expand=False))

@@ -351,10 +351,16 @@ def regime_vol(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
 
 
 @regime_app.command("fiscal")
-def regime_fiscal():
+def regime_fiscal(
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED / fiscaldata downloads"),
+    llm: bool = typer.Option(False, "--llm", help="Get LLM analysis"),
+    features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector"),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+    delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
+):
     """Fiscal regime."""
     from lox.cli_commands.regimes.fiscal_cmd import fiscal_snapshot
-    fiscal_snapshot()
+    fiscal_snapshot(refresh=refresh, llm=llm, features=features, json_out=json_out, delta=delta)
 
 
 @regime_app.command("funding")

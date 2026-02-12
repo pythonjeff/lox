@@ -1,4 +1,53 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
+
+
+def _clamp(x: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, x))
+
+
+def score_macro_pressure(
+    *,
+    cpi_yoy: float | None = None,
+    payrolls_3m_annualized: float | None = None,
+    z_inflation_momentum_minus_be5y: float | None = None,
+    z_real_yield_proxy_10y: float | None = None,
+    cpi_target: float = 3.0,
+) -> float:
+    """
+    Compute a 0-100 macro pressure score from inputs (higher = more stress).
+
+    Components:
+    - CPI overshoot: CPI above Fed target adds pressure
+    - Job growth: Negative payrolls (stagflation) adds pressure
+    - Inflation momentum z-score: Positive = inflation above expectations
+    - Real yield z-score: Positive = tightening financial conditions
+
+    Score guide: 0 = risk-on goldilocks, 100 = severe stagflation.
+    """
+    base = 50.0  # neutral
+
+    # CPI above target: +5 per 0.5% overshoot, capped at +25
+    if cpi_yoy is not None and cpi_target is not None and cpi_yoy > cpi_target:
+        overshoot = cpi_yoy - cpi_target
+        base += _clamp(overshoot * 10.0, 0.0, 25.0)
+
+    # Payrolls negative (stagflation signal): +15
+    if payrolls_3m_annualized is not None and payrolls_3m_annualized < 0.0:
+        base += 15.0
+
+    # Inflation momentum z-score: positive = inflation surprising to upside
+    if z_inflation_momentum_minus_be5y is not None:
+        z = float(z_inflation_momentum_minus_be5y)
+        base += _clamp(z * 6.0, -15.0, 15.0)  # ±1 z ≈ ±6 pts
+
+    # Real yield z-score: positive = tightening, negative = easing
+    if z_real_yield_proxy_10y is not None:
+        z = float(z_real_yield_proxy_10y)
+        base += _clamp(z * 6.0, -15.0, 15.0)
+
+    return _clamp(base, 0.0, 100.0)
 
 
 @dataclass

@@ -97,22 +97,16 @@ def register_pillar_commands(app: typer.Typer) -> None:
     """Register individual pillar commands for quick access."""
     
     def _run_llm_analysis(settings, domain: str, snapshot: dict, regime_label: str, regime_description: str, console: Console):
-        """Shared LLM analysis runner."""
-        from lox.llm.core.analyst import llm_analyze_regime
-        from rich.markdown import Markdown
-        from rich.panel import Panel
-        
-        console.print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
-        
-        analysis = llm_analyze_regime(
+        """Shared LLM analysis runner (compact, metrics-focused output)."""
+        from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
+        print_llm_regime_analysis(
             settings=settings,
             domain=domain,
             snapshot=snapshot,
             regime_label=regime_label,
             regime_description=regime_description,
+            console=console,
         )
-        
-        console.print(Panel(Markdown(analysis), title="Analysis", expand=False))
     
     @app.command("inflation")
     def inflation_cmd(

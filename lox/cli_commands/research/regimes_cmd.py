@@ -223,8 +223,6 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool):
 
 def _show_regime_detail(console: Console, settings, state, pillar: str, include_llm: bool):
     """Show detailed view of a specific regime."""
-    from lox.llm.core.analyst import llm_analyze_regime
-    
     # Map pillar names
     pillar_map = {
         "growth": ("growth", state.growth),
@@ -297,20 +295,15 @@ def _show_regime_detail(console: Console, settings, state, pillar: str, include_
             progress.add_task("analyzing", total=None)
             
             try:
-                analysis = llm_analyze_regime(
+                from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
+                print_llm_regime_analysis(
                     settings=settings,
                     domain=domain,
                     snapshot=snapshot,
                     regime_label=regime.label,
                     regime_description=regime.description,
-                    include_news=True,
-                    include_prices=True,
-                    include_calendar=True,
+                    console=console,
                 )
-                
-                from rich.markdown import Markdown
-                console.print(Markdown(analysis))
-                
             except Exception as e:
                 console.print(f"[red]LLM analysis failed: {e}[/red]")
     

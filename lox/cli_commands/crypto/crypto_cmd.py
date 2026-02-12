@@ -168,32 +168,26 @@ def register(crypto_app: typer.Typer) -> None:
             console.print("[yellow]OPENAI_API_KEY not set — skipping LLM analysis[/yellow]")
             return
 
-        console.print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
+        from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
 
         llm_data = CryptoPerpsData.format_multi_for_llm(snapshots)
-
-        from lox.llm.core.analyst import llm_analyze_regime
-        from rich.markdown import Markdown
-
         snapshot_for_llm = {
             "coins": list(snapshots.keys()),
             "perps_data": llm_data,
         }
-        # Add summary metrics for the LLM
         for coin, snap in snapshots.items():
             snapshot_for_llm[f"{coin}_price"] = snap["price"]
             if snap.get("funding") and snap["funding"].get("funding_rate") is not None:
                 snapshot_for_llm[f"{coin}_funding"] = snap["funding"]["funding_rate"]
 
-        analysis = llm_analyze_regime(
+        print_llm_regime_analysis(
             settings=settings,
             domain="crypto",
             snapshot=snapshot_for_llm,
             regime_label="Crypto Perps Analysis",
             regime_description=f"Real-time perpetual futures data for {', '.join(snapshots.keys())}",
+            console=console,
         )
-
-        console.print(Panel(Markdown(analysis), title="Crypto Research", expand=False))
 
     # ------------------------------------------------------------------
     # lox crypto trade

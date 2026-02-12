@@ -7,7 +7,7 @@ from rich.panel import Panel
 
 from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import Settings, load_settings
-from lox.macro.regime import classify_macro_regime_from_state
+from lox.macro.regime import classify_macro_regime_from_state, score_macro_pressure
 from lox.macro.signals import build_macro_state
 
 
@@ -114,8 +114,14 @@ def run_macro_snapshot(
         return
 
     # Standard output (uniform regime panel)
-    score = 70 if "stagflation" in regime.name else (30 if "goldilocks" in regime.name else 50)
     inp = state.inputs
+    score = score_macro_pressure(
+        cpi_yoy=inp.cpi_yoy,
+        payrolls_3m_annualized=inp.payrolls_3m_annualized,
+        z_inflation_momentum_minus_be5y=feature_dict.get("z_infl_mom_minus_be5y"),
+        z_real_yield_proxy_10y=feature_dict.get("z_real_yield_proxy_10y"),
+        cpi_target=cpi_target,
+    )
 
     def _v(x, fmt="{:.1f}"):
         return fmt.format(x) if x is not None and isinstance(x, (int, float)) else "n/a"
@@ -140,20 +146,14 @@ def run_macro_snapshot(
     ))
 
     if llm:
-        from lox.llm.core.analyst import llm_analyze_regime
-        from rich.markdown import Markdown
-
-        print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
-
-        analysis = llm_analyze_regime(
+        from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
+        print_llm_regime_analysis(
             settings=settings,
             domain="macro",
             snapshot=snapshot_data,
             regime_label=regime.name,
             regime_description=regime.description,
         )
-
-        print(Panel(Markdown(analysis), title="Analysis", expand=False))
 
 
 def macro_snapshot(**kwargs) -> None:

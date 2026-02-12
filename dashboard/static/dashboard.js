@@ -129,14 +129,15 @@ function processPositionsData(data) {
         posPnlEl.className = 'badge-pnl ' + (pnlPct >= 0 ? 'positive' : 'negative');
     }
     
-    // POSITIONS: Render list with thesis
+    // POSITIONS: Render list with thesis and indicators
     const positionsList = document.getElementById('positions-list');
     if (!data.positions || data.positions.length === 0) {
         positionsList.innerHTML = '<div class="loading">No open positions</div>';
     } else {
         positionsList.innerHTML = data.positions.map(pos => {
             const pnlClass = pos.pnl >= 0 ? 'positive' : 'negative';
-            
+            const safeId = pos.symbol.replace(/[^a-zA-Z0-9]/g, '_');
+
             // Format symbol
             let symbol = pos.symbol;
             let details = '';
@@ -145,10 +146,36 @@ function processPositionsData(data) {
                 symbol = `${pos.opt_info.underlying} $${pos.opt_info.strike}${type}`;
                 details = `<span class="position-expiry">${pos.opt_info.expiry}</span>`;
             }
-            
+
             // Thesis (from API or placeholder)
             const thesis = pos.thesis || 'Loading thesis...';
-            
+
+            // Thesis Indicators table (expandable)
+            const indicators = pos.indicators || [];
+            const indicatorsHtml = indicators.length > 0 ? `
+                <div class="thesis-indicators-wrapper">
+                    <button type="button" class="thesis-indicators-toggle" aria-expanded="false" aria-controls="indicators-${safeId}" data-target="indicators-${safeId}">
+                        <span class="toggle-chevron">▸</span> Thesis Indicators (${indicators.length})
+                    </button>
+                    <div class="thesis-indicators-table-wrap" id="indicators-${safeId}" hidden>
+                        <table class="thesis-indicators-table">
+                            <thead><tr><th>Indicator</th><th>Current</th><th>Target</th><th>Invalidation</th><th>Status</th></tr></thead>
+                            <tbody>
+                                ${indicators.map(ind => `
+                                    <tr>
+                                        <td>${escapeHtml(ind.name || '')}</td>
+                                        <td>${escapeHtml(ind.current_value || '—')}</td>
+                                        <td>${escapeHtml(ind.target_value || '—')}</td>
+                                        <td>${escapeHtml(ind.invalidation_value || '—')}</td>
+                                        <td><span class="indicator-status-dot ${ind.status || 'neutral'}" title="${ind.status || 'neutral'}"></span></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            ` : '';
+
             return `
                 <div class="position-card">
                     <div class="position-header">
@@ -165,20 +192,75 @@ function processPositionsData(data) {
                         <span class="position-qty">${pos.qty > 0 ? '+' : ''}${pos.qty} @ ${formatCurrency(Math.abs(pos.market_value || 0) / Math.abs(pos.qty || 1))}</span>
                         <span class="position-value">${formatCurrency(Math.abs(pos.market_value || 0))}</span>
                     </div>
+                    ${indicatorsHtml}
                     <div class="position-thesis">
                         <span class="thesis-label">Thesis:</span>
-                        <span class="thesis-text" id="thesis-${pos.symbol.replace(/[^a-zA-Z0-9]/g, '_')}">${thesis}</span>
+                        <div class="thesis-text-wrap">
+                            <span class="thesis-text thesis-truncated" id="thesis-${safeId}" data-full-thesis="">${escapeHtml(thesis)}</span>
+                            <button type="button" class="thesis-expand-btn" aria-label="Show full thesis" data-thesis-id="thesis-${safeId}" style="display: none;">Show more</button>
+                        </div>
                     </div>
                 </div>
             `;
         }).join('');
+
+        // Wire up indicator toggles and thesis expand
+        setupPositionCardInteractions();
         
         // Lazily fetch AI-generated thesis (upgrades the simple fallback thesis)
         fetchPositionThesis(data.positions);
     }
-    
+
     // Update footer
     document.getElementById('footer-time').textContent = `Updated ${formatTime()}`;
+}
+
+function escapeHtml(text) {
+    if (text == null) return '';
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
+}
+
+function setupPositionCardInteractions() {
+    // Indicator toggles
+    document.querySelectorAll('.thesis-indicators-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-target');
+            const panel = document.getElementById(id);
+            if (!panel) return;
+            panel.hidden = !panel.hidden;
+            btn.setAttribute('aria-expanded', !panel.hidden);
+            const chevron = btn.querySelector('.toggle-chevron');
+            if (chevron) chevron.textContent = panel.hidden ? '▸' : '▾';
+        });
+    });
+
+    // Thesis expand/collapse
+    document.querySelectorAll('.thesis-expand-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-thesis-id');
+            const el = document.getElementById(id);
+            if (!el) return;
+            const expanded = el.classList.toggle('thesis-expanded');
+            btn.textContent = expanded ? 'Show less' : 'Show more';
+        });
+    });
+
+    // Show "Show more" only when thesis overflows
+    requestAnimationFrame(refreshThesisExpandButtons);
+}
+
+function refreshThesisExpandButtons() {
+    document.querySelectorAll('.thesis-text').forEach(el => {
+        const btn = el.parentElement?.querySelector('.thesis-expand-btn');
+        if (!btn) return;
+        if (el.scrollHeight > el.clientHeight || el.classList.contains('thesis-expanded')) {
+            btn.style.display = 'inline-block';
+        } else {
+            btn.style.display = 'none';
+        }
+    });
 }
 
 // ============================================
@@ -199,6 +281,8 @@ async function fetchPositionThesis(positions) {
                 el.textContent = thesis;
             }
         });
+        // Re-check overflow after longer LLM thesis may have replaced placeholder
+        refreshThesisExpandButtons();
     } catch (err) {
         console.error('Thesis fetch error:', err);
     }
