@@ -7,7 +7,7 @@ from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 
 
-def credit_snapshot(*, llm: bool = False) -> None:
+def credit_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
     """Entry point for `lox regime credit`."""
     settings = load_settings()
     from lox.data.fred import FredClient
@@ -27,7 +27,7 @@ def credit_snapshot(*, llm: bool = False) -> None:
 
     # HY OAS + velocity + percentiles
     try:
-        hy_df = fred.fetch_series("BAMLH0A0HYM2", start_date="2020-01-01")
+        hy_df = fred.fetch_series("BAMLH0A0HYM2", start_date="2020-01-01", refresh=refresh)
         if hy_df is not None and not hy_df.empty:
             hy_df = hy_df.sort_values("date")
             hy_oas_val = float(hy_df["value"].iloc[-1]) * 100  # pct pts → bps
@@ -47,7 +47,7 @@ def credit_snapshot(*, llm: bool = False) -> None:
 
     # BBB OAS + velocity
     try:
-        bbb_df = fred.fetch_series("BAMLC0A4CBBB", start_date="2020-01-01")
+        bbb_df = fred.fetch_series("BAMLC0A4CBBB", start_date="2020-01-01", refresh=refresh)
         if bbb_df is not None and not bbb_df.empty:
             bbb_df = bbb_df.sort_values("date")
             bbb_oas_val = float(bbb_df["value"].iloc[-1]) * 100
@@ -58,7 +58,7 @@ def credit_snapshot(*, llm: bool = False) -> None:
 
     # AAA OAS
     try:
-        aaa_df = fred.fetch_series("BAMLC0A1CAAA", start_date="2020-01-01")
+        aaa_df = fred.fetch_series("BAMLC0A1CAAA", start_date="2020-01-01", refresh=refresh)
         if aaa_df is not None and not aaa_df.empty:
             aaa_oas_val = float(aaa_df.sort_values("date")["value"].iloc[-1]) * 100
     except Exception:
@@ -67,7 +67,7 @@ def credit_snapshot(*, llm: bool = False) -> None:
     # VIX for cross-market confirmation
     try:
         from lox.macro.signals import build_macro_state
-        macro = build_macro_state(settings=settings, start_date="2020-01-01")
+        macro = build_macro_state(settings=settings, start_date="2020-01-01", refresh=refresh)
         vix_val = macro.inputs.vix
     except Exception:
         pass

@@ -406,38 +406,53 @@ def regime_usd(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
 
 # ── NEW regimes (Feb 2026 restructure) ───────────────────────────────────
 @regime_app.command("growth")
-def regime_growth(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+def regime_growth(
+    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
+):
     """Growth regime (split from macro)."""
     from lox.cli_commands.regimes.growth_cmd import growth_snapshot
-    growth_snapshot(llm=llm)
+    growth_snapshot(llm=llm, refresh=refresh)
 
 
 @regime_app.command("inflation")
-def regime_inflation(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+def regime_inflation(
+    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
+):
     """Inflation regime (split from macro)."""
     from lox.cli_commands.regimes.inflation_cmd import inflation_snapshot
-    inflation_snapshot(llm=llm)
+    inflation_snapshot(llm=llm, refresh=refresh)
 
 
 @regime_app.command("credit")
-def regime_credit(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+def regime_credit(
+    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
+):
     """Credit / spreads regime."""
     from lox.cli_commands.regimes.credit_cmd import credit_snapshot
-    credit_snapshot(llm=llm)
+    credit_snapshot(llm=llm, refresh=refresh)
 
 
 @regime_app.command("consumer")
-def regime_consumer(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+def regime_consumer(
+    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
+):
     """Consumer health regime (replaces housing)."""
     from lox.cli_commands.regimes.consumer_cmd import consumer_snapshot
-    consumer_snapshot(llm=llm)
+    consumer_snapshot(llm=llm, refresh=refresh)
 
 
 @regime_app.command("positioning")
-def regime_positioning(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+def regime_positioning(
+    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
+):
     """Market positioning regime."""
     from lox.cli_commands.regimes.positioning_cmd import positioning_snapshot
-    positioning_snapshot(llm=llm)
+    positioning_snapshot(llm=llm, refresh=refresh)
 
 
 @regime_app.command("crypto")
