@@ -8,13 +8,13 @@ from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 
 
-def growth_snapshot(*, llm: bool = False) -> None:
+def growth_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
     """Entry point for `lox regime growth`."""
     settings = load_settings()
 
     # Build macro state (shared data source)
     from lox.macro.signals import build_macro_state
-    macro_state = build_macro_state(settings=settings, start_date="2011-01-01")
+    macro_state = build_macro_state(settings=settings, start_date="2011-01-01", refresh=refresh)
     inp = macro_state.inputs
 
     # Derive inputs
@@ -31,7 +31,7 @@ def growth_snapshot(*, llm: bool = False) -> None:
     try:
         from lox.data.fred import FredClient
         fred = FredClient(api_key=settings.FRED_API_KEY)
-        claims_df = fred.fetch_series("ICSA", start_date="2011-01-01")
+        claims_df = fred.fetch_series("ICSA", start_date="2011-01-01", refresh=refresh)
         if claims_df is not None and len(claims_df) >= 13:
             claims_df = claims_df.sort_values("date")
             claims_13wk = float(claims_df["value"].tail(13).mean())
@@ -51,7 +51,7 @@ def growth_snapshot(*, llm: bool = False) -> None:
     try:
         from lox.data.fred import FredClient
         fred = FredClient(api_key=settings.FRED_API_KEY)
-        indpro_df = fred.fetch_series("INDPRO", start_date="2011-01-01")
+        indpro_df = fred.fetch_series("INDPRO", start_date="2011-01-01", refresh=refresh)
         if indpro_df is not None and len(indpro_df) >= 13:
             indpro_df = indpro_df.sort_values("date")
             indpro_yoy = (indpro_df["value"].iloc[-1] / indpro_df["value"].iloc[-13] - 1.0) * 100.0
@@ -64,7 +64,7 @@ def growth_snapshot(*, llm: bool = False) -> None:
         import pandas as _pd
         from lox.data.fred import FredClient
         fred = FredClient(api_key=settings.FRED_API_KEY)
-        lei_df = fred.fetch_series("USSLIND", start_date="2011-01-01")
+        lei_df = fred.fetch_series("USSLIND", start_date="2011-01-01", refresh=refresh)
         if lei_df is not None and len(lei_df) >= 13:
             lei_df = lei_df.sort_values("date")
             # Only use if data is within last 6 months (LEI was discontinued)

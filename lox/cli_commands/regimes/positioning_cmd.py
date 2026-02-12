@@ -7,7 +7,7 @@ from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 
 
-def positioning_snapshot(*, llm: bool = False) -> None:
+def positioning_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
     """Entry point for `lox regime positioning`."""
     settings = load_settings()
 
@@ -19,7 +19,7 @@ def positioning_snapshot(*, llm: bool = False) -> None:
     # VIX term structure from volatility state
     try:
         from lox.volatility.signals import build_volatility_state
-        vol_state = build_volatility_state(settings=settings, start_date="2020-01-01")
+        vol_state = build_volatility_state(settings=settings, start_date="2020-01-01", refresh=refresh)
         asof = vol_state.asof
         inp = vol_state.inputs
         if inp.vix is not None and inp.vix_term_spread is not None and inp.vix > 0:

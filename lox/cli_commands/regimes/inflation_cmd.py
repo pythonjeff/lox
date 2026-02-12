@@ -8,12 +8,12 @@ from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 
 
-def inflation_snapshot(*, llm: bool = False) -> None:
+def inflation_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
     """Entry point for `lox regime inflation`."""
     settings = load_settings()
 
     from lox.macro.signals import build_macro_state
-    macro_state = build_macro_state(settings=settings, start_date="2011-01-01")
+    macro_state = build_macro_state(settings=settings, start_date="2011-01-01", refresh=refresh)
     inp = macro_state.inputs
 
     cpi_yoy = inp.cpi_yoy
@@ -30,7 +30,7 @@ def inflation_snapshot(*, llm: bool = False) -> None:
     try:
         from lox.data.fred import FredClient
         fred = FredClient(api_key=settings.FRED_API_KEY)
-        oil_df = fred.fetch_series("DCOILWTICO", start_date="2011-01-01")
+        oil_df = fred.fetch_series("DCOILWTICO", start_date="2011-01-01", refresh=refresh)
         if oil_df is not None and len(oil_df) >= 252:
             oil_df = oil_df.sort_values("date").dropna(subset=["value"])
             if len(oil_df) >= 252:
@@ -43,7 +43,7 @@ def inflation_snapshot(*, llm: bool = False) -> None:
     try:
         from lox.data.fred import FredClient
         fred = FredClient(api_key=settings.FRED_API_KEY)
-        pce_df = fred.fetch_series("PCEPILFE", start_date="2011-01-01")
+        pce_df = fred.fetch_series("PCEPILFE", start_date="2011-01-01", refresh=refresh)
         if pce_df is not None and len(pce_df) >= 13:
             pce_df = pce_df.sort_values("date")
             core_pce_yoy = (pce_df["value"].iloc[-1] / pce_df["value"].iloc[-13] - 1.0) * 100.0
@@ -55,7 +55,7 @@ def inflation_snapshot(*, llm: bool = False) -> None:
     try:
         from lox.data.fred import FredClient
         fred = FredClient(api_key=settings.FRED_API_KEY)
-        ppi_df = fred.fetch_series("PPIFIS", start_date="2011-01-01")
+        ppi_df = fred.fetch_series("PPIFIS", start_date="2011-01-01", refresh=refresh)
         if ppi_df is not None and len(ppi_df) >= 13:
             ppi_df = ppi_df.sort_values("date")
             ppi_yoy = (ppi_df["value"].iloc[-1] / ppi_df["value"].iloc[-13] - 1.0) * 100.0
@@ -67,7 +67,7 @@ def inflation_snapshot(*, llm: bool = False) -> None:
     try:
         from lox.data.fred import FredClient
         fred = FredClient(api_key=settings.FRED_API_KEY)
-        tm_df = fred.fetch_series("PCETRIM12M159SFRBDAL", start_date="2011-01-01")
+        tm_df = fred.fetch_series("PCETRIM12M159SFRBDAL", start_date="2011-01-01", refresh=refresh)
         if tm_df is not None and len(tm_df) >= 1:
             tm_df = tm_df.sort_values("date")
             trimmed_mean_pce_yoy = float(tm_df["value"].iloc[-1])

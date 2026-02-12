@@ -7,7 +7,7 @@ from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 
 
-def consumer_snapshot(*, llm: bool = False) -> None:
+def consumer_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
     """Entry point for `lox regime consumer`."""
     settings = load_settings()
     from lox.data.fred import FredClient
@@ -23,7 +23,7 @@ def consumer_snapshot(*, llm: bool = False) -> None:
 
     # Michigan Sentiment from FRED
     try:
-        sent_df = fred.fetch_series("UMCSENT", start_date="2011-01-01")
+        sent_df = fred.fetch_series("UMCSENT", start_date="2011-01-01", refresh=refresh)
         if sent_df is not None and not sent_df.empty:
             sent_df = sent_df.sort_values("date")
             michigan_sent = float(sent_df["value"].iloc[-1])
@@ -40,7 +40,7 @@ def consumer_snapshot(*, llm: bool = False) -> None:
 
     # Retail Sales MoM from FRED
     try:
-        rs_df = fred.fetch_series("RSXFS", start_date="2011-01-01")
+        rs_df = fred.fetch_series("RSXFS", start_date="2011-01-01", refresh=refresh)
         if rs_df is not None and len(rs_df) >= 2:
             rs_df = rs_df.sort_values("date")
             retail_mom = (rs_df["value"].iloc[-1] / rs_df["value"].iloc[-2] - 1.0) * 100.0
@@ -49,7 +49,7 @@ def consumer_snapshot(*, llm: bool = False) -> None:
 
     # Consumer credit YoY
     try:
-        cc_df = fred.fetch_series("TOTALSL", start_date="2011-01-01")
+        cc_df = fred.fetch_series("TOTALSL", start_date="2011-01-01", refresh=refresh)
         if cc_df is not None and len(cc_df) >= 13:
             cc_df = cc_df.sort_values("date")
             cc_debt_yoy = (cc_df["value"].iloc[-1] / cc_df["value"].iloc[-13] - 1.0) * 100.0
@@ -58,7 +58,7 @@ def consumer_snapshot(*, llm: bool = False) -> None:
 
     # Mortgage rate
     try:
-        mtg_df = fred.fetch_series("MORTGAGE30US", start_date="2011-01-01")
+        mtg_df = fred.fetch_series("MORTGAGE30US", start_date="2011-01-01", refresh=refresh)
         if mtg_df is not None and not mtg_df.empty:
             mortgage_30y = float(mtg_df.sort_values("date")["value"].iloc[-1])
     except Exception:
