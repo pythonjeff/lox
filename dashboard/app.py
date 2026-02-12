@@ -258,32 +258,32 @@ TRADE_INDICATORS_CONFIG = {
     # ═══════════════════════════════════════════════════════
 
     # SLV $65.50P Feb 20 2026 (1 contract) — Silver overextended (near-term)
-    # SLV tracks LBMA Silver Price (London Fix). Bearish silver = want price down.
+    # SLV tracks LBMA Silver Price (London Fix). SLV ~$74.77, silver ~$77/oz.
     "SLV_65.5_P_2026-02-20": [
-        {"name": "Silver Spot (LBMA)", "current_value": "$31.20", "target_value": "<$30", "invalidation_value": ">$34", "direction": "below"},
+        {"name": "SLV Price", "current_value": "$74.77", "target_value": "<$65.50", "invalidation_value": ">$80", "direction": "below"},
+        {"name": "Silver Spot (LBMA)", "current_value": "$77", "target_value": "<$68", "invalidation_value": ">$83", "direction": "below"},
         {"name": "Gold/Silver Ratio", "current_value": "88", "target_value": ">95", "invalidation_value": "<80", "direction": "above"},
         {"name": "DXY (USD Index)", "current_value": "106", "target_value": ">110", "invalidation_value": "<100", "direction": "above"},
-        {"name": "COMEX Silver Inventory", "current_value": "290Moz", "target_value": ">310Moz", "invalidation_value": "<260Moz", "direction": "above"},
         {"name": "Real Rates (10Y TIPS)", "current_value": "2.0%", "target_value": ">2.5%", "invalidation_value": "<1.5%", "direction": "above"},
     ],
 
     # SLV $65P Mar 13 2026 (1 contract)
     "SLV_65_P_2026-03-13": [
-        {"name": "Silver Spot (LBMA)", "current_value": "$31.20", "target_value": "<$30", "invalidation_value": ">$34", "direction": "below"},
+        {"name": "SLV Price", "current_value": "$74.77", "target_value": "<$65", "invalidation_value": ">$80", "direction": "below"},
+        {"name": "Silver Spot (LBMA)", "current_value": "$77", "target_value": "<$67", "invalidation_value": ">$83", "direction": "below"},
         {"name": "Gold/Silver Ratio", "current_value": "88", "target_value": ">95", "invalidation_value": "<80", "direction": "above"},
         {"name": "DXY (USD Index)", "current_value": "106", "target_value": ">110", "invalidation_value": "<100", "direction": "above"},
-        {"name": "COMEX Silver Inventory", "current_value": "290Moz", "target_value": ">310Moz", "invalidation_value": "<260Moz", "direction": "above"},
         {"name": "Global Mfg PMI", "current_value": "50.1", "target_value": "<49", "invalidation_value": ">52", "direction": "below"},
     ],
 
     # SLV $52P Sep 18 2026 (1 contract) — Deep OTM silver crash
     "SLV_52_P_2026-09-18": [
-        {"name": "Silver Spot (LBMA)", "current_value": "$31.20", "target_value": "<$24", "invalidation_value": ">$36", "direction": "below"},
+        {"name": "SLV Price", "current_value": "$74.77", "target_value": "<$52", "invalidation_value": ">$85", "direction": "below"},
+        {"name": "Silver Spot (LBMA)", "current_value": "$77", "target_value": "<$54", "invalidation_value": ">$88", "direction": "below"},
         {"name": "Gold/Silver Ratio", "current_value": "88", "target_value": ">100", "invalidation_value": "<75", "direction": "above"},
         {"name": "DXY (USD Index)", "current_value": "106", "target_value": ">112", "invalidation_value": "<98", "direction": "above"},
-        {"name": "COMEX Silver Inventory", "current_value": "290Moz", "target_value": ">350Moz", "invalidation_value": "<250Moz", "direction": "above"},
         {"name": "Real Rates (10Y TIPS)", "current_value": "2.0%", "target_value": ">3.0%", "invalidation_value": "<1.0%", "direction": "above"},
-        {"name": "SLV ETF Holdings", "current_value": "460Moz", "target_value": "<400Moz", "invalidation_value": ">520Moz", "direction": "below"},
+        {"name": "COMEX Silver Inventory", "current_value": "290Moz", "target_value": ">350Moz", "invalidation_value": "<250Moz", "direction": "above"},
     ],
 
     # ═══════════════════════════════════════════════════════
