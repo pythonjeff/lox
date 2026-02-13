@@ -31,12 +31,40 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
 </head>
 <body>
+    <!-- Hamburger Nav Panel -->
+    <div class="nav-scrim" id="nav-scrim"></div>
+    <nav class="nav-panel" id="nav-panel">
+        <div class="nav-panel-header">
+            <span class="nav-brand">LOX FUND</span>
+            <button class="nav-close" id="nav-close" aria-label="Close menu">&times;</button>
+        </div>
+        <div class="nav-links">
+            <a href="/" class="nav-item active">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                Dashboard
+            </a>
+            <a href="/lived-inflation" class="nav-item">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                Lived Inflation Index
+            </a>
+            <a href="/my-account" class="nav-item">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                My Account
+            </a>
+        </div>
+    </nav>
+
     <div class="container">
         <!-- Compact Header -->
         <header class="header-compact">
             <div class="header-left">
-                <span class="logo-text">LOX</span>
-                <span class="logo-fund">FUND</span>
+                <button class="hamburger-btn" id="hamburger-btn" aria-label="Menu">
+                    <span></span><span></span><span></span>
+                </button>
+                <div class="logo-group">
+                    <span class="logo-text">LOX</span>
+                    <span class="logo-fund">FUND</span>
+                </div>
             </div>
             <div class="header-right">
                 <span class="live-indicator"><span class="live-dot"></span>LIVE</span>
@@ -386,5 +414,21 @@
     </div>
 
     <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+    <script>
+    // Hamburger menu toggle
+    (function() {
+        const btn = document.getElementById('hamburger-btn');
+        const panel = document.getElementById('nav-panel');
+        const scrim = document.getElementById('nav-scrim');
+        const closeBtn = document.getElementById('nav-close');
+        function open() { document.body.classList.add('nav-open'); }
+        function close() { document.body.classList.remove('nav-open'); }
+        if (btn) btn.addEventListener('click', function() {
+            document.body.classList.contains('nav-open') ? close() : open();
+        });
+        if (scrim) scrim.addEventListener('click', close);
+        if (closeBtn) closeBtn.addEventListener('click', close);
+    })();
+    </script>
 </body>
 </html>

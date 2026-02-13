@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOX FUND | Lived Inflation Index</title>
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='images/icons8-chart-material-two-tone-32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='images/icons8-chart-material-two-tone-16.png') }}">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+</head>
+<body>
+    <!-- Hamburger Nav Panel -->
+    <div class="nav-scrim" id="nav-scrim"></div>
+    <nav class="nav-panel" id="nav-panel">
+        <div class="nav-panel-header">
+            <span class="nav-brand">LOX FUND</span>
+            <button class="nav-close" id="nav-close" aria-label="Close menu">&times;</button>
+        </div>
+        <div class="nav-links">
+            <a href="/" class="nav-item">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                Dashboard
+            </a>
+            <a href="/lived-inflation" class="nav-item active">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                Lived Inflation Index
+            </a>
+            <a href="/my-account" class="nav-item">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                My Account
+            </a>
+        </div>
+    </nav>
+
+    <div class="container lii-page">
+        <!-- Header -->
+        <header class="header-compact">
+            <div class="header-left">
+                <button class="hamburger-btn" id="hamburger-btn" aria-label="Menu">
+                    <span></span><span></span><span></span>
+                </button>
+                <div class="logo-group">
+                    <span class="logo-text">LOX</span>
+                    <span class="logo-fund">FUND</span>
+                </div>
+            </div>
+            <div class="header-right">
+                {% if current_user.is_authenticated %}
+                <a href="{{ url_for('my_account') }}" class="btn-my-account" title="My Account">My Account</a>
+                {% else %}
+                <a href="{{ url_for('auth.login') }}" class="btn-my-account" title="Investor Login">Investor Login</a>
+                {% endif %}
+            </div>
+        </header>
+
+        <!-- Page Title -->
+        <div class="lii-page-title">
+            <h1>Lived Inflation Index</h1>
+            <span class="lii-data-through" id="lii-data-through">Loading...</span>
+        </div>
+
+        <!-- Collapsible Explainer -->
+        <details class="lii-explainer" id="lii-explainer" open>
+            <summary class="lii-explainer-toggle">
+                <span>What is the Lived Inflation Index?</span>
+                <span class="lii-explainer-arrow"></span>
+            </summary>
+            <div class="lii-explainer-body">
+                <p>The Bureau of Labor Statistics calculates CPI by weighting categories according to their share of total consumer expenditure. Under this methodology, a $35,000 used vehicle purchased once every five years receives roughly the same monthly influence on the index as categories consumers interact with every week — groceries, gasoline, utilities, insurance.</p>
+                <p>The <strong>Lived Inflation Index (LII)</strong> applies a <strong>frequency-adjusted weighting model</strong> that re-weights the CPI basket by how often consumers actually purchase or pay for each category. Monthly obligations like rent, insurance premiums, and utility bills receive materially higher weight. Infrequent durable goods purchases like vehicles, electronics, and furniture receive materially lower weight.</p>
+                <p>The result is an inflation measure that more closely tracks the cost pressures households experience in real time — and one that we believe better explains the persistent divergence between official CPI prints and consumer sentiment surveys.</p>
+                <p class="lii-explainer-callout"><strong>What CPI misses entirely — debt service costs:</strong> CPI measures the price of goods and services but explicitly excludes the cost of financing them. Credit card interest payments, auto loan rates, and mortgage debt service are not in the CPI basket at all. When the Fed raises rates from 0% to 5.5%, the average credit card APR goes from ~16% to ~22%, costing the median household with revolving balances an additional $1,000+ per year — a cost that is completely invisible to CPI. The Lived Inflation Index shares this limitation with CPI (it reweights the same BLS basket), but we flag it here because debt service is one of the largest and most frequent cost pressures consumers face, and its omission helps explain why consumer sentiment can diverge sharply from official inflation readings even when CPI is "coming down."</p>
+                <p class="lii-explainer-callout"><strong>Why this matters for macro positioning:</strong> When the Lived Inflation spread (LII minus CPI) is wide and positive, it signals that the consumer is under more stress than headline data suggests. This has implications for consumer credit, real wage calculations, Fed policy risk, and the durability of the "soft landing" narrative.</p>
+            </div>
+        </details>
+
+        <!-- Hero Metrics Row -->
+        <div class="lii-hero-row">
+            <div class="lii-hero-card">
+                <div class="lii-hero-label">Lived Inflation Index</div>
+                <div class="lii-hero-value" id="lii-value">—</div>
+                <div class="lii-hero-delta" id="lii-delta"></div>
+            </div>
+            <div class="lii-hero-card">
+                <div class="lii-hero-label">Official CPI-U</div>
+                <div class="lii-hero-value" id="cpi-value">—</div>
+                <div class="lii-hero-delta" id="cpi-delta"></div>
+            </div>
+            <div class="lii-hero-card lii-hero-spread">
+                <div class="lii-hero-label">Lived Inflation Spread</div>
+                <div class="lii-hero-value" id="spread-value">—</div>
+                <div class="lii-hero-delta" id="spread-delta"></div>
+            </div>
+            <div class="lii-hero-card lii-hero-debt" id="lii-hero-debt" style="display:none;">
+                <div class="lii-hero-label">LII + Debt</div>
+                <div class="lii-hero-value" id="lii-debt-value">—</div>
+                <div class="lii-hero-delta" id="lii-debt-delta"></div>
+            </div>
+        </div>
+
+        <!-- Scenario Profiles -->
+        <div class="lii-profiles">
+            <span class="lii-profiles-label">Consumer Profile:</span>
+            <div class="lii-profile-buttons" id="lii-profile-buttons">
+                <button class="lii-profile-btn active" data-profile="default">Median Consumer</button>
+                <button class="lii-profile-btn" data-profile="renter_no_car">Renter, No Car</button>
+                <button class="lii-profile-btn" data-profile="homeowner_family">Homeowner + Family</button>
+                <button class="lii-profile-btn" data-profile="retiree">Retiree</button>
+                <button class="lii-profile-btn" data-profile="single_urban">Single Urban Pro</button>
+            </div>
+            <div class="lii-profile-banner" id="lii-profile-banner" style="display:none;">
+                <span id="lii-profile-banner-text"></span>
+                <button class="lii-profile-reset" id="lii-profile-reset">Reset to Default</button>
+            </div>
+        </div>
+
+        <!-- Debt Servicing Overlay -->
+        <div class="lii-debt-overlay" id="lii-debt-overlay">
+            <div class="lii-debt-master">
+                <label class="lii-debt-toggle-label">
+                    <span class="lii-debt-switch">
+                        <input type="checkbox" id="lii-debt-toggle">
+                        <span class="lii-debt-slider"></span>
+                    </span>
+                    <span class="lii-debt-text">
+                        <strong>Include Debt Servicing Costs</strong>
+                        <span class="lii-debt-subtitle">Adds student loan, credit card, and auto loan payment costs. CPI excludes all debt servicing.</span>
+                    </span>
+                </label>
+            </div>
+            <div class="lii-debt-subs" id="lii-debt-subs" style="display:none;">
+                <label class="lii-debt-sub"><input type="checkbox" checked data-debt="student"> Student Loans (3.5%)</label>
+                <label class="lii-debt-sub"><input type="checkbox" checked data-debt="credit"> Credit Card Debt Service (2.5%)</label>
+                <label class="lii-debt-sub"><input type="checkbox" checked data-debt="auto"> Auto Loan Payments (2.0%)</label>
+            </div>
+            <div class="lii-debt-callout" id="lii-debt-callout" style="display:none;"></div>
+        </div>
+
+        <!-- Time Series Chart -->
+        <div class="lii-chart-section">
+            <div class="lii-chart-header">
+                <h2>LII vs CPI-U (YoY %)</h2>
+                <div class="lii-chart-toggle">
+                    <label class="lii-toggle">
+                        <input type="checkbox" id="lii-cumulative-toggle">
+                        <span>Show Cumulative Price Level</span>
+                    </label>
+                    <label class="lii-toggle">
+                        <input type="checkbox" id="lii-sentiment-toggle">
+                        <span>Overlay Consumer Sentiment</span>
+                    </label>
+                </div>
+            </div>
+            <div class="lii-chart-wrap">
+                <canvas id="lii-timeseries-chart"></canvas>
+            </div>
+        </div>
+
+        <!-- Spread Chart -->
+        <div class="lii-chart-section">
+            <h2>Lived Inflation Spread (LII - CPI)</h2>
+            <div class="lii-chart-wrap">
+                <canvas id="lii-spread-chart"></canvas>
+            </div>
+        </div>
+
+        <!-- Category Breakdown Table -->
+        <div class="lii-table-section">
+            <h2>Category Breakdown</h2>
+            <div class="lii-table-wrap">
+                <table class="lii-table" id="lii-category-table">
+                    <thead>
+                        <tr>
+                            <th data-sort="name">Category</th>
+                            <th data-sort="freq_label">Purchase Freq.</th>
+                            <th data-sort="cpi_weight" class="num">CPI Wt%</th>
+                            <th data-sort="lii_weight" class="num">LII Wt%</th>
+                            <th data-sort="weight_delta" class="num">Wt Delta</th>
+                            <th data-sort="yoy_pct" class="num">YoY %</th>
+                            <th data-sort="cpi_contribution" class="num">CPI Contrib.</th>
+                            <th data-sort="lii_contribution" class="num">LII Contrib.</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lii-category-tbody">
+                        <tr><td colspan="8" class="lii-loading">Loading categories...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Weight Comparison Chart -->
+        <div class="lii-chart-section">
+            <h2>CPI vs LII Weight Comparison</h2>
+            <div class="lii-chart-wrap lii-chart-tall">
+                <canvas id="lii-weight-chart"></canvas>
+            </div>
+            <div class="lii-weight-callout" id="lii-weight-callout"></div>
+        </div>
+
+        <!-- Debt footnote (shown when debt overlay active) -->
+        <p class="lii-debt-footnote" id="lii-debt-footnote" style="display:none;">
+            Debt servicing costs are estimated using Federal Reserve aggregate data and proxy calculations. Individual experiences vary by balance, rate, and repayment term. These categories are not included in any official BLS inflation measure.
+        </p>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <span class="footer-brand">LOX FUND</span>
+            <span class="footer-dot">&middot;</span>
+            <span>Lived Inflation Index</span>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='lii.js') }}?v=3"></script>
+    <script>
+    // Hamburger menu toggle
+    (function() {
+        const btn = document.getElementById('hamburger-btn');
+        const scrim = document.getElementById('nav-scrim');
+        const closeBtn = document.getElementById('nav-close');
+        function open() { document.body.classList.add('nav-open'); }
+        function close() { document.body.classList.remove('nav-open'); }
+        if (btn) btn.addEventListener('click', function() {
+            document.body.classList.contains('nav-open') ? close() : open();
+        });
+        if (scrim) scrim.addEventListener('click', close);
+        if (closeBtn) closeBtn.addEventListener('click', close);
+    })();
+
+    // Explainer: collapse on revisit
+    (function() {
+        const el = document.getElementById('lii-explainer');
+        if (!el) return;
+        const key = 'lii-explainer-dismissed';
+        if (localStorage.getItem(key) === '1') {
+            el.removeAttribute('open');
+        }
+        el.addEventListener('toggle', function() {
+            if (!el.open) localStorage.setItem(key, '1');
+            else localStorage.removeItem(key);
+        });
+    })();
+    </script>
+</body>
+</html>
