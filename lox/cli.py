@@ -655,6 +655,10 @@ def _register_commands() -> None:
     # Research module (primary interface)
     from lox.cli_commands.research import register_research_commands
     register_research_commands(app)
+
+    # Top-level `lox chat` alias (shortcut for `lox research chat`)
+    from lox.cli_commands.research.chat_cmd import register as register_chat_alias
+    register_chat_alias(app)
     
     # Core commands
     from lox.cli_commands.core.core_cmd import register_core

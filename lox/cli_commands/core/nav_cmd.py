@@ -318,49 +318,79 @@ def register(nav_app: typer.Typer) -> None:
         total_units = float(rep.get('total_units') or 0.0)
         fund_return = float(rep.get('fund_return') or 0.0)
         fund_pnl = equity - total_capital
-        
-        ret_style = "green" if fund_return >= 0 else "red"
-        
-        c.print(
-            Panel(
-                f"[bold]Live Equity:[/bold] ${equity:,.2f}  |  [bold]Capital:[/bold] ${total_capital:,.2f}  |  [bold]P&L:[/bold] ${fund_pnl:+,.2f}\n"
-                f"[bold]NAV/Unit:[/bold] ${nav_per_unit:.4f}  |  [bold]Total Units:[/bold] {total_units:,.2f}\n"
-                f"[{ret_style}][bold]Fund Return: {fund_return*100:+.2f}%[/bold][/{ret_style}]\n"
-                f"investor_flows: {path_inv}",
-                title="NAV investor report (unitized)",
-                expand=False,
-            )
+
+        ret_color = "green" if fund_return >= 0 else "red"
+        pnl_color = "green" if fund_pnl >= 0 else "red"
+
+        # ── Hero banner ───────────────────────────────────────────────
+        c.print()
+        c.print("[bold cyan]  LOX FUND[/bold cyan]  [dim]Investor Report[/dim]")
+        c.print("[dim]  ─────────────────────────────────────────────[/dim]")
+        c.print()
+
+        hero = Table(show_header=False, box=None, padding=(0, 3), expand=True)
+        hero.add_column(justify="center")
+        hero.add_column(justify="center")
+        hero.add_column(justify="center")
+        hero.add_column(justify="center")
+        hero.add_row(
+            "[dim]FUND RETURN[/dim]",
+            "[dim]NET ASSET VALUE[/dim]",
+            "[dim]TOTAL P&L[/dim]",
+            "[dim]NAV / UNIT[/dim]",
         )
+        hero.add_row(
+            f"[bold {ret_color}]{fund_return*100:+.1f}%[/bold {ret_color}]",
+            f"[bold]${equity:,.2f}[/bold]",
+            f"[bold {pnl_color}]${fund_pnl:+,.2f}[/bold {pnl_color}]",
+            f"[bold]${nav_per_unit:.4f}[/bold]",
+        )
+        hero.add_row(
+            "[dim]since inception[/dim]",
+            f"[dim]{len(rep.get('rows') or [])} investors[/dim]",
+            f"[dim]on ${total_capital:,.0f} capital[/dim]",
+            f"[dim]{total_units:,.0f} units[/dim]",
+        )
+        c.print(Panel(hero, border_style="blue", padding=(1, 2)))
 
         rows = rep.get("rows") or []
         if not rows:
             c.print(Panel("No investor flows yet. Use `lox nav investor contribute ...`", title="NAV", expand=False))
             raise typer.Exit(code=0)
 
-        tbl = Table(title="Investor ledger (hedge fund style)")
-        tbl.add_column("code", style="bold")
-        tbl.add_column("ownership", justify="right")
-        tbl.add_column("units", justify="right")
-        tbl.add_column("deposits", justify="right")
-        tbl.add_column("value", justify="right")
-        tbl.add_column("pnl", justify="right")
-        tbl.add_column("return", justify="right")
+        # ── Investor ownership table ──────────────────────────────────
+        tbl = Table(
+            title="[bold]Investor Ownership[/bold]",
+            box=None,
+            padding=(0, 1),
+            show_edge=False,
+            header_style="bold dim",
+        )
+        tbl.add_column("Investor", style="bold cyan")
+        tbl.add_column("Own%", justify="right")
+        tbl.add_column("Contributed", justify="right")
+        tbl.add_column("Value", justify="right")
+        tbl.add_column("P&L", justify="right")
+        tbl.add_column("Return", justify="right")
+
         for r in rows:
             own = r.get("ownership")
             ret = r.get("return")
-            units = r.get("units", 0)
             pnl = float(r.get('pnl') or 0.0)
-            pnl_style = "green" if pnl >= 0 else "red"
-            ret_style = "green" if (ret or 0) >= 0 else "red"
+            ps = "green" if pnl >= 0 else "red"
+            rs = "green" if (ret or 0) >= 0 else "red"
+
+            own_pct = float(own or 0) * 100
+
             tbl.add_row(
                 str(r.get("code") or ""),
-                "—" if own is None else f"{float(own)*100:.1f}%",
-                f"{float(units):,.2f}",
-                f"${float(r.get('basis') or 0.0):,.2f}",
-                f"${float(r.get('value') or 0.0):,.2f}",
-                f"[{pnl_style}]${pnl:+,.2f}[/{pnl_style}]",
-                "—" if ret is None else f"[{ret_style}]{float(ret)*100:+.1f}%[/{ret_style}]",
+                f"{own_pct:.1f}%" if own is not None else "—",
+                f"${float(r.get('basis') or 0.0):,.0f}",
+                f"${float(r.get('value') or 0.0):,.0f}",
+                f"[{ps}]${pnl:+,.0f}[/{ps}]",
+                "—" if ret is None else f"[{rs}]{float(ret)*100:+.1f}%[/{rs}]",
             )
+        c.print()
         c.print(tbl)
 
         # Best-effort: recent trade P&L snapshot (last 30 days, open + closed).
@@ -788,74 +818,129 @@ def register(nav_app: typer.Typer) -> None:
                 # Separate closed-only list for clarity.
                 closed_only = [r for r in recent if str(r.get("status") or "") == "closed"]
 
-                t_win = Table(title=f"Recent trades (last {lookback_days}d) — top 3 by P&L")
-                t_win.add_column("symbol", style="bold")
-                t_win.add_column("status", justify="left")
-                t_win.add_column("asof", justify="right")
-                t_win.add_column("qty", justify="right")
-                t_win.add_column("pnl", justify="right")
-                t_win.add_column("pnl%", justify="right")
-                for r in winners:
-                    dt = r.get("last_order")
-                    t_win.add_row(
-                        r["symbol"],
-                        r.get("status", ""),
-                        (dt.date().isoformat() if dt else "—"),
-                        "—" if r.get("qty") is None else f"{float(r.get('qty') or 0):.0f}",
-                        f"{float(r['pnl']):+,.2f}",
-                        "—" if r.get("pnlpc") is None else f"{float(r['pnlpc'])*100:+.1f}%",
+                # ── Summary stats bar ─────────────────────────────────
+                open_count = sum(1 for r in recent if str(r.get("status") or "") == "open")
+                closed_count = len(closed_only)
+                total_unrealized = sum(float(r.get("pnl") or 0) for r in recent if str(r.get("status") or "") == "open")
+                total_realized = sum(float(r.get("pnl") or 0) for r in closed_only)
+                ur_color = "green" if total_unrealized >= 0 else "red"
+                rl_color = "green" if total_realized >= 0 else "red"
+
+                stats_tbl = Table(show_header=False, box=None, padding=(0, 3), expand=True)
+                stats_tbl.add_column(justify="center")
+                stats_tbl.add_column(justify="center")
+                stats_tbl.add_column(justify="center")
+                stats_tbl.add_column(justify="center")
+                stats_tbl.add_row(
+                    "[dim]OPEN POSITIONS[/dim]",
+                    "[dim]CLOSED TRADES[/dim]",
+                    "[dim]UNREALIZED P&L[/dim]",
+                    "[dim]REALIZED P&L[/dim]",
+                )
+                stats_tbl.add_row(
+                    f"[bold]{open_count}[/bold]",
+                    f"[bold]{closed_count}[/bold]",
+                    f"[bold {ur_color}]${total_unrealized:+,.0f}[/bold {ur_color}]",
+                    f"[bold {rl_color}]${total_realized:+,.0f}[/bold {rl_color}]",
+                )
+                c.print()
+                c.print(Panel(stats_tbl, title=f"[bold]Trade Activity[/bold] [dim](last {lookback_days}d)[/dim]", border_style="cyan", padding=(1, 2)))
+
+                # ── Helper to build a formatted trade table ───────────
+                def _fmt_option_sym(sym: str) -> str:
+                    """Make raw OCC symbols more readable."""
+                    if '/' in sym or len(sym) <= 10:
+                        return sym
+                    try:
+                        i = 0
+                        while i < len(sym) and not sym[i].isdigit():
+                            i += 1
+                        if i == 0 or i >= len(sym):
+                            return sym
+                        ticker = sym[:i]
+                        rest = sym[i:]
+                        if len(rest) >= 15:
+                            exp = f"20{rest[:2]}-{rest[2:4]}-{rest[4:6]}"
+                            opt_type = "Call" if rest[6] == 'C' else "Put"
+                            strike = int(rest[7:]) / 1000
+                            if strike == int(strike):
+                                strike_str = f"${int(strike)}"
+                            else:
+                                strike_str = f"${strike:.1f}"
+                            return f"{ticker} {strike_str} {opt_type} {exp}"
+                    except Exception:
+                        pass
+                    return sym
+
+                def _build_trade_table(title: str, trade_rows: list, accent_style: str = "bold") -> Table:
+                    tbl = Table(
+                        title=f"[{accent_style}]{title}[/{accent_style}]",
+                        box=None,
+                        padding=(0, 1),
+                        show_edge=False,
+                        header_style="bold dim",
                     )
+                    tbl.add_column("Position", style="bold")
+                    tbl.add_column("Status", justify="center")
+                    tbl.add_column("Qty", justify="right")
+                    tbl.add_column("Date", justify="right")
+                    tbl.add_column("P&L", justify="right")
+                    tbl.add_column("Return", justify="right")
+                    for r in trade_rows:
+                        pnl_val = float(r.get('pnl') or 0)
+                        pnl_pct = r.get("pnlpc")
+                        ps = "green" if pnl_val >= 0 else "red"
+                        status = str(r.get("status") or "")
+                        status_badge = f"[green]OPEN[/green]" if status == "open" else f"[dim]CLOSED[/dim]"
+                        dt = r.get("last_order")
+                        tbl.add_row(
+                            _fmt_option_sym(r["symbol"]),
+                            status_badge,
+                            "—" if r.get("qty") is None else f"{float(r.get('qty') or 0):.0f}",
+                            dt.strftime("%b %d") if dt else "—",
+                            f"[{ps}]${pnl_val:+,.0f}[/{ps}]",
+                            "—" if pnl_pct is None else f"[{ps}]{float(pnl_pct)*100:+.1f}%[/{ps}]",
+                        )
+                    return tbl
 
-                t_lose = Table(title=f"Recent trades (last {lookback_days}d) — worst 3 by P&L")
-                t_lose.add_column("symbol", style="bold")
-                t_lose.add_column("status", justify="left")
-                t_lose.add_column("asof", justify="right")
-                t_lose.add_column("qty", justify="right")
-                t_lose.add_column("pnl", justify="right")
-                t_lose.add_column("pnl%", justify="right")
-                for r in losers:
-                    dt = r.get("last_order")
-                    t_lose.add_row(
-                        r["symbol"],
-                        r.get("status", ""),
-                        (dt.date().isoformat() if dt else "—"),
-                        "—" if r.get("qty") is None else f"{float(r.get('qty') or 0):.0f}",
-                        f"{float(r['pnl']):+,.2f}",
-                        "—" if r.get("pnlpc") is None else f"{float(r['pnlpc'])*100:+.1f}%",
-                    )
+                # ── Top winners ───────────────────────────────────────
+                c.print()
+                c.print(_build_trade_table("Top Performers", winners))
 
-                c.print(t_win)
-                c.print(t_lose)
+                # ── Worst losers ──────────────────────────────────────
+                c.print()
+                c.print(_build_trade_table("Bottom Performers", losers))
 
+                # ── Closed trades ─────────────────────────────────────
                 if closed_only:
-                    t_closed = Table(title=f"Closed trades (last {lookback_days}d) — top/bottom by P&L")
-                    t_closed.add_column("symbol", style="bold")
-                    t_closed.add_column("status", justify="left")
-                    t_closed.add_column("asof", justify="right")
-                    t_closed.add_column("qty", justify="right")
-                    t_closed.add_column("pnl", justify="right")
-                    t_closed.add_column("pnl%", justify="right")
-
                     top_closed = sorted(closed_only, key=lambda x: x["pnl"], reverse=True)[:3]
                     bot_closed = sorted(closed_only, key=lambda x: x["pnl"])[:3]
+                    # Deduplicate in case same trade is in both
+                    seen = set()
+                    merged_closed = []
                     for r in top_closed + bot_closed:
-                        dt = r.get("last_order")
-                        t_closed.add_row(
-                            r["symbol"],
-                            r.get("status", ""),
-                            (dt.date().isoformat() if dt else "—"),
-                            "—" if r.get("qty") is None else f"{float(r.get('qty') or 0):.0f}",
-                            f"{float(r['pnl']):+,.2f}",
-                            "—" if r.get("pnlpc") is None else f"{float(r['pnlpc'])*100:+.1f}%",
-                        )
-
-                    c.print(t_closed)
+                        key = (r["symbol"], r.get("pnl"), r.get("qty"))
+                        if key not in seen:
+                            seen.add(key)
+                            merged_closed.append(r)
+                    c.print()
+                    c.print(_build_trade_table("Realized Trades", merged_closed))
                 else:
-                    c.print(Panel("No closed trades found in the last 30 days (orders/fills may be empty).", title="Closed trades", expand=False))
+                    c.print()
+                    c.print("[dim]  No closed trades in the last 30 days.[/dim]")
             else:
-                c.print(Panel("No recent trades found in the last 30 days (best-effort).", title="Recent trades", expand=False))
+                c.print()
+                c.print("[dim]  No recent trade activity found.[/dim]")
         except Exception:
-            c.print(Panel("Trade P&L snapshot unavailable (best-effort).", title="Recent trades", expand=False))
+            c.print()
+            c.print("[dim]  Trade activity unavailable.[/dim]")
+
+        # ── Footer ────────────────────────────────────────────────────
+        c.print()
+        c.print("[dim]  ─────────────────────────────────────────────[/dim]")
+        from datetime import datetime as _dt, timezone as _tz
+        c.print(f"[dim]  Generated {_dt.now(_tz.utc).strftime('%Y-%m-%d %H:%M UTC')}  |  lox nav investor report --share for HTML[/dim]")
+        c.print()
 
     @investor_app.command("import")
     def investor_import(

@@ -63,7 +63,7 @@ def build_trackers(
 def fetch_calendar_events(
     *,
     settings: Settings,
-    days_ahead: int = 10,
+    days_ahead: int = 30,
     max_items: int = 18,
     us_only: bool = True,
 ) -> list[dict[str, Any]]:
