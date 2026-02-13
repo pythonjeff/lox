@@ -887,7 +887,7 @@ def llm_analyze_regime(
                 payload["macro_news"] = macro_news
     
     if include_calendar:
-        events = _fetch_calendar_events(settings, days_ahead=14, max_items=6)
+        events = _fetch_calendar_events(settings, days_ahead=30, max_items=15)
         if events:
             payload["upcoming_events"] = events
             sources_used.append(f"FMP Economic Calendar ({len(events)} events)")
@@ -920,7 +920,7 @@ def llm_analyze_regime(
 ### CATALYSTS (compact)
 | Date | Event | Typical move |
 |------|-------|--------------|
-[Up to 5 upcoming events from payload. Use bps/% from historical_context when available.]
+[ONLY use events and dates from the `upcoming_events` array in the DATA payload below. Do NOT fabricate, guess, or estimate any event dates. If an event is not listed in `upcoming_events`, do NOT include it in this table. Use bps/% from historical_context when available.]
 
 ### TRADES (2–3 only)
 | Dir | Ticker | Entry | Target | Stop |
@@ -930,7 +930,9 @@ def llm_analyze_regime(
 ### INVALIDATION
 1–2 bullets. Specific level or event that would flip view. No fabricated $ amounts.
 
-RULES: Use ONLY data from payload. No thesis fluff. Numbers > prose. Cite news as [N] if used.
+RULES:
+- Use ONLY data from payload. No thesis fluff. Numbers > prose. Cite news as [N] if used.
+- CATALYST DATES: Every date in the CATALYSTS table MUST come from `upcoming_events` in the payload. Never invent or assume release dates for CPI, PPI, FOMC, NFP, etc. If a release is not in the calendar data, omit it.
 """
     
     # Append payload
@@ -940,7 +942,7 @@ RULES: Use ONLY data from payload. No thesis fluff. Numbers > prose. Cite news a
         model=chosen_model,
         messages=[{"role": "user", "content": prompt}],
         temperature=float(temperature),
-        max_tokens=1000,
+        max_tokens=2500,
     )
     
     return (resp.choices[0].message.content or "").strip()

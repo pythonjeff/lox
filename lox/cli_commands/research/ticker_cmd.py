@@ -542,64 +542,115 @@ def _fetch_peers(settings, symbol: str) -> list[str]:
 
 
 def _show_peer_comparison(console: Console, settings, symbol: str, fundamentals: dict):
-    """Structured peer comparison table (Ticker, Price, Mkt Cap, EV/Rev, Rev Growth, Gross Margin)."""
+    """Structured peer comparison table (Ticker, Price, Mkt Cap, EV/Rev, Rev Growth, Gross Margin, Net Margin, P/E)."""
     peers = _fetch_peers(settings, symbol)
     if not peers:
         return
     try:
         import requests
         symbols = [symbol] + list(peers)
-        # Batch quote
-        url = "https://financialmodelingprep.com/api/v3/quote/" + ",".join(symbols)
-        resp = requests.get(url, params={"apikey": settings.fmp_api_key}, timeout=15)
-        quotes = resp.json() if resp.ok and resp.json() else []
-        if not isinstance(quotes, list):
-            quotes = []
-        # Batch profile for mkt cap
-        url2 = "https://financialmodelingprep.com/api/v3/profile/" + ",".join(symbols)
-        resp2 = requests.get(url2, params={"apikey": settings.fmp_api_key}, timeout=15)
-        profiles = resp2.json() if resp2.ok and resp2.json() else []
-        if not isinstance(profiles, list):
-            profiles = []
-        by_sym = {p["symbol"]: p for p in profiles if isinstance(p, dict) and p.get("symbol")}
+        joined = ",".join(symbols)
+        api = settings.fmp_api_key
+
+        # Batch quote (price)
+        resp_q = requests.get(
+            f"https://financialmodelingprep.com/api/v3/quote/{joined}",
+            params={"apikey": api}, timeout=15,
+        )
+        quotes = resp_q.json() if resp_q.ok and isinstance(resp_q.json(), list) else []
         quote_by = {q["symbol"]: q for q in quotes if isinstance(q, dict) and q.get("symbol")}
-        # Key metrics for EV/Revenue etc (one call per symbol for simplicity)
+
+        # Batch profile (mktCap, sector)
+        resp_p = requests.get(
+            f"https://financialmodelingprep.com/api/v3/profile/{joined}",
+            params={"apikey": api}, timeout=15,
+        )
+        profiles = resp_p.json() if resp_p.ok and isinstance(resp_p.json(), list) else []
+        prof_by = {p["symbol"]: p for p in profiles if isinstance(p, dict) and p.get("symbol")}
+
+        # Per-symbol detail calls (key-metrics-ttm, ratios-ttm, financial-growth)
         rows = []
         for sym in symbols:
             q = quote_by.get(sym, {})
-            p = by_sym.get(sym, {})
+            p = prof_by.get(sym, {})
             price = q.get("price") or p.get("price")
             mkt_cap = p.get("mktCap")
-            url_m = f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{sym}"
-            r = requests.get(url_m, params={"apikey": settings.fmp_api_key}, timeout=8)
-            metrics = (r.json() or [{}])[0] if r.ok and isinstance(r.json(), list) and r.json() else {}
-            url_r = f"https://financialmodelingprep.com/api/v3/ratios-ttm/{sym}"
-            r2 = requests.get(url_r, params={"apikey": settings.fmp_api_key}, timeout=8)
-            ratios = (r2.json() or [{}])[0] if r2.ok and isinstance(r2.json(), list) and r2.json() else {}
-            rev = metrics.get("revenuePerShare")
-            shares = p.get("volAvg")  # not shares; use enterpriseValue/revenue
-            ev = metrics.get("enterpriseValue")
-            rev_ttm = metrics.get("revenuePerShare")  # need total revenue for EV/Rev
-            income_url = f"https://financialmodelingprep.com/api/v3/income-statement/{sym}"
-            r3 = requests.get(income_url, params={"apikey": settings.fmp_api_key, "limit": 1}, timeout=8)
-            income_list = r3.json() if r3.ok else []
-            revenue = income_list[0].get("revenue") if income_list and isinstance(income_list[0], dict) else None
-            ev_rev = (float(ev) / float(revenue)) if ev and revenue and float(revenue) else None
-            growth_url = f"https://financialmodelingprep.com/api/v3/income-statement-growth/{sym}"
-            r4 = requests.get(growth_url, params={"apikey": settings.fmp_api_key, "limit": 1}, timeout=8)
-            growth_list = r4.json() if r4.ok else []
-            rev_growth = growth_list[0].get("revenueGrowth") if growth_list and isinstance(growth_list[0], dict) else None
-            if rev_growth is not None:
+
+            # key-metrics-ttm -> evToSalesTTM (pre-calculated EV/Rev)
+            try:
+                r_m = requests.get(
+                    f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{sym}",
+                    params={"apikey": api}, timeout=8,
+                )
+                metrics = (r_m.json() or [{}])[0] if r_m.ok and isinstance(r_m.json(), list) and r_m.json() else {}
+            except Exception:
+                metrics = {}
+
+            # ratios-ttm -> margins, P/E
+            try:
+                r_r = requests.get(
+                    f"https://financialmodelingprep.com/api/v3/ratios-ttm/{sym}",
+                    params={"apikey": api}, timeout=8,
+                )
+                ratios = (r_r.json() or [{}])[0] if r_r.ok and isinstance(r_r.json(), list) and r_r.json() else {}
+            except Exception:
+                ratios = {}
+
+            # financial-growth -> revenueGrowth (more reliable than income-statement-growth)
+            try:
+                r_g = requests.get(
+                    f"https://financialmodelingprep.com/api/v3/financial-growth/{sym}",
+                    params={"apikey": api, "limit": 1}, timeout=8,
+                )
+                growth = (r_g.json() or [{}])[0] if r_g.ok and isinstance(r_g.json(), list) and r_g.json() else {}
+            except Exception:
+                growth = {}
+
+            # EV/Revenue: use pre-calculated evToSalesTTM
+            ev_rev = None
+            raw_ev_sales = metrics.get("evToSalesTTM")
+            if raw_ev_sales is not None:
                 try:
-                    rev_growth = float(rev_growth) * 100
+                    ev_rev = float(raw_ev_sales)
                 except (TypeError, ValueError):
-                    rev_growth = None
-            gross_margin = ratios.get("grossProfitMarginTTM") or metrics.get("grossProfitMarginTTM")
-            if gross_margin is not None:
+                    pass
+
+            # Revenue growth YoY from financial-growth endpoint
+            rev_growth = None
+            raw_rg = growth.get("revenueGrowth")
+            if raw_rg is not None:
                 try:
-                    gross_margin = float(gross_margin) * 100
+                    rev_growth = float(raw_rg) * 100
                 except (TypeError, ValueError):
-                    gross_margin = None
+                    pass
+
+            # Gross margin from ratios-ttm
+            gross_margin = None
+            raw_gm = ratios.get("grossProfitMarginTTM") or metrics.get("grossProfitMarginTTM")
+            if raw_gm is not None:
+                try:
+                    gross_margin = float(raw_gm) * 100
+                except (TypeError, ValueError):
+                    pass
+
+            # Net margin from ratios-ttm
+            net_margin = None
+            raw_nm = ratios.get("netProfitMarginTTM")
+            if raw_nm is not None:
+                try:
+                    net_margin = float(raw_nm) * 100
+                except (TypeError, ValueError):
+                    pass
+
+            # P/E from ratios or quote
+            pe = None
+            raw_pe = ratios.get("peRatioTTM") or q.get("pe")
+            if raw_pe is not None:
+                try:
+                    pe = float(raw_pe)
+                except (TypeError, ValueError):
+                    pass
+
             rows.append({
                 "ticker": sym,
                 "price": price,
@@ -607,31 +658,44 @@ def _show_peer_comparison(console: Console, settings, symbol: str, fundamentals:
                 "ev_rev": ev_rev,
                 "rev_growth": rev_growth,
                 "gross_margin": gross_margin,
+                "net_margin": net_margin,
+                "pe": pe,
             })
     except Exception as e:
         logger.debug("Peer comparison failed: %s", e)
         return
     if not rows:
         return
-    table = Table(title="[bold]Peer Comparison[/bold]", box=None, padding=(0, 2))
+
+    table = Table(title="[bold]Peer Comparison[/bold]", box=None, padding=(0, 1), header_style="bold dim")
     table.add_column("Ticker", style="bold")
     table.add_column("Price", justify="right")
     table.add_column("Mkt Cap", justify="right")
+    table.add_column("P/E", justify="right")
     table.add_column("EV/Rev", justify="right")
     table.add_column("Rev Growth", justify="right")
-    table.add_column("Gross Margin", justify="right")
+    table.add_column("Gross Mgn", justify="right")
+    table.add_column("Net Mgn", justify="right")
     for r in rows:
+        is_target = r["ticker"] == symbol
         mc = r.get("mkt_cap")
-        mc_str = f"${mc/1e9:.1f}B" if mc is not None else "N/A"
+        mc_str = f"${mc/1e9:.1f}B" if mc is not None else "—"
         price = r.get("price")
-        price_str = f"${price:,.2f}" if price is not None else "N/A"
+        price_str = f"${price:,.2f}" if price is not None else "—"
         ev_rev = r.get("ev_rev")
-        ev_rev_str = f"{ev_rev:.1f}x" if ev_rev is not None else "N/A"
+        ev_rev_str = f"{ev_rev:.1f}x" if ev_rev is not None else "—"
+        pe = r.get("pe")
+        pe_str = f"{pe:.1f}x" if pe is not None else "—"
         rg = r.get("rev_growth")
-        rg_str = f"{rg:+.1f}%" if rg is not None else "N/A"
+        rg_color = "green" if rg and rg > 0 else "red" if rg and rg < 0 else ""
+        rg_str = f"[{rg_color}]{rg:+.1f}%[/{rg_color}]" if rg is not None else "—"
         gm = r.get("gross_margin")
-        gm_str = f"{gm:.1f}%" if gm is not None else "N/A"
-        table.add_row(r["ticker"], price_str, mc_str, ev_rev_str, rg_str, gm_str)
+        gm_str = f"{gm:.1f}%" if gm is not None else "—"
+        nm = r.get("net_margin")
+        nm_color = "green" if nm and nm > 0 else "red" if nm and nm < 0 else ""
+        nm_str = f"[{nm_color}]{nm:.1f}%[/{nm_color}]" if nm is not None else "—"
+        ticker_style = f"[bold cyan]{r['ticker']}[/bold cyan]" if is_target else r["ticker"]
+        table.add_row(ticker_style, price_str, mc_str, pe_str, ev_rev_str, rg_str, gm_str, nm_str)
     console.print()
     console.print(table)
 
