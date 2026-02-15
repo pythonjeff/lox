@@ -348,6 +348,220 @@ def compute_cumulative(
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# STORY METRICS: Essentials split, purchasing power, wage gap
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def compute_essentials_split(
+    bls_data: dict[str, pd.DataFrame],
+    freq_overrides: dict[str, float] | None = None,
+) -> dict:
+    """
+    Compute separate YoY inflation rates for essentials vs discretionary.
+
+    Uses the essentiality tier already on each category:
+        3 = Non-discretionary (food at home, shelter, utilities, insurance, rx, childcare)
+        2 = Semi-essential (gas, medical visits, personal care, maintenance)
+        1 = Discretionary (dining out, apparel, vehicles, electronics, streaming)
+
+    Returns dict with:
+        essentials_yoy, discretionary_yoy, semi_yoy, gap,
+        essentials_cumul, discretionary_cumul  (since Jan 2020)
+    """
+    cats_lii = calculate_lii_weights(freq_overrides=freq_overrides)
+
+    # Build series map
+    series_map: dict[str, pd.Series] = {}
+    for cat in CATEGORIES:
+        sid = cat["series_id"]
+        df = bls_data.get(sid)
+        if df is None or df.empty:
+            continue
+        s = df.set_index("date")["value"]
+        s = s[~s.index.duplicated(keep="last")].sort_index()
+        series_map[sid] = s
+
+    # Buckets: {tier: [(weight, yoy)]}
+    tier_data: dict[int, list[tuple[float, float]]] = {3: [], 2: [], 1: []}
+
+    # Find latest date across all series
+    all_dates = set()
+    for s in series_map.values():
+        all_dates.update(s.index)
+    if not all_dates:
+        return {"essentials_yoy": None, "discretionary_yoy": None, "gap": None}
+
+    latest = max(all_dates)
+    year_ago = latest - pd.DateOffset(months=12)
+
+    for cat_lii, cat_raw in zip(cats_lii, CATEGORIES):
+        sid = cat_lii["series_id"]
+        tier = cat_raw.get("essentiality", 2)
+        s = series_map.get(sid)
+        if s is None:
+            continue
+        if latest not in s.index or year_ago not in s.index:
+            continue
+        cur = s[latest]
+        ago = s[year_ago]
+        if ago == 0:
+            continue
+        yoy = (cur - ago) / ago
+        # Weight within tier: use LII weight
+        tier_data[tier].append((cat_lii["lii_weight"], yoy))
+
+    def _weighted_yoy(items: list[tuple[float, float]]) -> float | None:
+        if not items:
+            return None
+        total_w = sum(w for w, _ in items)
+        if total_w == 0:
+            return None
+        return sum(w * y for w, y in items) / total_w * 100
+
+    ess = _weighted_yoy(tier_data[3])
+    semi = _weighted_yoy(tier_data[2])
+    disc = _weighted_yoy(tier_data[1])
+    gap = round(ess - disc, 2) if ess is not None and disc is not None else None
+
+    # Cumulative since Jan 2020 for essentials vs discretionary
+    base = pd.Timestamp("2020-01-01")
+    ess_cumul = None
+    disc_cumul = None
+
+    for tier_key, cumul_name in [(3, "ess"), (1, "disc")]:
+        items = tier_data[tier_key]
+        if not items:
+            continue
+        # Compute cumulative: sum of (weight * level_change_since_base)
+        total_w = sum(w for w, _ in items)
+        if total_w == 0:
+            continue
+        cumul = 0.0
+        valid = 0
+        for cat_lii, cat_raw in zip(cats_lii, CATEGORIES):
+            if cat_raw.get("essentiality", 2) != tier_key:
+                continue
+            sid = cat_lii["series_id"]
+            s = series_map.get(sid)
+            if s is None or base not in s.index or latest not in s.index:
+                continue
+            pct_chg = (s[latest] - s[base]) / s[base]
+            cumul += (cat_lii["lii_weight"] / total_w) * pct_chg
+            valid += 1
+        if valid > 0:
+            if cumul_name == "ess":
+                ess_cumul = round(cumul * 100, 1)
+            else:
+                disc_cumul = round(cumul * 100, 1)
+
+    return {
+        "essentials_yoy": round(ess, 2) if ess is not None else None,
+        "semi_yoy": round(semi, 2) if semi is not None else None,
+        "discretionary_yoy": round(disc, 2) if disc is not None else None,
+        "gap": gap,
+        "essentials_cumul_since_2020": ess_cumul,
+        "discretionary_cumul_since_2020": disc_cumul,
+        "data_month": latest.strftime("%B %Y") if latest else None,
+    }
+
+
+def compute_purchasing_power(
+    bls_data: dict[str, pd.DataFrame],
+    freq_overrides: dict[str, float] | None = None,
+    base_date: str = "2020-01-01",
+) -> dict:
+    """
+    Compute cumulative purchasing power loss since base_date.
+
+    Returns:
+        lii_cumul_pct: How much LII prices have risen (e.g. 22.3 = +22.3%)
+        cpi_cumul_pct: How much CPI prices have risen
+        dollar_value: What $1 from base_date buys now (e.g. 0.82)
+        dollar_100: What a $100 basket costs now (e.g. 122.30)
+    """
+    df = compute_cumulative(bls_data, base_date=base_date, freq_overrides=freq_overrides)
+    if df.empty:
+        return {"lii_cumul_pct": None, "cpi_cumul_pct": None, "dollar_value": None}
+
+    # Parse dates if needed
+    if not pd.api.types.is_datetime64_any_dtype(df["date"]):
+        df["date"] = pd.to_datetime(df["date"])
+
+    latest = df.iloc[-1]
+    lii_pct = round(float(latest["lii_level"]) - 100, 1)
+    cpi_pct = round(float(latest["cpi_level"]) - 100, 1)
+    dollar_val = round(100 / float(latest["lii_level"]), 2)
+    dollar_100 = round(float(latest["lii_level"]), 0)
+    cpi_dollar_100 = round(float(latest["cpi_level"]), 0)
+
+    return {
+        "lii_cumul_pct": lii_pct,
+        "cpi_cumul_pct": cpi_pct,
+        "dollar_value": dollar_val,
+        "dollar_100_lii": dollar_100,
+        "dollar_100_cpi": cpi_dollar_100,
+        "base_date": base_date,
+        "data_month": latest["date"].strftime("%B %Y") if hasattr(latest["date"], "strftime") else str(latest["date"]),
+    }
+
+
+def compute_wage_gap(
+    bls_data: dict[str, pd.DataFrame],
+    wage_data: pd.DataFrame | None = None,
+    freq_overrides: dict[str, float] | None = None,
+) -> dict:
+    """
+    Compute the real wage gap: LII YoY - Wage Growth YoY.
+
+    Positive = wages falling behind lived costs (people getting poorer).
+    Negative = wages outpacing lived costs (people keeping up).
+
+    Args:
+        bls_data: BLS data for LII computation.
+        wage_data: DataFrame with columns [date, value] for avg hourly earnings.
+    """
+    ts = compute_lii_timeseries(bls_data, freq_overrides=freq_overrides)
+    if ts.empty:
+        return {"wage_gap": None, "lii_yoy": None, "wage_yoy": None}
+
+    latest_lii = float(ts.iloc[-1]["lii"])
+
+    if wage_data is None or wage_data.empty:
+        return {
+            "wage_gap": None,
+            "lii_yoy": round(latest_lii, 2),
+            "wage_yoy": None,
+            "message": "Wage data unavailable",
+        }
+
+    # Compute wage YoY
+    ws = wage_data.copy()
+    ws["date"] = pd.to_datetime(ws["date"])
+    ws = ws.sort_values("date").drop_duplicates(subset="date", keep="last")
+    ws = ws.set_index("date")["value"]
+
+    if len(ws) < 13:
+        return {"wage_gap": None, "lii_yoy": round(latest_lii, 2), "wage_yoy": None}
+
+    latest_wage = float(ws.iloc[-1])
+    year_ago_wage = float(ws.iloc[-13])
+    if year_ago_wage == 0:
+        return {"wage_gap": None, "lii_yoy": round(latest_lii, 2), "wage_yoy": None}
+
+    wage_yoy = ((latest_wage - year_ago_wage) / year_ago_wage) * 100
+
+    gap = round(latest_lii - wage_yoy, 2)
+
+    return {
+        "wage_gap": gap,
+        "lii_yoy": round(latest_lii, 2),
+        "wage_yoy": round(wage_yoy, 2),
+        "wage_latest": round(latest_wage, 2),
+        "data_month": ts.iloc[-1]["date"].strftime("%B %Y") if hasattr(ts.iloc[-1]["date"], "strftime") else None,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # SHELTER ALTERNATIVES
 # ═══════════════════════════════════════════════════════════════════════
 

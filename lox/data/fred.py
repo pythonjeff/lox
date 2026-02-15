@@ -66,6 +66,8 @@ DEFAULT_SERIES = {
     "USSLIND": FredSeries("USSLIND", "monthly"),  # Conference Board LEI (composite leading indicator)
     # monetary / lending
     "DRTSCLCC": FredSeries("DRTSCLCC", "quarterly"),  # SLOOS: Tightening Standards for C&I Loans
+    # wages (for LII wage gap)
+    "CES0500000003": FredSeries("CES0500000003", "monthly"),  # Average Hourly Earnings, All Employees, Total Private
 }
 
 # Optional series that won't crash if unavailable
@@ -90,6 +92,7 @@ OPTIONAL_SERIES = {
     "EXHOSLUSM495S",  # Existing Home Sales
     "PSAVERT",  # Personal Savings Rate
     "DRCCLACBS",  # Credit Card Delinquency Rate
+    "CES0500000003",  # Average Hourly Earnings
     # "SKEW",  # CBOE SKEW Index — fetched separately
     "USSLIND",  # Conference Board LEI
     "DRTSCLCC",  # SLOOS Lending Standards

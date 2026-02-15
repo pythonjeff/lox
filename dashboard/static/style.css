@@ -1967,6 +1967,139 @@ body.nav-open .nav-panel {
 .lii-hero-spread.lii-spread-amber .lii-hero-value { color: #60a5fa; }
 .lii-hero-spread.lii-spread-red .lii-hero-value   { color: #f87171; }
 
+/* ── Hero Section (two-row layout) ───────────────────────────────── */
+.lii-hero-section {
+    margin-bottom: 24px;
+}
+
+.lii-hero-row-primary {
+    margin-bottom: 0;
+}
+
+.lii-hero-row-primary .lii-hero-card {
+    position: relative;
+    overflow: hidden;
+}
+
+.lii-hero-value-lg {
+    font-size: 38px;
+    font-weight: 800;
+    letter-spacing: -1px;
+}
+
+.lii-hero-subtext {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.55);
+    margin-top: 6px;
+    min-height: 18px;
+    line-height: 1.4;
+}
+
+/* Purchasing power card — accent style */
+.lii-hero-purchasing-power {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.lii-hero-purchasing-power .lii-hero-value {
+    color: #f87171;
+}
+
+/* Essentials card */
+.lii-hero-essentials {
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+/* Wage gap card */
+.lii-hero-wage-gap {
+    border: 1px solid rgba(251, 191, 36, 0.2);
+}
+
+/* Value color states for story metrics */
+.lii-value-negative {
+    color: #f87171 !important;
+}
+.lii-value-positive {
+    color: #4ade80 !important;
+}
+
+/* "What $100 buys now" callout */
+.lii-dollar-callout {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(59, 130, 246, 0.06);
+    border: 1px solid rgba(59, 130, 246, 0.15);
+    border-radius: 8px;
+    padding: 14px 20px;
+    margin-top: 12px;
+    margin-bottom: 12px;
+    font-size: 14px;
+    color: var(--text-primary);
+    line-height: 1.5;
+}
+
+.lii-dollar-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    height: 36px;
+    background: rgba(59, 130, 246, 0.12);
+    border-radius: 50%;
+    font-size: 18px;
+    font-weight: 700;
+    color: #3b82f6;
+}
+
+.lii-dollar-text strong {
+    color: var(--text-primary);
+}
+
+/* Hero detail row (collapsible) */
+.lii-hero-details {
+    margin-top: 0;
+}
+
+.lii-hero-details-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+
+.lii-hero-details-toggle::-webkit-details-marker {
+    display: none;
+}
+
+.lii-hero-details-toggle .lii-explainer-arrow {
+    margin-left: 4px;
+}
+
+.lii-hero-row-detail {
+    margin-bottom: 0;
+}
+
+.lii-hero-row-detail .lii-hero-card {
+    padding: 16px;
+}
+
+.lii-hero-row-detail .lii-hero-value {
+    font-size: 26px;
+}
+
+/* Discretionary card in detail row */
+.lii-hero-disc {
+    border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
 /* Scenario Profiles */
 .lii-profiles {
     margin-bottom: 24px;
@@ -2450,6 +2583,21 @@ body.nav-open .nav-panel {
     
     .lii-hero-value {
         font-size: 28px;
+    }
+    
+    .lii-hero-value-lg {
+        font-size: 30px;
+    }
+
+    .lii-hero-row-detail .lii-hero-value {
+        font-size: 22px;
+    }
+    
+    .lii-dollar-callout {
+        flex-direction: column;
+        text-align: center;
+        padding: 12px;
+        font-size: 13px;
     }
 
     .lii-chart-wrap {

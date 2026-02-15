@@ -102,6 +102,95 @@
         return fetchJSON('/api/debt/current');
     }
 
+    async function fetchPurchasingPower() {
+        return fetchJSON(`/api/lii/purchasing-power?profile=${currentProfile}${shelterParam()}`);
+    }
+
+    async function fetchEssentialsSplit() {
+        return fetchJSON(`/api/lii/essentials-split?profile=${currentProfile}${shelterParam()}`);
+    }
+
+    async function fetchWageGap() {
+        return fetchJSON(`/api/lii/wage-gap?profile=${currentProfile}${shelterParam()}`);
+    }
+
+    // ── Story Metrics (Row 1 — Big Picture) ───────────────────────────
+    async function renderStoryMetrics() {
+        try {
+            const [pp, ess, wg] = await Promise.all([
+                fetchPurchasingPower(),
+                fetchEssentialsSplit(),
+                fetchWageGap(),
+            ]);
+
+            // Purchasing Power Lost
+            const ppVal = document.getElementById('pp-value');
+            const ppSub = document.getElementById('pp-subtext');
+            if (ppVal && pp.lii_cumul_pct != null) {
+                // Show as negative to convey loss (prices +28% = purchasing power -28%)
+                ppVal.textContent = `-${Math.abs(pp.lii_cumul_pct).toFixed(1)}%`;
+                ppVal.classList.add('lii-value-negative');
+            }
+            if (ppSub && pp.dollar_value != null) {
+                ppSub.textContent = `Your $1 from 2020 now buys $${pp.dollar_value.toFixed(2)}`;
+            }
+
+            // Dollar Callout
+            const dollarText = document.getElementById('lii-dollar-text');
+            if (dollarText && pp.dollar_100_lii != null) {
+                const liiCost = Math.round(pp.dollar_100_lii);
+                const cpiCost = Math.round(pp.dollar_100_cpi);
+                dollarText.innerHTML = `A basket of essentials that cost <strong>$100 in January 2020</strong> now costs <strong>$${liiCost}</strong> by the Lived Inflation Index — vs <strong>$${cpiCost}</strong> by official CPI.`;
+            }
+
+            // Essentials Inflation
+            const essVal = document.getElementById('ess-value');
+            const essSub = document.getElementById('ess-subtext');
+            if (essVal && ess.essentials_yoy != null) {
+                essVal.textContent = `${ess.essentials_yoy.toFixed(2)}%`;
+                essVal.classList.toggle('lii-value-negative', ess.essentials_yoy > 3);
+            }
+            if (essSub && ess.essentials_cumul_since_2020 != null && ess.discretionary_cumul_since_2020 != null) {
+                const essC = ess.essentials_cumul_since_2020;
+                const discC = ess.discretionary_cumul_since_2020;
+                const diff = Math.abs(essC - discC).toFixed(0);
+                essSub.textContent = `+${essC}% since 2020 — ${diff}pts more than discretionary`;
+            } else if (essSub && ess.gap != null && ess.discretionary_yoy != null) {
+                const gapDir = ess.gap > 0 ? 'faster' : 'slower';
+                essSub.textContent = `${Math.abs(ess.gap).toFixed(1)}% ${gapDir} than discretionary (${ess.discretionary_yoy.toFixed(1)}%)`;
+            }
+
+            // Discretionary (detail row)
+            const discVal = document.getElementById('disc-value');
+            if (discVal && ess.discretionary_yoy != null) {
+                discVal.textContent = `${ess.discretionary_yoy.toFixed(2)}%`;
+            }
+
+            // Real Wage Gap
+            const wgVal = document.getElementById('wage-gap-value');
+            const wgSub = document.getElementById('wage-gap-subtext');
+            if (wgVal && wg.wage_gap != null) {
+                const sign = wg.wage_gap >= 0 ? '+' : '';
+                wgVal.textContent = `${sign}${wg.wage_gap.toFixed(2)}%`;
+                wgVal.classList.toggle('lii-value-negative', wg.wage_gap > 0);
+                wgVal.classList.toggle('lii-value-positive', wg.wage_gap < 0);
+            }
+            if (wgSub && wg.wage_gap != null) {
+                if (wg.wage_gap > 0) {
+                    wgSub.textContent = `Wages falling behind lived costs by ${Math.abs(wg.wage_gap).toFixed(1)}%`;
+                } else if (wg.wage_gap < 0) {
+                    wgSub.textContent = `Wages outpacing lived costs by ${Math.abs(wg.wage_gap).toFixed(1)}%`;
+                } else {
+                    wgSub.textContent = 'Wages tracking lived costs';
+                }
+            } else if (wgSub && wg.wage_yoy == null) {
+                wgSub.textContent = 'Wage data unavailable';
+            }
+        } catch (e) {
+            console.warn('Story metrics load error:', e);
+        }
+    }
+
     // ── Hero Metrics ──────────────────────────────────────────────────
     function renderHero(data) {
         const liiEl = document.getElementById('lii-value');
@@ -765,6 +854,9 @@
                 fetchTimeseries(),
                 fetchCategories(),
             ]);
+
+            // Story metrics (row 1 — big picture) — fire & forget, don't block
+            renderStoryMetrics();
 
             // Hero
             renderHero(current);

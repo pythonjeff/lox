@@ -1194,6 +1194,9 @@ from dashboard.lii_calculator import (
     compute_debt_current,
     compute_debt_yoy_series,
     apply_shelter_mode,
+    compute_essentials_split,
+    compute_purchasing_power,
+    compute_wage_gap,
 )
 
 # BLS data cache (in-memory, refreshed via /api/lii/* endpoints)
@@ -1253,7 +1256,7 @@ def _get_fred_debt_data(refresh: bool = False) -> dict:
             return {}
 
         data: dict = {}
-        all_fred_series = list(set(DEBT_FRED_SERIES + SHELTER_FRED_SERIES))
+        all_fred_series = list(set(DEBT_FRED_SERIES + SHELTER_FRED_SERIES + ['CES0500000003']))
         for sid in all_fred_series:
             try:
                 resp = req.get(
@@ -1525,6 +1528,41 @@ def api_lii_sentiment():
     except Exception as e:
         print(f"[LII] Sentiment fetch error: {e}")
         return jsonify({'error': str(e), 'data': []})
+
+
+@app.route('/api/lii/purchasing-power')
+def api_lii_purchasing_power():
+    """Cumulative purchasing power loss since Jan 2020."""
+    profile = request.args.get('profile', 'default')
+    overrides = SCENARIO_PROFILES.get(profile, {}).get('overrides', {})
+    shelter_mode = _parse_shelter_mode()
+    bls_data = _get_effective_bls_data(shelter_mode)
+    result = compute_purchasing_power(bls_data, freq_overrides=overrides or None)
+    return jsonify(result)
+
+
+@app.route('/api/lii/essentials-split')
+def api_lii_essentials_split():
+    """Essentials vs discretionary inflation breakdown."""
+    profile = request.args.get('profile', 'default')
+    overrides = SCENARIO_PROFILES.get(profile, {}).get('overrides', {})
+    shelter_mode = _parse_shelter_mode()
+    bls_data = _get_effective_bls_data(shelter_mode)
+    result = compute_essentials_split(bls_data, freq_overrides=overrides or None)
+    return jsonify(result)
+
+
+@app.route('/api/lii/wage-gap')
+def api_lii_wage_gap():
+    """Real wage gap: LII YoY minus average hourly earnings YoY."""
+    profile = request.args.get('profile', 'default')
+    overrides = SCENARIO_PROFILES.get(profile, {}).get('overrides', {})
+    shelter_mode = _parse_shelter_mode()
+    bls_data = _get_effective_bls_data(shelter_mode)
+    fred_data = _get_fred_debt_data()
+    wage_df = fred_data.get('CES0500000003')
+    result = compute_wage_gap(bls_data, wage_data=wage_df, freq_overrides=overrides or None)
+    return jsonify(result)
 
 
 @app.route('/api/cache/refresh')
