@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=5">
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
@@ -123,6 +123,22 @@
             </div>
         </div>
 
+        <!-- Shelter Model Selector -->
+        <div class="lii-shelter-selector" id="lii-shelter-selector">
+            <div class="lii-shelter-header">
+                <span class="lii-shelter-label">Shelter Model:</span>
+                <div class="lii-shelter-buttons" id="lii-shelter-buttons">
+                    <button class="lii-shelter-btn active" data-shelter="oer">BLS Standard (OER)</button>
+                    <button class="lii-shelter-btn" data-shelter="mdsp">Mortgage Burden (MDSP)</button>
+                    <button class="lii-shelter-btn" data-shelter="mortgage">New-Purchase Mortgage</button>
+                </div>
+            </div>
+            <div class="lii-shelter-desc" id="lii-shelter-desc">
+                Owner's Equivalent Rent — BLS imputed rental value. Lags market by 12-18 months.
+            </div>
+            <div class="lii-shelter-callout" id="lii-shelter-callout" style="display:none;"></div>
+        </div>
+
         <!-- Debt Servicing Overlay -->
         <div class="lii-debt-overlay" id="lii-debt-overlay">
             <div class="lii-debt-master">
@@ -219,7 +235,7 @@
         </footer>
     </div>
 
-    <script src="{{ url_for('static', filename='lii.js') }}?v=3"></script>
+    <script src="{{ url_for('static', filename='lii.js') }}?v=5"></script>
     <script>
     // Hamburger menu toggle
     (function() {

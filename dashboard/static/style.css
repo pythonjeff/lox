@@ -2196,6 +2196,82 @@ body.nav-open .nav-panel {
     display: none;
 }
 
+/* ── Shelter Model Selector ───────────────────────────────── */
+.lii-shelter-selector {
+    margin-bottom: 16px;
+    padding: 14px 20px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+}
+
+.lii-shelter-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.lii-shelter-label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #64748b;
+    white-space: nowrap;
+}
+
+.lii-shelter-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.lii-shelter-btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.lii-shelter-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.lii-shelter-btn.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+.lii-shelter-desc {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.4;
+}
+
+.lii-shelter-callout {
+    margin-top: 10px;
+    padding: 12px 16px;
+    background: #eff6ff;
+    border-left: 4px solid var(--accent);
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #1e293b;
+}
+
+.lii-shelter-callout strong {
+    color: var(--accent);
+}
+
 /* ── Debt Overlay ─────────────────────────────────────────── */
 .lii-debt-overlay {
     margin-bottom: 20px;

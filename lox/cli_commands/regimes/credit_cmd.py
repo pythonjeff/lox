@@ -72,6 +72,48 @@ def credit_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
     except Exception:
         pass
 
+    # ── Layer 3: Shadow credit data ───────────────────────────────────
+    ccc_oas_val = None
+    bb_oas_val = None
+    single_b_oas_val = None
+    cc_delinq_val = None
+    sloos_val = None
+
+    try:
+        ccc_df = fred.fetch_series("BAMLH0A3HYC", start_date="2020-01-01", refresh=refresh)
+        if ccc_df is not None and not ccc_df.empty:
+            ccc_oas_val = float(ccc_df.sort_values("date")["value"].iloc[-1]) * 100
+    except Exception:
+        pass
+
+    try:
+        bb_df = fred.fetch_series("BAMLH0A1HYBB", start_date="2020-01-01", refresh=refresh)
+        if bb_df is not None and not bb_df.empty:
+            bb_oas_val = float(bb_df.sort_values("date")["value"].iloc[-1]) * 100
+    except Exception:
+        pass
+
+    try:
+        b_df = fred.fetch_series("BAMLH0A2HYB", start_date="2020-01-01", refresh=refresh)
+        if b_df is not None and not b_df.empty:
+            single_b_oas_val = float(b_df.sort_values("date")["value"].iloc[-1]) * 100
+    except Exception:
+        pass
+
+    try:
+        delinq_df = fred.fetch_series("DRCCLACBS", start_date="2020-01-01", refresh=refresh)
+        if delinq_df is not None and not delinq_df.empty:
+            cc_delinq_val = float(delinq_df.sort_values("date")["value"].iloc[-1])
+    except Exception:
+        pass
+
+    try:
+        sloos_df = fred.fetch_series("DRTSCLCC", start_date="2020-01-01", refresh=refresh)
+        if sloos_df is not None and not sloos_df.empty:
+            sloos_val = float(sloos_df.sort_values("date")["value"].iloc[-1])
+    except Exception:
+        pass
+
     from lox.credit.regime import classify_credit
     result = classify_credit(
         hy_oas=hy_oas_val,
@@ -83,7 +125,15 @@ def credit_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
         hy_oas_5d_chg=hy_5d_chg,
         bbb_oas_30d_chg=bbb_30d_chg,
         vix=vix_val,
+        # Layer 3: Shadow credit
+        ccc_oas=ccc_oas_val,
+        bb_oas=bb_oas_val,
+        single_b_oas=single_b_oas_val,
+        cc_delinquency_rate=cc_delinq_val,
+        sloos_tightening=sloos_val,
     )
+
+    ccc_bb = (ccc_oas_val - bb_oas_val) if ccc_oas_val is not None and bb_oas_val is not None else None
 
     def _v(x, fmt="{:.0f}bp"):
         return fmt.format(x) if x is not None else "n/a"
@@ -96,6 +146,15 @@ def credit_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
         {"name": "BBB OAS", "value": _v(bbb_oas_val), "context": "IG benchmark"},
         {"name": "AAA OAS", "value": _v(aaa_oas_val), "context": "flight-to-quality"},
         {"name": "VIX", "value": f"{vix_val:.1f}" if vix_val is not None else "n/a", "context": "cross-market"},
+        # Shadow credit metrics
+        {"name": "─── Shadow Credit ───", "value": "", "context": ""},
+        {"name": "CCC OAS", "value": _v(ccc_oas_val), "context": "weakest public credits"},
+        {"name": "BB OAS", "value": _v(bb_oas_val), "context": "best HY tier"},
+        {"name": "B OAS", "value": _v(single_b_oas_val), "context": "middle HY tier"},
+        {"name": "CCC-BB Spread", "value": _v(ccc_bb), "context": ">900 stress, <400 migration"},
+        {"name": "CC Delinquency", "value": f"{cc_delinq_val:.1f}%" if cc_delinq_val is not None else "n/a", "context": ">3.5% consumer stress"},
+        {"name": "SLOOS Tightening", "value": f"{sloos_val:+.0f}%" if sloos_val is not None else "n/a", "context": ">20% = private credit push"},
+        {"name": "Shadow Signals", "value": str(result.metrics.get("shadow_signals", 0)), "context": "≥2 = warning, ≥3 = stress"},
     ]
 
     print(render_regime_panel(
@@ -116,6 +175,12 @@ def credit_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
             "hy_5d_chg": hy_5d_chg, "hy_30d_chg": hy_30d_chg,
             "bbb_30d_chg": bbb_30d_chg, "vix": vix_val,
             "hy_1y_pctl": hy_1y_pctl,
+            # Shadow credit
+            "ccc_oas": ccc_oas_val, "bb_oas": bb_oas_val,
+            "single_b_oas": single_b_oas_val,
+            "ccc_bb_spread": ccc_bb,
+            "cc_delinquency": cc_delinq_val,
+            "sloos_tightening": sloos_val,
         }
         print_llm_regime_analysis(
             settings=settings,

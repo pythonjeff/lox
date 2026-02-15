@@ -470,12 +470,60 @@ def build_unified_regime_state(
         if aaa_df is not None and not aaa_df.empty:
             aaa_oas_val = float(aaa_df.sort_values("date")["value"].iloc[-1]) * 100
 
+        # ── Layer 3: Shadow credit data ───────────────────────────────
+        ccc_oas_val: float | None = None
+        bb_oas_val: float | None = None
+        single_b_oas_val: float | None = None
+        cc_delinq_val: float | None = None
+        sloos_val: float | None = None
+
+        try:
+            ccc_df = fred.fetch_series("BAMLH0A3HYC", start_date=start_date, refresh=refresh)
+            if ccc_df is not None and not ccc_df.empty:
+                ccc_oas_val = float(ccc_df.sort_values("date")["value"].iloc[-1]) * 100
+        except Exception:
+            pass
+
+        try:
+            bb_df = fred.fetch_series("BAMLH0A1HYBB", start_date=start_date, refresh=refresh)
+            if bb_df is not None and not bb_df.empty:
+                bb_oas_val = float(bb_df.sort_values("date")["value"].iloc[-1]) * 100
+        except Exception:
+            pass
+
+        try:
+            b_df = fred.fetch_series("BAMLH0A2HYB", start_date=start_date, refresh=refresh)
+            if b_df is not None and not b_df.empty:
+                single_b_oas_val = float(b_df.sort_values("date")["value"].iloc[-1]) * 100
+        except Exception:
+            pass
+
+        try:
+            delinq_df = fred.fetch_series("DRCCLACBS", start_date=start_date, refresh=refresh)
+            if delinq_df is not None and not delinq_df.empty:
+                cc_delinq_val = float(delinq_df.sort_values("date")["value"].iloc[-1])
+        except Exception:
+            pass
+
+        try:
+            sloos_df = fred.fetch_series("DRTSCLCC", start_date=start_date, refresh=refresh)
+            if sloos_df is not None and not sloos_df.empty:
+                sloos_val = float(sloos_df.sort_values("date")["value"].iloc[-1])
+        except Exception:
+            pass
+
         state.credit = classify_credit(
             hy_oas=hy_oas_val,
             bbb_oas=bbb_oas_val,
             aaa_oas=aaa_oas_val,
             hy_oas_30d_chg=hy_30d_chg,
             hy_oas_90d_percentile=hy_90d_pctl,
+            # Layer 3: Shadow credit
+            ccc_oas=ccc_oas_val,
+            bb_oas=bb_oas_val,
+            single_b_oas=single_b_oas_val,
+            cc_delinquency_rate=cc_delinq_val,
+            sloos_tightening=sloos_val,
         )
     except Exception as e:
         logger.warning(f"Failed to build credit regime: {e}")

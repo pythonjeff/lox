@@ -15,6 +15,7 @@ from dashboard.lii_categories import (
     CATEGORIES,
     DEBT_CATEGORIES,
     ESSENTIALITY_MULTIPLIER,
+    OER_SERIES_ID,
     SCENARIO_PROFILES,
     calculate_lii_weights,
     get_all_series_ids,
@@ -36,9 +37,26 @@ def _normalize_cpi_weights(categories: list[dict] | None = None) -> list[dict]:
     return cats
 
 
+def _build_series_map(bls_data: dict[str, pd.DataFrame]) -> tuple[dict, set]:
+    """Build {series_id: pd.Series} and all_dates from BLS data."""
+    all_dates: set[pd.Timestamp] = set()
+    series_map: dict[str, pd.Series] = {}
+    for cat in CATEGORIES:
+        sid = cat["series_id"]
+        df = bls_data.get(sid)
+        if df is None or df.empty:
+            continue
+        s = df.set_index("date")["value"]
+        s = s[~s.index.duplicated(keep="last")].sort_index()
+        series_map[sid] = s
+        all_dates.update(s.index)
+    return series_map, all_dates
+
+
 def compute_lii_timeseries(
     bls_data: dict[str, pd.DataFrame],
     freq_overrides: dict[str, float] | None = None,
+    cpi_bls_data: dict[str, pd.DataFrame] | None = None,
 ) -> pd.DataFrame:
     """
     Compute monthly LII and CPI-weighted YoY series from BLS data.
@@ -46,36 +64,31 @@ def compute_lii_timeseries(
     Returns DataFrame with columns: date, lii, cpi, spread
     (all in percentage terms, e.g. 3.2 = 3.2%).
 
-    Uses NSA data — YoY naturally removes seasonality.
+    Args:
+        bls_data: Data used for LII calculation (may have shelter swap).
+        cpi_bls_data: If provided, used for CPI calculation (original BLS data).
+            This keeps CPI stable when shelter mode changes LII data.
     """
     cats_lii = calculate_lii_weights(freq_overrides=freq_overrides)
-    cats_cpi = _normalize_cpi_weights()  # raw CPI weights (no frequency adjustment)
+    cats_cpi = _normalize_cpi_weights()
 
-    # Build a unified monthly index: merge all series by date
-    # First, find the common date range
-    all_dates: set[pd.Timestamp] = set()
-    series_map: dict[str, pd.Series] = {}
-
-    for cat in CATEGORIES:
-        sid = cat["series_id"]
-        df = bls_data.get(sid)
-        if df is None or df.empty:
-            logger.warning("Missing BLS data for %s (%s)", cat["name"], sid)
-            continue
-        s = df.set_index("date")["value"]
-        s = s[~s.index.duplicated(keep="last")].sort_index()
-        series_map[sid] = s
-        all_dates.update(s.index)
+    # LII uses bls_data (potentially modified for shelter mode)
+    lii_map, lii_dates = _build_series_map(bls_data)
+    # CPI always uses original data
+    if cpi_bls_data is not None:
+        cpi_map, cpi_dates = _build_series_map(cpi_bls_data)
+        all_dates = lii_dates & cpi_dates  # only dates in both
+    else:
+        cpi_map = lii_map
+        all_dates = lii_dates
 
     if not all_dates:
         return pd.DataFrame(columns=["date", "lii", "cpi", "spread"])
 
-    # Sort dates and filter to only months where we have enough data
     sorted_dates = sorted(all_dates)
 
     rows = []
     for dt in sorted_dates:
-        # Need at least 12 months prior for YoY
         dt_year_ago = dt - pd.DateOffset(months=12)
 
         lii_val = 0.0
@@ -85,29 +98,26 @@ def compute_lii_timeseries(
 
         for cat_lii, cat_cpi in zip(cats_lii, cats_cpi):
             sid = cat_lii["series_id"]
-            s = series_map.get(sid)
-            if s is None:
-                continue
 
-            # Get current and year-ago values
-            if dt not in s.index or dt_year_ago not in s.index:
-                continue
+            # LII: use potentially modified data
+            s_lii = lii_map.get(sid)
+            if s_lii is not None and dt in s_lii.index and dt_year_ago in s_lii.index:
+                cur = s_lii[dt]
+                ago = s_lii[dt_year_ago]
+                if ago != 0:
+                    lii_val += cat_lii["lii_weight"] * ((cur - ago) / ago)
+                    lii_valid += 1
 
-            current = s[dt]
-            year_ago = s[dt_year_ago]
+            # CPI: always use original data
+            s_cpi = cpi_map.get(sid)
+            if s_cpi is not None and dt in s_cpi.index and dt_year_ago in s_cpi.index:
+                cur = s_cpi[dt]
+                ago = s_cpi[dt_year_ago]
+                if ago != 0:
+                    cpi_val += cat_cpi["cpi_norm"] * ((cur - ago) / ago)
+                    cpi_valid += 1
 
-            if year_ago == 0:
-                continue
-
-            yoy_pct = (current - year_ago) / year_ago
-
-            lii_val += cat_lii["lii_weight"] * yoy_pct
-            cpi_val += cat_cpi["cpi_norm"] * yoy_pct  # CPI uses raw CPI weights (no freq adjustment)
-            lii_valid += 1
-            cpi_valid += 1
-
-        # Only include months where we have most categories
-        if lii_valid >= 15:  # at least 15 of 23 categories
+        if lii_valid >= 15:
             rows.append({
                 "date": dt.strftime("%Y-%m-%d"),
                 "lii": round(lii_val * 100, 4),
@@ -125,13 +135,14 @@ def compute_lii_timeseries(
 def compute_current(
     bls_data: dict[str, pd.DataFrame],
     freq_overrides: dict[str, float] | None = None,
+    cpi_bls_data: dict[str, pd.DataFrame] | None = None,
 ) -> dict:
     """
     Get the latest month's LII, CPI, spread, and MoM deltas.
 
     Returns dict with: lii, cpi, spread, lii_mom, cpi_mom, spread_mom, data_month
     """
-    ts = compute_lii_timeseries(bls_data, freq_overrides=freq_overrides)
+    ts = compute_lii_timeseries(bls_data, freq_overrides=freq_overrides, cpi_bls_data=cpi_bls_data)
     if ts.empty:
         return {"lii": None, "cpi": None, "spread": None}
 
@@ -159,11 +170,12 @@ def compute_current(
 def compute_category_breakdown(
     bls_data: dict[str, pd.DataFrame],
     freq_overrides: dict[str, float] | None = None,
+    cpi_bls_data: dict[str, pd.DataFrame] | None = None,
+    shelter_mode: str = "oer",
 ) -> list[dict]:
     """
-    Per-category breakdown for the latest month:
-    name, freq_label, cpi_weight, lii_weight, weight_delta, yoy_pct,
-    cpi_contribution, lii_contribution.
+    Per-category breakdown for the latest month.
+    Uses bls_data for LII YoY and cpi_bls_data (if given) for CPI YoY.
     """
     cats_lii = calculate_lii_weights(freq_overrides=freq_overrides)
     cats_cpi = _normalize_cpi_weights()
@@ -171,6 +183,8 @@ def compute_category_breakdown(
     rows = []
     for cat_lii, cat_cpi in zip(cats_lii, cats_cpi):
         sid = cat_lii["series_id"]
+
+        # LII uses potentially modified data (shelter swap)
         df = bls_data.get(sid)
         if df is None or df.empty:
             continue
@@ -184,9 +198,7 @@ def compute_category_breakdown(
         latest_date = s.index[-1]
         year_ago_date = latest_date - pd.DateOffset(months=12)
 
-        # Find closest date to year_ago
         if year_ago_date not in s.index:
-            # Try to find a nearby date
             close_dates = s.index[s.index <= year_ago_date]
             if close_dates.empty:
                 continue
@@ -200,11 +212,34 @@ def compute_category_breakdown(
 
         yoy_pct = (current - year_ago) / year_ago
 
-        cpi_w = cat_cpi["cpi_norm"]  # raw CPI weight (no frequency adjustment)
+        # CPI contribution uses original data
+        cpi_yoy = yoy_pct
+        if cpi_bls_data is not None:
+            df_cpi = cpi_bls_data.get(sid)
+            if df_cpi is not None and not df_cpi.empty:
+                s_cpi = df_cpi.set_index("date")["value"].sort_index()
+                s_cpi = s_cpi[~s_cpi.index.duplicated(keep="last")]
+                if len(s_cpi) >= 13:
+                    ld = s_cpi.index[-1]
+                    ya = ld - pd.DateOffset(months=12)
+                    if ya not in s_cpi.index:
+                        cd = s_cpi.index[s_cpi.index <= ya]
+                        ya = cd[-1] if not cd.empty else ya
+                    if ya in s_cpi.index and s_cpi[ya] != 0:
+                        cpi_yoy = (s_cpi.iloc[-1] - s_cpi[ya]) / s_cpi[ya]
+
+        cpi_w = cat_cpi["cpi_norm"]
         lii_w = cat_lii["lii_weight"]
 
+        # Rename OER when mortgage mode is active
+        name = cat_lii["name"]
+        if sid == OER_SERIES_ID and shelter_mode == "mdsp":
+            name = "Mortgage burden (MDSP)"
+        elif sid == OER_SERIES_ID and shelter_mode == "mortgage":
+            name = "New-purchase mortgage"
+
         rows.append({
-            "name": cat_lii["name"],
+            "name": name,
             "series_id": sid,
             "freq_label": cat_lii["freq_label"],
             "freq_score": cat_lii["freq_score"],
@@ -212,7 +247,7 @@ def compute_category_breakdown(
             "lii_weight": round(lii_w * 100, 2),
             "weight_delta": round((lii_w - cpi_w) * 100, 2),
             "yoy_pct": round(yoy_pct * 100, 2),
-            "cpi_contribution": round(cpi_w * yoy_pct * 100, 4),
+            "cpi_contribution": round(cpi_w * cpi_yoy * 100, 4),
             "lii_contribution": round(lii_w * yoy_pct * 100, 4),
         })
 
@@ -283,6 +318,174 @@ def compute_cumulative(
         })
 
     return pd.DataFrame(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# SHELTER ALTERNATIVES
+# ═══════════════════════════════════════════════════════════════════════
+
+def _resample_weekly_to_monthly(s: pd.Series) -> pd.Series:
+    """Resample a weekly FRED series to monthly (last value of month)."""
+    if s.empty:
+        return s
+    return s.resample("MS").last().dropna()
+
+
+def _calc_mortgage_payment(home_price: float, rate_pct: float,
+                           down_pct: float = 0.20, term_years: int = 30) -> float:
+    """Standard amortization: M = P[r(1+r)^n] / [(1+r)^n - 1]."""
+    principal = home_price * (1 - down_pct)
+    r = rate_pct / 100.0 / 12.0
+    n = term_years * 12
+    if r <= 0:
+        return principal / n if n > 0 else 0
+    return principal * (r * (1 + r) ** n) / ((1 + r) ** n - 1)
+
+
+def compute_mortgage_proxy(fred_data: dict) -> pd.DataFrame:
+    """
+    Build a monthly mortgage payment proxy from FRED data.
+
+    Uses MORTGAGE30US (weekly 30yr rate) and MSPUS (quarterly median price)
+    to compute monthly P&I assuming 20% down, 30yr fixed.
+
+    Returns DataFrame with columns [date, value] matching BLS data format,
+    so it can be swapped directly into the BLS data dict for OER.
+    """
+    rate_s = _load_fred_series(fred_data, "MORTGAGE30US")
+    price_s = _load_fred_series(fred_data, "MSPUS")
+
+    if rate_s.empty or price_s.empty:
+        logger.warning("Missing FRED data for mortgage proxy (MORTGAGE30US or MSPUS)")
+        return pd.DataFrame(columns=["date", "value"])
+
+    # Resample: weekly rate → monthly, quarterly price → monthly
+    rate_m = _resample_weekly_to_monthly(rate_s)
+    price_m = _interpolate_quarterly_to_monthly(price_s)
+
+    # Align on common dates
+    common = rate_m.index.intersection(price_m.index)
+    if len(common) == 0:
+        return pd.DataFrame(columns=["date", "value"])
+
+    rows = []
+    for dt in sorted(common):
+        payment = _calc_mortgage_payment(price_m[dt], rate_m[dt])
+        rows.append({"date": dt, "value": payment})
+
+    return pd.DataFrame(rows)
+
+
+def compute_mdsp_proxy(fred_data: dict) -> pd.DataFrame:
+    """
+    Build a monthly proxy from the FRED MDSP series (Mortgage Debt Service
+    Payments as % of Disposable Personal Income).
+
+    MDSP is quarterly — we interpolate to monthly so it slots into the
+    same YoY machinery as a BLS series.
+
+    Returns DataFrame with columns: date, value  (value = ratio like 5.89)
+    """
+    mdsp_df = fred_data.get("MDSP")
+    if mdsp_df is None or mdsp_df.empty:
+        logger.warning("MDSP series missing from FRED data")
+        return pd.DataFrame(columns=["date", "value"])
+
+    # Build a date→value Series, then interpolate quarterly→monthly
+    s = mdsp_df.set_index("date")["value"].sort_index()
+    s = s[~s.index.duplicated(keep="last")]
+    s_monthly = _interpolate_quarterly_to_monthly(s)
+
+    if s_monthly.empty:
+        return pd.DataFrame(columns=["date", "value"])
+
+    return pd.DataFrame({"date": s_monthly.index, "value": s_monthly.values})
+
+
+def _forward_fill_proxy(proxy_df: pd.DataFrame, bls_data: dict) -> pd.DataFrame:
+    """
+    Extend a shelter proxy DataFrame forward to cover the latest BLS date.
+
+    FRED proxies often lag BLS data by months (MDSP quarterly, mortgage proxy
+    limited by MSPUS). Without forward-fill, recent months have no shelter
+    contribution — producing identical results for all modes.
+
+    Strategy: flat-line the last known proxy value forward (conservative).
+    """
+    if proxy_df.empty:
+        return proxy_df
+
+    # Find the latest date across all BLS series
+    latest_bls = pd.Timestamp.min
+    for df in bls_data.values():
+        if df is not None and not df.empty and "date" in df.columns:
+            dt = df["date"].max()
+            if dt > latest_bls:
+                latest_bls = dt
+
+    proxy_latest = proxy_df["date"].max()
+    if proxy_latest >= latest_bls:
+        return proxy_df  # already covers the range
+
+    # Generate monthly dates from proxy_latest+1M to latest_bls
+    fill_dates = pd.date_range(
+        proxy_latest + pd.DateOffset(months=1),
+        latest_bls,
+        freq="MS",
+    )
+    if fill_dates.empty:
+        return proxy_df
+
+    last_val = proxy_df.iloc[-1]["value"]
+    fill_rows = pd.DataFrame({"date": fill_dates, "value": last_val})
+    extended = pd.concat([proxy_df, fill_rows], ignore_index=True)
+    logger.info(
+        "Forward-filled shelter proxy: %s → %s (%d months added, value=%.2f)",
+        proxy_latest.strftime("%Y-%m"),
+        latest_bls.strftime("%Y-%m"),
+        len(fill_dates),
+        last_val,
+    )
+    return extended
+
+
+def apply_shelter_mode(bls_data: dict, fred_data: dict, shelter_mode: str) -> dict:
+    """
+    Return a (possibly modified) copy of bls_data with the OER series
+    swapped for the selected shelter alternative.
+
+    shelter_mode:
+        "oer"       → no change (BLS standard)
+        "mdsp"      → replace OER with FRED MDSP ratio (actual mortgage burden)
+        "mortgage"  → replace OER with new-purchase mortgage payment proxy
+
+    The calculator doesn't change — it just sees different numbers in
+    the OER slot and computes YoY normally.
+    """
+    if shelter_mode == "oer" or not shelter_mode:
+        return bls_data
+
+    if shelter_mode == "mdsp":
+        mdsp_df = compute_mdsp_proxy(fred_data)
+        mdsp_df = _forward_fill_proxy(mdsp_df, bls_data)
+        if mdsp_df.empty:
+            logger.warning("MDSP proxy returned empty — falling back to OER")
+            return bls_data
+        modified = dict(bls_data)
+        modified[OER_SERIES_ID] = mdsp_df
+        return modified
+
+    if shelter_mode == "mortgage":
+        mortgage_df = compute_mortgage_proxy(fred_data)
+        mortgage_df = _forward_fill_proxy(mortgage_df, bls_data)
+        if mortgage_df.empty:
+            logger.warning("Mortgage proxy returned empty — falling back to OER")
+            return bls_data
+        modified = dict(bls_data)
+        modified[OER_SERIES_ID] = mortgage_df
+        return modified
+
+    return bls_data
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -401,6 +604,7 @@ def compute_lii_with_debt(
     fred_data: dict[str, pd.DataFrame],
     freq_overrides: dict[str, float] | None = None,
     enabled_debt: list[str] | None = None,
+    cpi_bls_data: dict[str, pd.DataFrame] | None = None,
 ) -> pd.DataFrame:
     """
     Compute LII + Debt timeseries.
@@ -413,7 +617,7 @@ def compute_lii_with_debt(
         enabled_debt = ["student", "credit", "auto"]
 
     # Get base LII timeseries first (for CPI baseline)
-    base_ts = compute_lii_timeseries(bls_data, freq_overrides=freq_overrides)
+    base_ts = compute_lii_timeseries(bls_data, freq_overrides=freq_overrides, cpi_bls_data=cpi_bls_data)
     if base_ts.empty:
         return base_ts
 
