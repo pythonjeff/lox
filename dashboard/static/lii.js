@@ -22,6 +22,9 @@
     let debtOverlay = false;
     let debtCategories = { student: true, credit: true, auto: true };
 
+    // Shelter mode state
+    let shelterMode = 'oer';
+
     // ── Color palette ─────────────────────────────────────────────────
     const COLORS = {
         lii: '#3b82f6',      // blue — LII (matches dashboard accent)
@@ -68,20 +71,24 @@
         return `&debt_overlay=true&debt_categories=${cats.join(',')}`;
     }
 
+    function shelterParam() {
+        return shelterMode !== 'oer' ? `&shelter_mode=${shelterMode}` : '';
+    }
+
     async function fetchCurrent() {
-        return fetchJSON(`/api/lii/current?profile=${currentProfile}${debtParams()}`);
+        return fetchJSON(`/api/lii/current?profile=${currentProfile}${debtParams()}${shelterParam()}`);
     }
 
     async function fetchTimeseries() {
-        return fetchJSON(`/api/lii/timeseries?profile=${currentProfile}${debtParams()}`);
+        return fetchJSON(`/api/lii/timeseries?profile=${currentProfile}${debtParams()}${shelterParam()}`);
     }
 
     async function fetchCategories() {
-        return fetchJSON(`/api/lii/categories?profile=${currentProfile}${debtParams()}`);
+        return fetchJSON(`/api/lii/categories?profile=${currentProfile}${debtParams()}${shelterParam()}`);
     }
 
     async function fetchCumulative() {
-        return fetchJSON(`/api/lii/cumulative?profile=${currentProfile}`);
+        return fetchJSON(`/api/lii/cumulative?profile=${currentProfile}${shelterParam()}`);
     }
 
     async function fetchSentiment() {
@@ -633,6 +640,47 @@
         }
     }
 
+    // ── Shelter Mode Setup ─────────────────────────────────────────────
+    const SHELTER_DESCRIPTIONS = {
+        oer: "Owner's Equivalent Rent — BLS imputed rental value. Lags market by 12-18 months.",
+        mdsp: "Federal Reserve MDSP ratio — actual mortgage payments as a share of disposable income across all US households. Captures refis, ARMs, and existing locked-in rates.",
+        mortgage: "Monthly P&I for a new buyer at today's 30yr fixed rate on a median-priced US home (20% down). Leading indicator — this is what makes headlines.",
+    };
+
+    const SHELTER_CALLOUTS = {
+        mdsp: '<strong>Why this matters:</strong> MDSP measures the real aggregate mortgage burden on households. It rises slowly because most homeowners have locked-in rates from prior years. When new originations are at 7%+ but your existing mortgage is 3%, the population-wide burden lags the headline pain — this is what the Fed actually watches.',
+        mortgage: '<strong>Why this matters:</strong> When mortgage rates went from 3% to 7%, monthly payments on a median home rose ~58%. OER captured almost none of this because it asks "what would your house rent for?" — not "what do you actually pay." This is the single largest monthly expense for most American homeowners.',
+    };
+
+    function setupShelterMode() {
+        const buttons = document.getElementById('lii-shelter-buttons');
+        const desc = document.getElementById('lii-shelter-desc');
+        const callout = document.getElementById('lii-shelter-callout');
+
+        if (!buttons) return;
+
+        buttons.addEventListener('click', async function (e) {
+            const btn = e.target.closest('.lii-shelter-btn');
+            if (!btn) return;
+
+            shelterMode = btn.dataset.shelter;
+            buttons.querySelectorAll('.lii-shelter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            if (desc) desc.textContent = SHELTER_DESCRIPTIONS[shelterMode] || '';
+
+            // Show/hide callout
+            if (callout) {
+                const calloutText = SHELTER_CALLOUTS[shelterMode];
+                callout.style.display = calloutText ? '' : 'none';
+                if (calloutText) callout.innerHTML = calloutText;
+            }
+
+            // Reset cumulative cache since shelter data changed
+            cumulativeData = null;
+            await loadAll();
+        });
+    }
+
     // ── Debt Overlay Setup ───────────────────────────────────────────
     function setupDebtOverlay() {
         const masterToggle = document.getElementById('lii-debt-toggle');
@@ -752,6 +800,7 @@
         setupTableSorting();
         setupProfiles();
         setupToggles();
+        setupShelterMode();
         setupDebtOverlay();
         loadAll();
     });

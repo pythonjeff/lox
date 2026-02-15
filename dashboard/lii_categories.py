@@ -226,6 +226,35 @@ DEBT_FRED_SERIES = list({
 })
 
 
+# ── Shelter alternatives ──────────────────────────────────────────────
+# OER is the most criticized CPI component. It imputes "what would your
+# house rent for?" — ignoring that actual mortgage payments exploded when
+# rates went from 3% → 7%. These alternatives let users swap in reality.
+#
+# FRED series:
+#   MORTGAGE30US  — 30-Year Fixed Mortgage Rate (weekly → resample monthly)
+#   MSPUS         — Median Sales Price of Houses Sold (quarterly → interpolate)
+
+OER_SERIES_ID = "CUUR0000SEHC"  # the category that gets swapped
+
+SHELTER_MODES = {
+    "oer": {
+        "label": "BLS Standard (OER)",
+        "description": "Owner's Equivalent Rent — BLS imputed rental value. Lags market by 12-18 months.",
+    },
+    "mdsp": {
+        "label": "Mortgage Burden (MDSP)",
+        "description": "Fed mortgage debt-service ratio — actual share of income going to mortgage payments across all US households. Captures refis, ARMs, and locked-in rates.",
+    },
+    "mortgage": {
+        "label": "New-Purchase Mortgage",
+        "description": "Monthly P&I for a new buyer at today's 30yr fixed rate on a median-priced US home. Leading indicator — what headlines are about.",
+    },
+}
+
+SHELTER_FRED_SERIES = ["MORTGAGE30US", "MSPUS", "MDSP"]
+
+
 # ── Helpers ───────────────────────────────────────────────────────────
 
 def get_all_series_ids() -> list[str]:

@@ -1179,6 +1179,8 @@ from dashboard.lii_categories import (
     CATEGORIES as LII_CATEGORIES,
     DEBT_CATEGORIES,
     DEBT_FRED_SERIES,
+    SHELTER_FRED_SERIES,
+    SHELTER_MODES,
     SCENARIO_PROFILES,
     get_all_series_ids as lii_series_ids,
     calculate_lii_weights,
@@ -1191,6 +1193,7 @@ from dashboard.lii_calculator import (
     compute_lii_with_debt,
     compute_debt_current,
     compute_debt_yoy_series,
+    apply_shelter_mode,
 )
 
 # BLS data cache (in-memory, refreshed via /api/lii/* endpoints)
@@ -1250,7 +1253,8 @@ def _get_fred_debt_data(refresh: bool = False) -> dict:
             return {}
 
         data: dict = {}
-        for sid in DEBT_FRED_SERIES:
+        all_fred_series = list(set(DEBT_FRED_SERIES + SHELTER_FRED_SERIES))
+        for sid in all_fred_series:
             try:
                 resp = req.get(
                     'https://api.stlouisfed.org/fred/series/observations',
@@ -1292,6 +1296,21 @@ def _parse_debt_params():
     return debt_on, enabled
 
 
+def _parse_shelter_mode():
+    """Parse shelter_mode from request args. Default 'oer'."""
+    mode = request.args.get('shelter_mode', 'oer').lower()
+    return mode if mode in SHELTER_MODES else 'oer'
+
+
+def _get_effective_bls_data(shelter_mode: str) -> dict:
+    """Get BLS data, optionally swapping OER for a shelter alternative."""
+    bls_data = _get_bls_data()
+    if shelter_mode != 'oer':
+        fred_data = _get_fred_debt_data()
+        bls_data = apply_shelter_mode(bls_data, fred_data, shelter_mode)
+    return bls_data
+
+
 @app.route('/lived-inflation')
 def lived_inflation():
     """Lived Inflation Index page."""
@@ -1300,17 +1319,21 @@ def lived_inflation():
 
 @app.route('/api/lii/current')
 def api_lii_current():
-    """Latest LII, CPI, spread, MoM deltas. Supports ?debt_overlay=true."""
+    """Latest LII, CPI, spread, MoM deltas. Supports ?debt_overlay=true&shelter_mode=mortgage."""
     profile = request.args.get('profile', 'default')
     overrides = SCENARIO_PROFILES.get(profile, {}).get('overrides', {})
     debt_on, debt_cats = _parse_debt_params()
-    bls_data = _get_bls_data()
-    result = lii_compute_current(bls_data, freq_overrides=overrides or None)
+    shelter_mode = _parse_shelter_mode()
+    bls_data = _get_effective_bls_data(shelter_mode)
+    # CPI always uses original BLS data (not affected by shelter mode)
+    cpi_bls = _get_bls_data() if shelter_mode != 'oer' else None
+    result = lii_compute_current(bls_data, freq_overrides=overrides or None, cpi_bls_data=cpi_bls)
     result['profile'] = profile
+    result['shelter_mode'] = shelter_mode
 
     if debt_on:
         fred_data = _get_fred_debt_data()
-        df = compute_lii_with_debt(bls_data, fred_data, freq_overrides=overrides or None, enabled_debt=debt_cats)
+        df = compute_lii_with_debt(bls_data, fred_data, freq_overrides=overrides or None, enabled_debt=debt_cats, cpi_bls_data=cpi_bls)
         if not df.empty:
             latest = df.iloc[-1]
             result['lii_debt'] = round(float(latest.get('lii_debt', latest['lii'])), 2)
@@ -1321,17 +1344,21 @@ def api_lii_current():
 
 @app.route('/api/lii/timeseries')
 def api_lii_timeseries():
-    """Monthly LII + CPI from Jan 2019 to present. Supports ?debt_overlay=true."""
+    """Monthly LII + CPI. Supports ?debt_overlay=true&shelter_mode=mortgage."""
     profile = request.args.get('profile', 'default')
     overrides = SCENARIO_PROFILES.get(profile, {}).get('overrides', {})
     debt_on, debt_cats = _parse_debt_params()
-    bls_data = _get_bls_data()
+    shelter_mode = _parse_shelter_mode()
+    bls_data = _get_effective_bls_data(shelter_mode)
+
+    # CPI always uses original BLS data
+    cpi_bls = _get_bls_data() if shelter_mode != 'oer' else None
 
     if debt_on:
         fred_data = _get_fred_debt_data()
-        df = compute_lii_with_debt(bls_data, fred_data, freq_overrides=overrides or None, enabled_debt=debt_cats)
+        df = compute_lii_with_debt(bls_data, fred_data, freq_overrides=overrides or None, enabled_debt=debt_cats, cpi_bls_data=cpi_bls)
     else:
-        df = compute_lii_timeseries(bls_data, freq_overrides=overrides or None)
+        df = compute_lii_timeseries(bls_data, freq_overrides=overrides or None, cpi_bls_data=cpi_bls)
 
     rows = []
     for _, row in df.iterrows():
@@ -1350,12 +1377,17 @@ def api_lii_timeseries():
 
 @app.route('/api/lii/categories')
 def api_lii_categories():
-    """All categories with weights, YoY rates, contributions. Supports ?debt_overlay=true."""
+    """All categories with weights, YoY rates, contributions. Supports ?debt_overlay=true&shelter_mode=mortgage."""
     profile = request.args.get('profile', 'default')
     overrides = SCENARIO_PROFILES.get(profile, {}).get('overrides', {})
     debt_on, debt_cats = _parse_debt_params()
-    bls_data = _get_bls_data()
-    cats = compute_category_breakdown(bls_data, freq_overrides=overrides or None)
+    shelter_mode = _parse_shelter_mode()
+    bls_data = _get_effective_bls_data(shelter_mode)
+    cpi_bls = _get_bls_data() if shelter_mode != 'oer' else None
+    cats = compute_category_breakdown(
+        bls_data, freq_overrides=overrides or None,
+        cpi_bls_data=cpi_bls, shelter_mode=shelter_mode,
+    )
 
     if debt_on:
         fred_data = _get_fred_debt_data()
@@ -1391,6 +1423,12 @@ def api_debt_current():
     fred_data = _get_fred_debt_data()
     info = compute_debt_current(fred_data)
     return jsonify(info)
+
+
+@app.route('/api/lii/shelter-modes')
+def api_shelter_modes():
+    """Available shelter model alternatives."""
+    return jsonify(SHELTER_MODES)
 
 
 @app.route('/api/lii/cumulative')

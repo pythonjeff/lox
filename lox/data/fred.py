@@ -39,6 +39,10 @@ DEFAULT_SERIES = {
     "BAMLC0A0CM": FredSeries("BAMLC0A0CM", "daily"),  # ICE BofA US Corporate OAS (IG)
     "BAMLC0A4CBBB": FredSeries("BAMLC0A4CBBB", "daily"),  # ICE BofA BBB Corporate OAS
     "BAMLC0A1CAAA": FredSeries("BAMLC0A1CAAA", "daily"),  # ICE BofA AAA Corporate OAS
+    # credit quality tiers (shadow credit stress — private credit migration detection)
+    "BAMLH0A1HYBB": FredSeries("BAMLH0A1HYBB", "daily"),   # ICE BofA BB HY OAS
+    "BAMLH0A2HYB": FredSeries("BAMLH0A2HYB", "daily"),    # ICE BofA Single-B HY OAS
+    "BAMLH0A3HYC": FredSeries("BAMLH0A3HYC", "daily"),    # ICE BofA CCC & Lower HY OAS
     # volatility
     "VIXCLS": FredSeries("VIXCLS", "daily"),  # CBOE VIX (1-month implied vol)
     # VXMTCLS (VIX Mid-Term) removed due to persistent FRED API issues
@@ -73,6 +77,9 @@ OPTIONAL_SERIES = {
     "BAMLC0A0CM",
     "BAMLC0A4CBBB",  # BBB OAS
     "BAMLC0A1CAAA",  # AAA OAS
+    "BAMLH0A1HYBB",  # BB HY OAS
+    "BAMLH0A2HYB",   # Single-B HY OAS
+    "BAMLH0A3HYC",   # CCC & Lower HY OAS
     "PCEPILFE",  # Core PCE
     "PPIFIS",  # PPI Final Demand
     "PCETRIM12M159SFRBDAL",  # Trimmed Mean PCE
