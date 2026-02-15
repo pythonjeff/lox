@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=6">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=7">
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
@@ -83,28 +83,66 @@
             </div>
         </details>
 
-        <!-- Hero Metrics Row -->
-        <div class="lii-hero-row">
-            <div class="lii-hero-card">
-                <div class="lii-hero-label">Lived Inflation Index</div>
-                <div class="lii-hero-value" id="lii-value">—</div>
-                <div class="lii-hero-delta" id="lii-delta"></div>
+        <!-- Hero Row 1: Big Picture (visceral metrics) -->
+        <div class="lii-hero-section">
+            <div class="lii-hero-row lii-hero-row-primary">
+                <div class="lii-hero-card lii-hero-purchasing-power">
+                    <div class="lii-hero-label">PURCHASING POWER LOST</div>
+                    <div class="lii-hero-value lii-hero-value-lg" id="pp-value">—</div>
+                    <div class="lii-hero-subtext" id="pp-subtext">since Jan 2020</div>
+                </div>
+                <div class="lii-hero-card lii-hero-essentials">
+                    <div class="lii-hero-label">ESSENTIALS INFLATION</div>
+                    <div class="lii-hero-value lii-hero-value-lg" id="ess-value">—</div>
+                    <div class="lii-hero-subtext" id="ess-subtext">YoY — things you can't stop buying</div>
+                </div>
+                <div class="lii-hero-card lii-hero-wage-gap">
+                    <div class="lii-hero-label">REAL WAGE GAP</div>
+                    <div class="lii-hero-value lii-hero-value-lg" id="wage-gap-value">—</div>
+                    <div class="lii-hero-subtext" id="wage-gap-subtext">LII vs. average hourly earnings</div>
+                </div>
             </div>
-            <div class="lii-hero-card">
-                <div class="lii-hero-label">Official CPI-U</div>
-                <div class="lii-hero-value" id="cpi-value">—</div>
-                <div class="lii-hero-delta" id="cpi-delta"></div>
+
+            <!-- What $100 Buys Now — callout -->
+            <div class="lii-dollar-callout" id="lii-dollar-callout">
+                <span class="lii-dollar-icon">$</span>
+                <span class="lii-dollar-text" id="lii-dollar-text">Loading...</span>
             </div>
-            <div class="lii-hero-card lii-hero-spread">
-                <div class="lii-hero-label">Lived Inflation Spread</div>
-                <div class="lii-hero-value" id="spread-value">—</div>
-                <div class="lii-hero-delta" id="spread-delta"></div>
-            </div>
-            <div class="lii-hero-card lii-hero-debt" id="lii-hero-debt" style="display:none;">
-                <div class="lii-hero-label">LII + Debt</div>
-                <div class="lii-hero-value" id="lii-debt-value">—</div>
-                <div class="lii-hero-delta" id="lii-debt-delta"></div>
-            </div>
+
+            <!-- Hero Row 2: Analytical Detail (collapsible) -->
+            <details class="lii-hero-details" open>
+                <summary class="lii-hero-details-toggle">
+                    <span>Analytical Detail</span>
+                    <span class="lii-explainer-arrow"></span>
+                </summary>
+                <div class="lii-hero-row lii-hero-row-detail">
+                    <div class="lii-hero-card">
+                        <div class="lii-hero-label">Lived Inflation Index</div>
+                        <div class="lii-hero-value" id="lii-value">—</div>
+                        <div class="lii-hero-delta" id="lii-delta"></div>
+                    </div>
+                    <div class="lii-hero-card">
+                        <div class="lii-hero-label">Official CPI-U</div>
+                        <div class="lii-hero-value" id="cpi-value">—</div>
+                        <div class="lii-hero-delta" id="cpi-delta"></div>
+                    </div>
+                    <div class="lii-hero-card lii-hero-spread">
+                        <div class="lii-hero-label">Lived Inflation Spread</div>
+                        <div class="lii-hero-value" id="spread-value">—</div>
+                        <div class="lii-hero-delta" id="spread-delta"></div>
+                    </div>
+                    <div class="lii-hero-card lii-hero-debt" id="lii-hero-debt" style="display:none;">
+                        <div class="lii-hero-label">LII + Debt</div>
+                        <div class="lii-hero-value" id="lii-debt-value">—</div>
+                        <div class="lii-hero-delta" id="lii-debt-delta"></div>
+                    </div>
+                    <div class="lii-hero-card lii-hero-disc">
+                        <div class="lii-hero-label">DISCRETIONARY</div>
+                        <div class="lii-hero-value" id="disc-value">—</div>
+                        <div class="lii-hero-subtext">YoY — things you can cut</div>
+                    </div>
+                </div>
+            </details>
         </div>
 
         <!-- Scenario Profiles -->
@@ -235,7 +273,7 @@
         </footer>
     </div>
 
-    <script src="{{ url_for('static', filename='lii.js') }}?v=6"></script>
+    <script src="{{ url_for('static', filename='lii.js') }}?v=7"></script>
     <script>
     // Hamburger menu toggle
     (function() {
