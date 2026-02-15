@@ -57,6 +57,7 @@ def compute_lii_timeseries(
     bls_data: dict[str, pd.DataFrame],
     freq_overrides: dict[str, float] | None = None,
     cpi_bls_data: dict[str, pd.DataFrame] | None = None,
+    shelter_mode: str = "oer",
 ) -> pd.DataFrame:
     """
     Compute monthly LII and CPI-weighted YoY series from BLS data.
@@ -101,12 +102,30 @@ def compute_lii_timeseries(
 
             # LII: use potentially modified data
             s_lii = lii_map.get(sid)
+            lii_yoy: float | None = None
             if s_lii is not None and dt in s_lii.index and dt_year_ago in s_lii.index:
                 cur = s_lii[dt]
                 ago = s_lii[dt_year_ago]
                 if ago != 0:
-                    lii_val += cat_lii["lii_weight"] * ((cur - ago) / ago)
-                    lii_valid += 1
+                    lii_yoy = (cur - ago) / ago
+
+            # "Max pain" floor for new-purchase mortgage mode ONLY:
+            # never let the proxy REDUCE LII below what OER would contribute.
+            # New buyers paying $2,100/mo at 6% are still pinched even if
+            # rates fell from 7% peak.  MDSP is real Fed data — no floor.
+            if (lii_yoy is not None and shelter_mode == "mortgage"
+                    and cpi_bls_data is not None and sid == OER_SERIES_ID):
+                s_orig = cpi_map.get(sid)
+                if s_orig is not None and dt in s_orig.index and dt_year_ago in s_orig.index:
+                    orig_cur = s_orig[dt]
+                    orig_ago = s_orig[dt_year_ago]
+                    if orig_ago != 0:
+                        oer_yoy = (orig_cur - orig_ago) / orig_ago
+                        lii_yoy = max(lii_yoy, oer_yoy)
+
+            if lii_yoy is not None:
+                lii_val += cat_lii["lii_weight"] * lii_yoy
+                lii_valid += 1
 
             # CPI: always use original data
             s_cpi = cpi_map.get(sid)
@@ -136,13 +155,14 @@ def compute_current(
     bls_data: dict[str, pd.DataFrame],
     freq_overrides: dict[str, float] | None = None,
     cpi_bls_data: dict[str, pd.DataFrame] | None = None,
+    shelter_mode: str = "oer",
 ) -> dict:
     """
     Get the latest month's LII, CPI, spread, and MoM deltas.
 
     Returns dict with: lii, cpi, spread, lii_mom, cpi_mom, spread_mom, data_month
     """
-    ts = compute_lii_timeseries(bls_data, freq_overrides=freq_overrides, cpi_bls_data=cpi_bls_data)
+    ts = compute_lii_timeseries(bls_data, freq_overrides=freq_overrides, cpi_bls_data=cpi_bls_data, shelter_mode=shelter_mode)
     if ts.empty:
         return {"lii": None, "cpi": None, "spread": None}
 
@@ -214,6 +234,7 @@ def compute_category_breakdown(
 
         # CPI contribution uses original data
         cpi_yoy = yoy_pct
+        oer_yoy: float | None = None
         if cpi_bls_data is not None:
             df_cpi = cpi_bls_data.get(sid)
             if df_cpi is not None and not df_cpi.empty:
@@ -227,16 +248,22 @@ def compute_category_breakdown(
                         ya = cd[-1] if not cd.empty else ya
                     if ya in s_cpi.index and s_cpi[ya] != 0:
                         cpi_yoy = (s_cpi.iloc[-1] - s_cpi[ya]) / s_cpi[ya]
+                        if sid == OER_SERIES_ID:
+                            oer_yoy = cpi_yoy
+
+        # "Max pain" floor: shelter proxy can only INCREASE LII above OER
+        if sid == OER_SERIES_ID and oer_yoy is not None:
+            yoy_pct = max(yoy_pct, oer_yoy)
 
         cpi_w = cat_cpi["cpi_norm"]
         lii_w = cat_lii["lii_weight"]
 
-        # Rename OER when mortgage mode is active
+        # Rename OER when shelter mode is active
         name = cat_lii["name"]
         if sid == OER_SERIES_ID and shelter_mode == "mdsp":
             name = "Mortgage burden (MDSP)"
         elif sid == OER_SERIES_ID and shelter_mode == "mortgage":
-            name = "New-purchase mortgage"
+            name = "New-purchase mortgage (max pain)"
 
         rows.append({
             "name": name,
@@ -605,6 +632,7 @@ def compute_lii_with_debt(
     freq_overrides: dict[str, float] | None = None,
     enabled_debt: list[str] | None = None,
     cpi_bls_data: dict[str, pd.DataFrame] | None = None,
+    shelter_mode: str = "oer",
 ) -> pd.DataFrame:
     """
     Compute LII + Debt timeseries.
@@ -617,7 +645,7 @@ def compute_lii_with_debt(
         enabled_debt = ["student", "credit", "auto"]
 
     # Get base LII timeseries first (for CPI baseline)
-    base_ts = compute_lii_timeseries(bls_data, freq_overrides=freq_overrides, cpi_bls_data=cpi_bls_data)
+    base_ts = compute_lii_timeseries(bls_data, freq_overrides=freq_overrides, cpi_bls_data=cpi_bls_data, shelter_mode=shelter_mode)
     if base_ts.empty:
         return base_ts
 
