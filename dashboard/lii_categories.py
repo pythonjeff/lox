@@ -247,8 +247,8 @@ SHELTER_MODES = {
         "description": "Fed mortgage debt-service ratio — actual share of income going to mortgage payments across all US households. Captures refis, ARMs, and locked-in rates.",
     },
     "mortgage": {
-        "label": "New-Purchase Mortgage",
-        "description": "Monthly P&I for a new buyer at today's 30yr fixed rate on a median-priced US home. Leading indicator — what headlines are about.",
+        "label": "New-Purchase (Max Pain)",
+        "description": "Uses higher of OER or new-purchase mortgage cost. Captures rate spike pain, never pretends shelter costs are falling.",
     },
 }
 

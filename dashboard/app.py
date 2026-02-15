@@ -1327,13 +1327,13 @@ def api_lii_current():
     bls_data = _get_effective_bls_data(shelter_mode)
     # CPI always uses original BLS data (not affected by shelter mode)
     cpi_bls = _get_bls_data() if shelter_mode != 'oer' else None
-    result = lii_compute_current(bls_data, freq_overrides=overrides or None, cpi_bls_data=cpi_bls)
+    result = lii_compute_current(bls_data, freq_overrides=overrides or None, cpi_bls_data=cpi_bls, shelter_mode=shelter_mode)
     result['profile'] = profile
     result['shelter_mode'] = shelter_mode
 
     if debt_on:
         fred_data = _get_fred_debt_data()
-        df = compute_lii_with_debt(bls_data, fred_data, freq_overrides=overrides or None, enabled_debt=debt_cats, cpi_bls_data=cpi_bls)
+        df = compute_lii_with_debt(bls_data, fred_data, freq_overrides=overrides or None, enabled_debt=debt_cats, cpi_bls_data=cpi_bls, shelter_mode=shelter_mode)
         if not df.empty:
             latest = df.iloc[-1]
             result['lii_debt'] = round(float(latest.get('lii_debt', latest['lii'])), 2)
@@ -1356,9 +1356,9 @@ def api_lii_timeseries():
 
     if debt_on:
         fred_data = _get_fred_debt_data()
-        df = compute_lii_with_debt(bls_data, fred_data, freq_overrides=overrides or None, enabled_debt=debt_cats, cpi_bls_data=cpi_bls)
+        df = compute_lii_with_debt(bls_data, fred_data, freq_overrides=overrides or None, enabled_debt=debt_cats, cpi_bls_data=cpi_bls, shelter_mode=shelter_mode)
     else:
-        df = compute_lii_timeseries(bls_data, freq_overrides=overrides or None, cpi_bls_data=cpi_bls)
+        df = compute_lii_timeseries(bls_data, freq_overrides=overrides or None, cpi_bls_data=cpi_bls, shelter_mode=shelter_mode)
 
     rows = []
     for _, row in df.iterrows():

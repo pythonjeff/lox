@@ -644,12 +644,12 @@
     const SHELTER_DESCRIPTIONS = {
         oer: "Owner's Equivalent Rent — BLS imputed rental value. Lags market by 12-18 months.",
         mdsp: "Federal Reserve MDSP ratio — actual mortgage payments as a share of disposable income across all US households. Captures refis, ARMs, and existing locked-in rates.",
-        mortgage: "Monthly P&I for a new buyer at today's 30yr fixed rate on a median-priced US home (20% down). Leading indicator — this is what makes headlines.",
+        mortgage: "Max pain: uses the higher of OER or new-purchase mortgage cost each month. Captures rate spikes CPI misses, but never pretends shelter costs are falling.",
     };
 
     const SHELTER_CALLOUTS = {
         mdsp: '<strong>Why this matters:</strong> MDSP measures the real aggregate mortgage burden on households. It rises slowly because most homeowners have locked-in rates from prior years. When new originations are at 7%+ but your existing mortgage is 3%, the population-wide burden lags the headline pain — this is what the Fed actually watches.',
-        mortgage: '<strong>Why this matters:</strong> When mortgage rates went from 3% to 7%, monthly payments on a median home rose ~58%. OER captured almost none of this because it asks "what would your house rent for?" — not "what do you actually pay." This is the single largest monthly expense for most American homeowners.',
+        mortgage: '<strong>Max pain lens:</strong> Uses the HIGHER of OER or actual new-purchase mortgage costs each month. When rates spiked from 3% to 7%, this captured the ~58% payment explosion CPI ignored. When rates ease, it floors at OER — because buyers who locked in at 6-7% are still paying that. Nobody experiences deflation on a mortgage they already signed.',
     };
 
     function setupShelterMode() {
