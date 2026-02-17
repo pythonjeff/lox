@@ -147,8 +147,8 @@ function renderSpectrum(data) {
 
   const markerPct = Math.max(0, Math.min(100, score));
   html += `<div class="rg-spectrum-marker" style="left:${markerPct}%;">
+    <div class="rg-spectrum-marker-head">${Math.round(score)}</div>
     <div class="rg-spectrum-marker-needle"></div>
-    <div class="rg-spectrum-marker-head"></div>
   </div>`;
 
   for (const t of thresholds) {
