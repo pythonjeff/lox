@@ -54,15 +54,15 @@ function processPositionsData(data) {
     
     // HERO: Benchmark comparison
     const heroBenchmark = document.getElementById('hero-benchmark');
+    let benchParts = [];
     if (data.sp500_return !== undefined && data.sp500_return !== null) {
-        const sp500 = data.sp500_return;
-        const alpha = data.alpha_sp500;
-        let benchmarkHtml = `S&P 500: ${formatPercent(sp500)}`;
-        if (alpha !== undefined && alpha !== null) {
-            const alphaClass = alpha >= 0 ? 'positive' : 'negative';
-            benchmarkHtml += ` <span class="alpha ${alphaClass}">${formatPercent(alpha, 1)} alpha</span>`;
-        }
-        heroBenchmark.innerHTML = benchmarkHtml;
+        benchParts.push(`<span class="bench-item">S&P 500: ${formatPercent(data.sp500_return)}</span>`);
+    }
+    if (data.macro_hf_return !== undefined && data.macro_hf_return !== null) {
+        benchParts.push(`<span class="bench-item">Macro Hedge Fund Index: ${formatPercent(data.macro_hf_return)}</span>`);
+    }
+    if (benchParts.length) {
+        heroBenchmark.innerHTML = benchParts.join('<span class="bench-sep">·</span>');
     }
     
     // HERO: AUM and investor count

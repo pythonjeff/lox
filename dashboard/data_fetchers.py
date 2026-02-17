@@ -246,6 +246,13 @@ def get_btc_return_since_inception(settings):
     return _get_asset_return_since_inception(settings, "BTCUSD", "BTC")
 
 
+def get_macro_hf_return_since_inception(settings):
+    """Get macro hedge fund proxy return since fund inception.
+    Uses DBMF (iMGP DBi Managed Futures Strategy ETF) as the closest
+    liquid proxy for active macro hedge fund performance."""
+    return _get_asset_return_since_inception(settings, "DBMF", "Macro HF")
+
+
 def _get_asset_return_since_inception(settings, symbol: str, name: str):
     """Generic helper to get asset return since fund inception."""
     try:

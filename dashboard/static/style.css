@@ -258,22 +258,13 @@ body {
     margin-bottom: 8px;
 }
 
-.hero-benchmark .alpha {
-    display: inline-block;
-    padding: 3px 8px;
-    border-radius: 10px;
-    font-size: 12px;
-    margin-left: 6px;
+.hero-benchmark .bench-item {
+    white-space: nowrap;
 }
 
-.hero-benchmark .alpha.positive {
-    background: rgba(74, 222, 128, 0.2);
-    color: #4ade80;
-}
-
-.hero-benchmark .alpha.negative {
-    background: rgba(248, 113, 113, 0.2);
-    color: #f87171;
+.hero-benchmark .bench-sep {
+    margin: 0 8px;
+    opacity: 0.4;
 }
 
 /* AUM Badge */
