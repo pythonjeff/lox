@@ -37,6 +37,7 @@ from dashboard.data_fetchers import (
     get_hy_oas, get_vix, get_10y_yield,
     get_cpi_inflation, get_yield_curve_spread,
     get_sp500_return_since_inception, get_btc_return_since_inception,
+    get_macro_hf_return_since_inception,
 )
 from dashboard.regime_utils import (
     get_regime_domains_data, get_regime_label, get_regime_detail,
@@ -1049,20 +1050,24 @@ def get_positions_data(force_refresh: bool = False):
         # Get benchmark performance since inception for comparison (cached 5 min)
         sp500_return = None
         btc_return = None
+        macro_hf_return = None
         with BENCHMARK_CACHE_LOCK:
             if BENCHMARK_CACHE["data"] and BENCHMARK_CACHE["timestamp"]:
                 _bcache_age = (datetime.now(timezone.utc) - BENCHMARK_CACHE["timestamp"]).total_seconds()
                 if _bcache_age < BENCHMARK_CACHE_TTL:
                     sp500_return = BENCHMARK_CACHE["data"].get("sp500")
                     btc_return = BENCHMARK_CACHE["data"].get("btc")
+                    macro_hf_return = BENCHMARK_CACHE["data"].get("macro_hf")
         if sp500_return is None and btc_return is None:
             sp500_return = get_sp500_return_since_inception(settings)
             btc_return = get_btc_return_since_inception(settings)
+            macro_hf_return = get_macro_hf_return_since_inception(settings)
             with BENCHMARK_CACHE_LOCK:
-                BENCHMARK_CACHE["data"] = {"sp500": sp500_return, "btc": btc_return}
+                BENCHMARK_CACHE["data"] = {"sp500": sp500_return, "btc": btc_return, "macro_hf": macro_hf_return}
                 BENCHMARK_CACHE["timestamp"] = datetime.now(timezone.utc)
         alpha_sp500 = return_pct - sp500_return if sp500_return is not None else None
         alpha_btc = return_pct - btc_return if btc_return is not None else None
+        alpha_macro_hf = return_pct - macro_hf_return if macro_hf_return is not None else None
         
         # Get AUM (total capital) and investor count for hero zone
         aum = original_capital
@@ -1085,8 +1090,10 @@ def get_positions_data(force_refresh: bool = False):
             "return_pct": return_pct,  # LIVE from Alpaca
             "sp500_return": sp500_return,
             "btc_return": btc_return,
+            "macro_hf_return": macro_hf_return,
             "alpha_sp500": alpha_sp500,
             "alpha_btc": alpha_btc,
+            "alpha_macro_hf": alpha_macro_hf,
             "cash_available": cash_available,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "mark_type": "liquidation",  # Flag that this is bid/ask marked
@@ -1323,6 +1330,12 @@ def _get_effective_bls_data(shelter_mode: str) -> dict:
 def lived_inflation():
     """Lived Inflation Index page."""
     return render_template('lived_inflation.html')
+
+
+@app.route('/inspiration')
+def inspiration():
+    """Inspiration page — Steve Jobs 'Bicycle for the Mind'."""
+    return render_template('inspiration.html')
 
 
 @app.route('/api/lii/current')
