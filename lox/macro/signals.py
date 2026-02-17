@@ -75,10 +75,11 @@ def build_macro_dataset(settings: Settings, start_date: str = "2011-01-01", refr
         core["CORE_CPI_YOY"] = core["value"].pct_change(12) * 100.0
         series_frames["CPILFESL"] = core
     
-    # Median CPI (stickiness proxy)
+    # Median CPI (stickiness proxy) — raw FRED values are already annualized rates
+    # (e.g. 3.5 = 3.5% annualized), so use directly as the "YoY" proxy
     if "MEDCPIM158SFRBCLE" in series_frames:
         median = series_frames["MEDCPIM158SFRBCLE"].copy().sort_values("date")
-        median["MEDIAN_CPI_YOY"] = median["value"].pct_change(12) * 100.0
+        median["MEDIAN_CPI_YOY"] = median["value"]
         series_frames["MEDCPIM158SFRBCLE"] = median
 
     # Compute payroll-derived metrics on the *monthly* payroll observations, then ffill onto daily grid.

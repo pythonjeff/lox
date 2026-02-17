@@ -217,247 +217,331 @@ def register_core(app: typer.Typer) -> None:
     
     @app.command("analyze")
     def analyze(
-        depth: str = typer.Option("quick", "--depth", "-d", help="quick|deep"),
+        verbose: bool = typer.Option(False, "--verbose", "-v", help="Show all positions"),
     ):
         """
-        AI-powered portfolio analysis. Identifies risks and opportunities.
-        
+        Position-level risk scan with real tickers and P&L.
+
         Examples:
             lox analyze
-            lox analyze --depth deep
+            lox analyze -v
         """
         console = Console()
         settings = load_settings()
-        
-        if depth == "quick":
-            # Quick analysis without full LLM
-            console.print("[dim]Running quick analysis...[/dim]")
-            # Use existing account summary but with minimal LLM
-            from lox.cli_commands.core.account_cmd import _to_float
-            trading, _ = make_clients(settings)
-            
-            acct = trading.get_account()
-            positions = trading.get_all_positions()
-            
-            # Simple risk assessment
-            risks = []
-            total_pnl = sum(_safe_float(getattr(p, "unrealized_pl", 0)) for p in positions)
-            
-            losers = [p for p in positions if _safe_float(getattr(p, "unrealized_plpc", 0)) < -0.15]
-            if losers:
-                risks.append(f"• {len(losers)} position(s) down >15% - consider stop-loss")
-            
-            # Concentration check
-            if len(positions) > 0:
-                values = [abs(_safe_float(getattr(p, "market_value", 0))) for p in positions]
-                total = sum(values)
-                if total > 0:
-                    max_weight = max(values) / total
-                    if max_weight > 0.30:
-                        risks.append(f"• Largest position is {max_weight:.0%} of portfolio - high concentration")
-            
-            # Cash check
-            cash = _safe_float(getattr(acct, "cash", 0))
-            equity = _safe_float(getattr(acct, "equity", 0))
-            if equity > 0 and cash / equity < 0.05:
-                risks.append("• Cash below 5% - limited dry powder")
-            
-            if risks:
-                console.print(Panel(
-                    "\n".join(risks),
-                    title="[yellow]Risk Flags[/yellow]",
-                    expand=False,
-                ))
-            else:
-                console.print(Panel(
-                    "[green]No major risk flags detected[/green]",
-                    title="Analysis",
-                    expand=False,
-                ))
+        trading, _ = make_clients(settings)
+
+        acct = trading.get_account()
+        positions = trading.get_all_positions()
+        cash = _safe_float(getattr(acct, "cash", 0))
+        equity = _safe_float(getattr(acct, "equity", 0))
+
+        if not positions:
+            console.print("[yellow]No open positions.[/yellow]")
+            return
+
+        # Classify every position
+        values = [abs(_safe_float(getattr(p, "market_value", 0))) for p in positions]
+        total_mv = sum(values) or 1.0
+
+        losers, winners, concentrated, expiring_soon = [], [], [], []
+        for p in positions:
+            sym = str(getattr(p, "symbol", ""))
+            pnl = _safe_float(getattr(p, "unrealized_pl", 0))
+            pnl_pc = _safe_float(getattr(p, "unrealized_plpc", 0))
+            mv = abs(_safe_float(getattr(p, "market_value", 0)))
+            weight = mv / total_mv
+            entry = _safe_float(getattr(p, "avg_entry_price", 0))
+            current = _safe_float(getattr(p, "current_price", 0))
+
+            row = {
+                "sym": sym, "pnl": pnl, "pnl_pc": pnl_pc,
+                "weight": weight, "entry": entry, "current": current, "mv": mv,
+            }
+
+            if pnl_pc < -0.15:
+                losers.append(row)
+            if pnl_pc > 0.20:
+                winners.append(row)
+            if weight > 0.25:
+                concentrated.append(row)
+
+        # Bleeding positions table
+        if losers:
+            losers.sort(key=lambda r: r["pnl_pc"])
+            t = Table(title="[red]Bleeding Positions (> -15%)[/red]", show_header=True)
+            t.add_column("Symbol", style="cyan")
+            t.add_column("Entry", justify="right")
+            t.add_column("Current", justify="right")
+            t.add_column("P&L", justify="right")
+            t.add_column("P&L %", justify="right")
+            t.add_column("Weight", justify="right")
+            t.add_column("Action", style="yellow")
+            for r in losers:
+                action = "Cut or roll" if r["pnl_pc"] < -0.30 else "Tighten stop"
+                t.add_row(
+                    r["sym"][:20],
+                    f"${r['entry']:.2f}",
+                    f"${r['current']:.2f}",
+                    f"[red]${r['pnl']:+,.0f}[/red]",
+                    f"[red]{r['pnl_pc']*100:+.1f}%[/red]",
+                    f"{r['weight']*100:.1f}%",
+                    action,
+                )
+            console.print(t)
         else:
-            # Deep analysis with LLM
-            console.print("[dim]Running deep analysis with LLM...[/dim]")
-            # Delegate to account summary
-            from lox.cli_commands.core.account_cmd import register as _unused
-            # Call the summary logic directly
-            from lox.llm.account_summary import llm_account_summary
-            from lox.overlay.context import build_trackers
-            
-            trading, _ = make_clients(settings)
-            acct = trading.get_account()
-            mode = "PAPER" if settings.alpaca_paper else "LIVE"
-            cash = _safe_float(getattr(acct, "cash", 0))
-            equity = _safe_float(getattr(acct, "equity", 0))
-            bp = _safe_float(getattr(acct, "buying_power", 0))
-            
-            positions = []
-            for p in trading.get_all_positions():
-                positions.append({
-                    "symbol": getattr(p, "symbol", ""),
-                    "qty": _safe_float(getattr(p, "qty", 0)),
-                    "avg_entry_price": _safe_float(getattr(p, "avg_entry_price", 0)),
-                    "current_price": _safe_float(getattr(p, "current_price", 0)),
-                    "unrealized_pl": _safe_float(getattr(p, "unrealized_pl", 0)),
-                    "unrealized_plpc": _safe_float(getattr(p, "unrealized_plpc", 0)),
-                })
-            
-            _, risk_watch = build_trackers(settings=settings, start_date="2012-01-01", refresh_fred=False)
-            
-            asof = datetime.now(timezone.utc).date().isoformat()
-            text = llm_account_summary(
-                settings=settings,
-                asof=asof,
-                account={"mode": mode, "cash": cash, "equity": equity, "buying_power": bp},
-                positions=positions,
-                recent_orders=[],
-                risk_watch=risk_watch,
-                news={},
-                model=None,
-                temperature=0.2,
-            )
-            console.print(Panel(text, title="Deep Analysis (LLM)", expand=False))
-    
+            console.print("[green]No positions bleeding > -15%[/green]")
+
+        # Concentration warnings
+        if concentrated:
+            lines = []
+            for r in concentrated:
+                lines.append(f"  [cyan]{r['sym']}[/cyan]: {r['weight']*100:.0f}% of portfolio")
+            console.print(Panel(
+                "\n".join(lines),
+                title="[yellow]Concentration Risk (> 25%)[/yellow]",
+                expand=False,
+            ))
+
+        # Winners to consider protecting
+        if winners:
+            t = Table(title="[green]Winners to Protect (> +20%)[/green]", show_header=True)
+            t.add_column("Symbol", style="cyan")
+            t.add_column("P&L", justify="right")
+            t.add_column("P&L %", justify="right")
+            t.add_column("Action", style="yellow")
+            for r in sorted(winners, key=lambda x: -x["pnl_pc"]):
+                action = "Trail stop or sell partial"
+                t.add_row(
+                    r["sym"][:20],
+                    f"[green]${r['pnl']:+,.0f}[/green]",
+                    f"[green]{r['pnl_pc']*100:+.1f}%[/green]",
+                    action,
+                )
+            console.print(t)
+
+        # Cash position
+        cash_pct = (cash / equity * 100) if equity > 0 else 0
+        cash_color = "green" if cash_pct > 15 else "yellow" if cash_pct > 5 else "red"
+        console.print(f"\n[bold]Cash:[/bold] [{cash_color}]${cash:,.0f} ({cash_pct:.0f}%)[/{cash_color}]", end="")
+        if cash_pct < 5:
+            console.print(" — [red]dangerously low, limited ability to average down or hedge[/red]")
+        elif cash_pct < 15:
+            console.print(" — [yellow]light, consider freeing capital[/yellow]")
+        else:
+            console.print(" — adequate dry powder")
+
+        if verbose:
+            console.print()
+            status(verbose=True)
+
     @app.command("suggest")
     def suggest(
-        style: str = typer.Option("balanced", "--style", "-s", help="defensive|balanced|aggressive"),
-        count: int = typer.Option(5, "--count", "-n", help="Number of ideas to generate"),
+        count: int = typer.Option(5, "--count", "-n", help="Number of ideas"),
     ):
         """
-        Quick trade suggestions based on current regime.
-        
-        Styles:
-            defensive: Focus on hedges and protection
-            balanced: Mix of hedges and opportunities
-            aggressive: Growth and momentum plays
-        
+        Trade ideas based on your actual positions and current regime.
+
+        Scans your portfolio for risks, then uses the regime state to
+        generate specific hedges, income plays, and directional ideas.
+
         Examples:
             lox suggest
-            lox suggest --style defensive
-            lox suggest --style aggressive --count 10
+            lox suggest --count 3
         """
         console = Console()
         settings = load_settings()
-        
-        console.print(f"[dim]Generating {style} trade ideas...[/dim]\n")
-        
-        if style == "defensive":
-            # Use hedge command
-            from lox.cli_commands.ideas.hedges_cmd import _generate_offsetting_ideas
-            from lox.utils.regimes import get_current_macro_regime
-            
-            regime_info = get_current_macro_regime(settings)
-            regime = regime_info.get("regime", "UNKNOWN")
-            
+
+        with console.status("[cyan]Loading positions & regime...[/cyan]"):
             trading, _ = make_clients(settings)
             positions = trading.get_all_positions()
-            
-            ideas = _generate_offsetting_ideas(positions, regime, count)
-            
-            if ideas:
-                table = Table(title=f"Defensive Ideas (Regime: {regime})")
-                table.add_column("Type", style="cyan")
-                table.add_column("Ticker")
-                table.add_column("Action")
-                table.add_column("Rationale")
-                
-                for idea in ideas[:count]:
-                    table.add_row(
-                        idea.get("type", ""),
-                        idea.get("ticker", ""),
-                        idea.get("action", ""),
-                        idea.get("rationale", "")[:50],
-                    )
-                console.print(table)
+            acct = trading.get_account()
+            cash = _safe_float(getattr(acct, "cash", 0))
+            equity = _safe_float(getattr(acct, "equity", 0))
+
+            try:
+                from lox.regimes import build_unified_regime_state
+                regime_state = build_unified_regime_state(settings=settings, start_date="2020-01-01")
+                overall = regime_state.overall_category
+                risk_score = regime_state.overall_risk_score
+                vol_label = regime_state.volatility.label if regime_state.volatility else "N/A"
+                credit_label = regime_state.credit.label if regime_state.credit else "N/A"
+                macro_quad = regime_state.macro_quadrant or "N/A"
+            except Exception as e:
+                console.print(f"[yellow]Regime data unavailable: {e}[/yellow]")
+                overall = "UNKNOWN"
+                risk_score = 50
+                vol_label = "N/A"
+                credit_label = "N/A"
+                macro_quad = "N/A"
+
+        # Regime context banner
+        risk_color = "red" if risk_score >= 60 else "yellow" if risk_score >= 45 else "green"
+        console.print(Panel(
+            f"[bold]Regime:[/bold] {overall} ([{risk_color}]{risk_score:.0f}/100[/{risk_color}])\n"
+            f"[bold]Macro:[/bold] {macro_quad}  |  "
+            f"[bold]Vol:[/bold] {vol_label}  |  "
+            f"[bold]Credit:[/bold] {credit_label}",
+            title="Market Context",
+            expand=False,
+            border_style="cyan",
+        ))
+
+        # Parse positions into actionable data
+        pos_data = []
+        values = []
+        for p in positions:
+            sym = str(getattr(p, "symbol", ""))
+            mv = abs(_safe_float(getattr(p, "market_value", 0)))
+            values.append(mv)
+            pos_data.append({
+                "sym": sym,
+                "qty": _safe_float(getattr(p, "qty", 0)),
+                "mv": mv,
+                "pnl_pc": _safe_float(getattr(p, "unrealized_plpc", 0)),
+                "pnl": _safe_float(getattr(p, "unrealized_pl", 0)),
+                "entry": _safe_float(getattr(p, "avg_entry_price", 0)),
+                "current": _safe_float(getattr(p, "current_price", 0)),
+            })
+
+        total_mv = sum(values) or 1.0
+        for p in pos_data:
+            p["weight"] = p["mv"] / total_mv
+
+        ideas = []
+
+        # ── HEDGES: based on actual risk exposure ─────────────────────
+        # Big losers: suggest cutting or hedging
+        big_losers = [p for p in pos_data if p["pnl_pc"] < -0.15]
+        for p in sorted(big_losers, key=lambda x: x["pnl_pc"])[:2]:
+            underlying = p["sym"].split(" ")[0] if " " in p["sym"] else p["sym"]
+            if p["pnl_pc"] < -0.30:
+                ideas.append({
+                    "type": "EXIT",
+                    "ticker": p["sym"],
+                    "action": f"Close position (down {p['pnl_pc']*100:.0f}%)",
+                    "rationale": f"Cut loss at ${abs(p['pnl']):,.0f}. Redeploy capital.",
+                })
             else:
-                console.print("[yellow]No defensive ideas generated[/yellow]")
-        
-        elif style == "aggressive":
-            # Use grow command
-            from lox.cli_commands.ideas.hedges_cmd import _generate_growth_ideas
-            from lox.utils.regimes import get_current_macro_regime
-            
-            regime_info = get_current_macro_regime(settings)
-            regime = regime_info.get("regime", "UNKNOWN")
-            
-            ideas = _generate_growth_ideas(regime, count)
-            
-            if ideas:
-                table = Table(title=f"Aggressive Ideas (Regime: {regime})")
-                table.add_column("Type", style="cyan")
-                table.add_column("Ticker")
-                table.add_column("Action")
-                table.add_column("Rationale")
-                
-                for idea in ideas[:count]:
-                    table.add_row(
-                        idea.get("type", ""),
-                        idea.get("ticker", ""),
-                        idea.get("action", ""),
-                        idea.get("rationale", "")[:50],
-                    )
-                console.print(table)
-            else:
-                console.print("[yellow]No aggressive ideas generated[/yellow]")
-        
-        else:  # balanced
-            console.print("[bold]Balanced Ideas[/bold]\n")
-            
-            # Show both defensive and growth
-            from lox.utils.regimes import get_current_macro_regime
-            regime_info = get_current_macro_regime(settings)
-            regime = regime_info.get("regime", "UNKNOWN")
-            
-            console.print(f"[dim]Current regime: {regime}[/dim]\n")
-            
-            # Simplified balanced recommendation
-            recommendations = [
-                {"action": "HEDGE", "suggestion": "Consider VIX calls or put spreads for tail protection"},
-                {"action": "INCOME", "suggestion": "Covered calls on long positions for premium"},
-                {"action": "GROWTH", "suggestion": "Look at sector ETFs aligned with regime"},
-            ]
-            
-            for rec in recommendations:
-                console.print(f"[cyan]{rec['action']}:[/cyan] {rec['suggestion']}")
-    
+                ideas.append({
+                    "type": "HEDGE",
+                    "ticker": underlying,
+                    "action": f"Buy protective put or tighten stop",
+                    "rationale": f"Down {p['pnl_pc']*100:.0f}%, ${abs(p['pnl']):,.0f} at risk.",
+                })
+
+        # Concentrated positions: suggest trimming
+        concentrated = [p for p in pos_data if p["weight"] > 0.25]
+        for p in concentrated[:2]:
+            ideas.append({
+                "type": "TRIM",
+                "ticker": p["sym"],
+                "action": f"Reduce to <25% (currently {p['weight']*100:.0f}%)",
+                "rationale": "Concentration risk — single name > 25% of book.",
+            })
+
+        # High-risk regime: portfolio-level hedges
+        if risk_score >= 55:
+            ideas.append({
+                "type": "HEDGE",
+                "ticker": "SPY",
+                "action": "Buy put spread (e.g. 30-45 DTE, -5% strike)",
+                "rationale": f"Regime risk elevated ({risk_score:.0f}/100). Tail protection.",
+            })
+
+        # ── INCOME: covered calls on winners ──────────────────────────
+        winners = [p for p in pos_data if p["pnl_pc"] > 0.10 and p["qty"] > 0]
+        for p in sorted(winners, key=lambda x: -x["pnl_pc"])[:2]:
+            underlying = p["sym"].split(" ")[0] if " " in p["sym"] else p["sym"]
+            if p["qty"] >= 100 or (p["qty"] >= 1 and " " not in p["sym"]):
+                ideas.append({
+                    "type": "INCOME",
+                    "ticker": underlying,
+                    "action": f"Sell covered call (up {p['pnl_pc']*100:.0f}%)",
+                    "rationale": f"Lock in gains, collect premium. P&L: ${p['pnl']:+,.0f}.",
+                })
+
+        # ── DIRECTIONAL: regime-aware ─────────────────────────────────
+        if risk_score < 45:
+            ideas.append({
+                "type": "GROWTH",
+                "ticker": "QQQ" if "GROWTH" in macro_quad.upper() else "XLF",
+                "action": "Bull call spread or long shares",
+                "rationale": f"Low-risk regime ({risk_score:.0f}). Lean into momentum.",
+            })
+        elif "STAGFLATION" in macro_quad.upper() or "HOT" in macro_quad.upper():
+            ideas.append({
+                "type": "ROTATE",
+                "ticker": "XLE / GLD",
+                "action": "Rotate into real assets / commodities",
+                "rationale": f"Macro: {macro_quad}. Favor inflation beneficiaries.",
+            })
+
+        # Low cash warning
+        cash_pct = (cash / equity * 100) if equity > 0 else 0
+        if cash_pct < 10 and big_losers:
+            ideas.append({
+                "type": "FREE $",
+                "ticker": big_losers[0]["sym"],
+                "action": f"Close weakest position to raise cash",
+                "rationale": f"Cash at {cash_pct:.0f}%. Need dry powder to act on ideas above.",
+            })
+
+        # Render ideas table
+        if ideas:
+            t = Table(title=f"Trade Ideas ({len(ideas)})", show_header=True)
+            t.add_column("Type", style="bold cyan", width=8)
+            t.add_column("Ticker", style="bold", width=22)
+            t.add_column("Action", width=42)
+            t.add_column("Rationale", style="dim")
+            for idea in ideas[:count]:
+                type_style = {
+                    "EXIT": "[red]EXIT[/red]",
+                    "HEDGE": "[yellow]HEDGE[/yellow]",
+                    "TRIM": "[yellow]TRIM[/yellow]",
+                    "INCOME": "[green]INCOME[/green]",
+                    "GROWTH": "[cyan]GROWTH[/cyan]",
+                    "ROTATE": "[magenta]ROTATE[/magenta]",
+                    "FREE $": "[red]FREE $[/red]",
+                }.get(idea["type"], idea["type"])
+                t.add_row(
+                    type_style,
+                    idea["ticker"][:22],
+                    idea["action"],
+                    idea["rationale"][:60],
+                )
+            console.print(t)
+        else:
+            console.print("[green]Portfolio looks clean — no immediate action items.[/green]")
+
+        console.print(f"\n[dim]Run [bold]lox analyze[/bold] for full position breakdown, "
+                      f"[bold]lox regimes unified[/bold] for regime detail.[/dim]")
+
     @app.command("run")
-    def run(
-        mode: str = typer.Option("scan", "--mode", "-m", help="scan|execute"),
-        strategy: str = typer.Option("balanced", "--strategy", "-s", help="defensive|balanced|aggressive"),
-    ):
+    def run():
         """
-        Full portfolio workflow: analyze, generate ideas, optionally execute.
-        
-        Modes:
-            scan: Analysis only, no trading (default)
-            execute: May execute trades after confirmation
-        
+        Morning briefing: portfolio status + risk scan + trade ideas.
+
+        Combines status, analyze, and suggest into one clean output.
+
         Examples:
             lox run
-            lox run --mode execute --strategy defensive
         """
         console = Console()
-        
-        console.print(Panel(
-            f"[bold]Lox Portfolio Workflow[/bold]\n\n"
-            f"Mode: {mode}\n"
-            f"Strategy: {strategy}",
-            expand=False,
-        ))
-        
+        console.rule("[bold cyan]Lox Morning Briefing[/bold cyan]")
+
         # Step 1: Status
-        console.print("\n[bold cyan]Step 1: Portfolio Status[/bold cyan]")
-        status(verbose=False)
-        
-        # Step 2: Quick analysis
-        console.print("\n[bold cyan]Step 2: Risk Analysis[/bold cyan]")
-        analyze(depth="quick")
-        
-        # Step 3: Suggestions
-        console.print("\n[bold cyan]Step 3: Trade Suggestions[/bold cyan]")
-        suggest(style=strategy, count=3)
-        
-        if mode == "execute":
-            console.print("\n[yellow]Execute mode: Review ideas above and use specific commands to trade[/yellow]")
-            console.print("[dim]Examples:[/dim]")
-            console.print("  lox options pick --ticker SPY --want put")
-            console.print("  lox account buy-shares --ticker SQQQ")
+        console.print()
+        status(verbose=True)
+
+        # Step 2: Risk scan
+        console.print()
+        console.rule("[bold cyan]Risk Scan[/bold cyan]")
+        analyze(verbose=False)
+
+        # Step 3: Trade ideas
+        console.print()
+        console.rule("[bold cyan]Trade Ideas[/bold cyan]")
+        suggest(count=5)
+
+        console.print()
+        console.rule("[dim]End of briefing[/dim]")

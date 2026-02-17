@@ -255,8 +255,10 @@ def classify_inflation(
             "median_cpi_yoy": median_cpi_yoy,
             "breakeven_5y": breakeven_5y,
             "breakeven_5y5y": breakeven_5y5y,
+            "breakeven_10y": breakeven_10y,
             "ppi_yoy": ppi_yoy,
             "cpi_3m_ann": cpi_3m_ann,
             "cpi_6m_ann": cpi_6m_ann,
+            "oil_price_yoy_pct": oil_price_yoy_pct,
         },
     )

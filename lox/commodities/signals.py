@@ -26,6 +26,7 @@ GOLD_SERIES_CANDIDATES: tuple[str, ...] = (
 )
 
 GOLD_PROXY_TICKERS: tuple[str, ...] = ("GLDM", "GLD")
+SILVER_PROXY_TICKERS: tuple[str, ...] = ("SLV", "SIVR")
 COPPER_PROXY_TICKERS: tuple[str, ...] = ("CPER",)
 BROAD_PROXY_TICKERS: tuple[str, ...] = ("DBC",)
 
@@ -68,6 +69,24 @@ def build_commodities_dataset(settings: Settings, start_date: str = "2011-01-01"
                 gdf = pd.DataFrame({"date": s.index, "value": s.values})
                 frames["GOLD"] = gdf.sort_values("date").reset_index(drop=True)
                 gold_loaded = True
+        except Exception:
+            pass
+
+    # Silver via ETF proxy (no reliable daily FRED series)
+    if not frames.get("SILVER") and (settings.alpaca_data_key or settings.alpaca_api_key):
+        try:
+            from lox.data.market import fetch_equity_daily_closes
+
+            px = fetch_equity_daily_closes(settings=settings, symbols=list(SILVER_PROXY_TICKERS), start=start_date, refresh=refresh)
+            chosen = None
+            for t in SILVER_PROXY_TICKERS:
+                if t in px.columns and px[t].dropna().shape[0] > 10:
+                    chosen = t
+                    break
+            if chosen:
+                s = pd.to_numeric(px[chosen], errors="coerce").dropna()
+                sdf = pd.DataFrame({"date": s.index, "value": s.values})
+                frames["SILVER"] = sdf.sort_values("date").reset_index(drop=True)
         except Exception:
             pass
 
@@ -189,6 +208,7 @@ def build_commodities_state(settings: Settings, start_date: str = "2011-01-01", 
     inp = CommoditiesInputs(
         wti=float(last["WTI"]) if pd.notna(last.get("WTI")) else None,
         gold=float(last["GOLD"]) if "GOLD" in last and pd.notna(last.get("GOLD")) else None,
+        silver=float(last["SILVER"]) if "SILVER" in last and pd.notna(last.get("SILVER")) else None,
         # Copper/Broad are now often proxy ETF levels (CPER/DBC) to avoid ffill artifacts.
         copper=float(last["COPPER"]) if "COPPER" in last and pd.notna(last.get("COPPER")) else None,
         broad_index=float(last["BROAD"]) if "BROAD" in last and pd.notna(last.get("BROAD")) else None,

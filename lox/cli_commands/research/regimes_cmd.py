@@ -150,7 +150,7 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool):
         ("Volatility", state.volatility),
         ("Credit", state.credit),
         ("Rates", state.rates),
-        ("Funding", state.funding),
+        ("Liquidity", state.liquidity),
     ]
     
     for name, regime in core_pillars:
@@ -188,8 +188,6 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool):
     extended = [
         ("Consumer", state.consumer),
         ("Fiscal", state.fiscal),
-        ("Positioning", state.positioning),
-        ("Monetary", state.monetary),
         ("USD", state.usd),
         ("Commodities", state.commodities),
     ]
@@ -232,11 +230,9 @@ def _show_regime_detail(console: Console, settings, state, pillar: str, include_
         "volatility": ("volatility", state.volatility),
         "credit": ("credit", state.credit),
         "rates": ("rates", state.rates),
-        "funding": ("funding", state.funding),
+        "liquidity": ("liquidity", state.liquidity),
         "consumer": ("consumer", state.consumer),
         "fiscal": ("fiscal", state.fiscal),
-        "positioning": ("positioning", state.positioning),
-        "monetary": ("monetary", state.monetary),
         "usd": ("usd", state.usd),
         "commodities": ("commodities", state.commodities),
     }
@@ -339,7 +335,7 @@ def _show_llm_commentary(console: Console, settings, state):
                 ("volatility", state.volatility),
                 ("credit", state.credit),
                 ("rates", state.rates),
-                ("funding", state.funding),
+                ("liquidity", state.liquidity),
             ]:
                 if regime:
                     summary_data["pillars"][name] = {

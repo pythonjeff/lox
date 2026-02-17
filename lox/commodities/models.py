@@ -9,6 +9,7 @@ class CommoditiesInputs(BaseModel):
     # Levels
     wti: Optional[float] = None
     gold: Optional[float] = None
+    silver: Optional[float] = None
     copper: Optional[float] = None
     broad_index: Optional[float] = None
 

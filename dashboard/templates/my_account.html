@@ -314,6 +314,27 @@
                 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                 Lived Inflation Index
             </a>
+            <div class="nav-group">
+                <button class="nav-item nav-toggle" id="regimes-toggle" type="button">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><polyline points="7 16 11 10 15 13 21 5"/></svg>
+                    Regimes
+                    <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="nav-sub-items" id="regimes-sub">
+                    <a href="/regimes/growth" class="nav-sub-item">Growth</a>
+                    <a href="/regimes/inflation" class="nav-sub-item">Inflation</a>
+                    <a href="/regimes/volatility" class="nav-sub-item">Volatility</a>
+                    <a href="/regimes/credit" class="nav-sub-item">Credit</a>
+                    <a href="/regimes/rates" class="nav-sub-item">Rates</a>
+                    <a href="/regimes/funding" class="nav-sub-item">Funding</a>
+                    <a href="/regimes/consumer" class="nav-sub-item">Consumer</a>
+                    <a href="/regimes/fiscal" class="nav-sub-item">Fiscal</a>
+                    <a href="/regimes/positioning" class="nav-sub-item">Positioning</a>
+                    <a href="/regimes/monetary" class="nav-sub-item">Monetary</a>
+                    <a href="/regimes/usd" class="nav-sub-item">USD</a>
+                    <a href="/regimes/commodities" class="nav-sub-item">Commodities</a>
+                </div>
+            </div>
             <a href="/my-account" class="nav-item active">
                 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 My Account
@@ -448,6 +469,13 @@
         });
         if (scrim) scrim.addEventListener('click', close);
         if (closeBtn) closeBtn.addEventListener('click', close);
+        // Regimes sub-nav toggle
+        var rt = document.getElementById('regimes-toggle');
+        var rs = document.getElementById('regimes-sub');
+        if (rt && rs) rt.addEventListener('click', function() {
+            rt.classList.toggle('expanded');
+            rs.classList.toggle('expanded');
+        });
     })();
     </script>
 </body>

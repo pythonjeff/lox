@@ -24,11 +24,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <!-- Chart.js + date adapter + annotation plugin for equity curve with regime bands -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
+    <!-- Chart.js (kept for potential future use) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
 </head>
 <body>
     <!-- Hamburger Nav Panel -->
@@ -47,6 +45,25 @@
                 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                 Lived Inflation Index
             </a>
+            <div class="nav-group">
+                <button class="nav-item nav-toggle" id="regimes-toggle" type="button">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><polyline points="7 16 11 10 15 13 21 5"/></svg>
+                    Regimes
+                    <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="nav-sub-items" id="regimes-sub">
+                    <a href="/regimes/growth" class="nav-sub-item">Growth</a>
+                    <a href="/regimes/inflation" class="nav-sub-item">Inflation</a>
+                    <a href="/regimes/volatility" class="nav-sub-item">Volatility</a>
+                    <a href="/regimes/credit" class="nav-sub-item">Credit</a>
+                    <a href="/regimes/rates" class="nav-sub-item">Rates</a>
+                    <a href="/regimes/liquidity" class="nav-sub-item">Liquidity</a>
+                    <a href="/regimes/consumer" class="nav-sub-item">Consumer</a>
+                    <a href="/regimes/fiscal" class="nav-sub-item">Fiscal</a>
+                    <a href="/regimes/usd" class="nav-sub-item">USD</a>
+                    <a href="/regimes/commodities" class="nav-sub-item">Commodities</a>
+                </div>
+            </div>
             <a href="/my-account" class="nav-item">
                 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 My Account
@@ -77,13 +94,6 @@
             </div>
         </header>
 
-        <!-- Regime Alert (hidden by default) -->
-        <div class="regime-alert" id="regime-alert" style="display: none;">
-            <span class="alert-icon">⚡</span>
-            <span class="alert-text" id="alert-text">Regime shift detected</span>
-            <button class="alert-dismiss" onclick="dismissAlert()">×</button>
-        </div>
-
         <!-- HERO ZONE: Fund Return -->
         <section class="hero-zone">
             <div class="hero-label">FUND RETURN</div>
@@ -96,7 +106,7 @@
         <!-- Metrics Row -->
         <section class="metrics-row">
             <div class="metric-item">
-                <div class="metric-label">Liquidation NAV<span class="info-tip" title="Longs at bid, shorts at ask">ⓘ</span></div>
+                <div class="metric-label">NAV<span class="info-tip" title="Net asset value (longs at bid, shorts at ask)">ⓘ</span></div>
                 <div class="metric-value" id="nav-value">—</div>
             </div>
             <div class="metric-divider"></div>
@@ -127,120 +137,6 @@
                     <div class="positions-list" id="positions-list">
                         <div class="loading">Loading positions...</div>
                     </div>
-                </div>
-            </details>
-
-            <!-- Market Context Section (Enhanced with Resume Builder) -->
-            <details class="accordion-section">
-                <summary class="accordion-header">
-                    <span class="accordion-title">Market Regime</span>
-                    <div class="accordion-badges">
-                        <span class="regime-badge" id="regime-badge">—</span>
-                    </div>
-                </summary>
-                <div class="accordion-content">
-
-                    <!-- FEATURE 5: Edge Summary Card -->
-                    <div class="edge-card" id="edge-card" style="display:none;">
-                        <div class="edge-card-header">
-                            <span class="edge-card-icon">&#9670;</span>
-                            <span class="edge-card-title">REGIME EDGE</span>
-                        </div>
-                        <div class="edge-stats">
-                            <div class="edge-stat">
-                                <span class="edge-stat-value" id="edge-total-pnl">—</span>
-                                <span class="edge-stat-label">Total P&L</span>
-                            </div>
-                            <div class="edge-stat">
-                                <span class="edge-stat-value" id="edge-best-regime">—</span>
-                                <span class="edge-stat-label" id="edge-best-detail">Best Environment</span>
-                            </div>
-                            <div class="edge-stat">
-                                <span class="edge-stat-value" id="edge-win-rate">—</span>
-                                <span class="edge-stat-label">Overall Win Rate</span>
-                            </div>
-                            <div class="edge-stat">
-                                <span class="edge-stat-value" id="edge-profit-factor">—</span>
-                                <span class="edge-stat-label">Profit Factor</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Key Metrics Strip -->
-                    <div class="regime-metrics">
-                        <div class="regime-metric">
-                            <span class="regime-metric-label">VIX</span>
-                            <span class="regime-metric-value" id="vix-value">—</span>
-                            <span class="regime-metric-context" id="vix-context">Fear gauge</span>
-                        </div>
-                        <div class="regime-metric">
-                            <span class="regime-metric-label">HY Spread</span>
-                            <span class="regime-metric-value" id="credit-value">—</span>
-                            <span class="regime-metric-context" id="credit-context">Credit stress</span>
-                        </div>
-                        <div class="regime-metric">
-                            <span class="regime-metric-label">10Y</span>
-                            <span class="regime-metric-value" id="rates-value">—</span>
-                            <span class="regime-metric-context" id="rates-context">Rate pressure</span>
-                        </div>
-                        <div class="regime-metric">
-                            <span class="regime-metric-label">CPI</span>
-                            <span class="regime-metric-value" id="cpi-value">—</span>
-                            <span class="regime-metric-context" id="cpi-context">Inflation</span>
-                        </div>
-                        <div class="regime-metric">
-                            <span class="regime-metric-label">2s10s</span>
-                            <span class="regime-metric-value" id="curve-value">—</span>
-                            <span class="regime-metric-context" id="curve-context">Yield curve</span>
-                        </div>
-                    </div>
-                    
-                    <!-- AI Insight Box -->
-                    <div class="insight-box" id="insight-box">
-                        <div class="insight-header">
-                            <span class="insight-icon">&#127919;</span>
-                            <span class="insight-title">Market Assessment</span>
-                        </div>
-                        <div class="insight-text" id="insight-text">Loading market analysis...</div>
-                        <div class="insight-implication" id="insight-implication">
-                            <span class="implication-label">Portfolio Implication:</span>
-                            <span class="implication-text" id="implication-text">—</span>
-                        </div>
-                        <div class="insight-meta">
-                            <span class="insight-tag">AI Analysis</span>
-                            <span class="insight-time" id="insight-time">—</span>
-                        </div>
-                    </div>
-
-                    <!-- Regime-Aware P&L Curve (from closed trades) -->
-                    <div class="regime-chart-section" id="regime-chart-section" style="display:none;">
-                        <div class="section-label">CUMULATIVE P&L BY REGIME</div>
-                        <div class="regime-chart-wrap">
-                            <canvas id="regime-equity-chart" height="220"></canvas>
-                        </div>
-                        <div class="regime-chart-legend" id="regime-chart-legend"></div>
-                    </div>
-
-                    <!-- Performance-by-Regime Attribution Table (enriched) -->
-                    <div class="regime-perf-section" id="regime-perf-section" style="display:none;">
-                        <div class="section-label">PERFORMANCE BY REGIME</div>
-                        <table class="regime-perf-table">
-                            <thead>
-                                <tr>
-                                    <th>Regime</th>
-                                    <th>Trades</th>
-                                    <th>Win Rate</th>
-                                    <th>Avg Return</th>
-                                    <th>Avg Hold</th>
-                                    <th>P/C</th>
-                                    <th>Total P&L</th>
-                                </tr>
-                            </thead>
-                            <tbody id="regime-perf-body">
-                            </tbody>
-                        </table>
-                    </div>
-
                 </div>
             </details>
 
@@ -380,31 +276,6 @@
 
         </div>
 
-        <!-- Operating P&L (trailing 30 days) -->
-        <section class="ops-pnl-section" id="ops-pnl-section" style="display:none;">
-            <div class="ops-pnl-header">
-                <span class="ops-pnl-title">MONTHLY NET P&L</span>
-                <span class="ops-pnl-period" id="ops-pnl-period">Last 30 days</span>
-            </div>
-            <div class="ops-pnl-row">
-                <div class="ops-pnl-item ops-pnl-gross">
-                    <div class="ops-pnl-label">Realized P&L (30d)</div>
-                    <div class="ops-pnl-value" id="ops-gross-pnl">—</div>
-                </div>
-                <div class="ops-pnl-minus">−</div>
-                <div class="ops-pnl-item ops-pnl-costs">
-                    <div class="ops-pnl-label">Monthly Costs</div>
-                    <div class="ops-pnl-value" id="ops-costs">—</div>
-                    <div class="ops-pnl-breakdown" id="ops-breakdown"></div>
-                </div>
-                <div class="ops-pnl-equals">=</div>
-                <div class="ops-pnl-item ops-pnl-net">
-                    <div class="ops-pnl-label">Net After Costs</div>
-                    <div class="ops-pnl-value" id="ops-net-pnl">—</div>
-                </div>
-            </div>
-        </section>
-
         <!-- Footer -->
         <footer class="footer">
             <span class="footer-brand">LOX FUND</span>
@@ -413,7 +284,7 @@
         </footer>
     </div>
 
-    <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+    <script src="{{ url_for('static', filename='dashboard.js') }}?v=3"></script>
     <script>
     // Hamburger menu toggle
     (function() {
@@ -428,6 +299,13 @@
         });
         if (scrim) scrim.addEventListener('click', close);
         if (closeBtn) closeBtn.addEventListener('click', close);
+        // Regimes sub-nav toggle
+        var rt = document.getElementById('regimes-toggle');
+        var rs = document.getElementById('regimes-sub');
+        if (rt && rs) rt.addEventListener('click', function() {
+            rt.classList.toggle('expanded');
+            rs.classList.toggle('expanded');
+        });
     })();
     </script>
 </body>

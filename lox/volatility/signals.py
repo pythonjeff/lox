@@ -121,9 +121,46 @@ def build_volatility_state(settings: Settings, start_date: str = "2011-01-01", r
     last = df.dropna(subset=["VIX"]).iloc[-1]
     win = 252 * 3
 
+    # ── VX Futures curve (CBOE settlement) ──────────────────────────────
+    vx_m1 = None
+    vx_m2 = None
+    vx_contango_pct = None
+    spot_minus_m1 = None
+    spot_basis_pct = None
+    vix_spot = float(last["VIX"]) if pd.notna(last.get("VIX")) else None
+    try:
+        from lox.volatility.vx_front_end import (
+            fetch_cboe_settlement_csv_text,
+            parse_vx_front_end_from_settlement_csv,
+            _utc_today,
+            iter_recent_dates,
+        )
+        vx_fe = None
+        for dt in iter_recent_dates(lookback_days=5):
+            try:
+                csv_text = fetch_cboe_settlement_csv_text(dt=dt, refresh=refresh)
+                vx_fe = parse_vx_front_end_from_settlement_csv(dt=dt, csv_text=csv_text, spot_vix=vix_spot)
+                break
+            except Exception:
+                continue
+        if vx_fe is not None:
+            vx_m1 = vx_fe.m1_settle
+            vx_m2 = vx_fe.m2_settle
+            vx_contango_pct = vx_fe.contango_pct
+            spot_minus_m1 = vx_fe.spot_minus_m1
+            spot_basis_pct = vx_fe.spot_minus_m1_pct
+    except Exception:
+        pass
+
+    # VIX9D/VIX ratio (near-term fear gauge)
+    vix9d_val = float(last["VIX9D"]) if "VIX9D" in last and pd.notna(last.get("VIX9D")) else None
+    vix9d_vix_ratio = None
+    if vix9d_val is not None and vix_spot is not None and vix_spot > 0:
+        vix9d_vix_ratio = vix9d_val / vix_spot
+
     inp = VolatilityInputs(
-        vix=float(last["VIX"]) if pd.notna(last.get("VIX")) else None,
-        vix9d=float(last["VIX9D"]) if "VIX9D" in last and pd.notna(last.get("VIX9D")) else None,
+        vix=vix_spot,
+        vix9d=vix9d_val,
         vix3m=float(last["VIX3M"]) if "VIX3M" in last and pd.notna(last.get("VIX3M")) else None,
         vix_chg_1d_pct=float(last["VIX_CHG_1D_PCT"]) if pd.notna(last.get("VIX_CHG_1D_PCT")) else None,
         vix_chg_5d_pct=float(last["VIX_CHG_5D_PCT"]) if pd.notna(last.get("VIX_CHG_5D_PCT")) else None,
@@ -137,6 +174,12 @@ def build_volatility_state(settings: Settings, start_date: str = "2011-01-01", r
         spike_20d_pct=float(last["SPIKE_20D_PCT"]) if pd.notna(last.get("SPIKE_20D_PCT")) else None,
         persist_20d=float(last["PERSIST_20D"]) if pd.notna(last.get("PERSIST_20D")) else None,
         threshold_vix=float(last["THRESH_VIX"]) if pd.notna(last.get("THRESH_VIX")) else None,
+        vx_m1=vx_m1,
+        vx_m2=vx_m2,
+        vx_contango_pct=vx_contango_pct,
+        spot_minus_m1=spot_minus_m1,
+        spot_basis_pct=spot_basis_pct,
+        vix9d_vix_ratio=vix9d_vix_ratio,
         vol_pressure_score=float(last["VOL_PRESSURE_SCORE"]) if pd.notna(last.get("VOL_PRESSURE_SCORE")) else None,
         components={"window_days": float(win), "persist_days": 20.0},
     )
@@ -145,7 +188,7 @@ def build_volatility_state(settings: Settings, start_date: str = "2011-01-01", r
         asof=str(pd.to_datetime(last["date"]).date()),
         start_date=start_date,
         inputs=inp,
-        notes="Volatility regime MVP: VIX level + 5d momentum + optional term structure, standardized vs recent history.",
+        notes="Volatility regime: VIX level + momentum + VX futures curve + term structure.",
     )
 
 

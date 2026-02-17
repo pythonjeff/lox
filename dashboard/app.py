@@ -38,7 +38,11 @@ from dashboard.data_fetchers import (
     get_cpi_inflation, get_yield_curve_spread,
     get_sp500_return_since_inception, get_btc_return_since_inception,
 )
-from dashboard.regime_utils import get_regime_domains_data, get_regime_label
+from dashboard.regime_utils import (
+    get_regime_domains_data, get_regime_label, get_regime_detail,
+    get_regime_summary,
+    REGIME_NAMES, REGIME_DISPLAY_NAMES,
+)
 from dashboard.news_utils import (
     fetch_economic_calendar, fetch_earnings_calendar,
     fetch_earnings_history, fetch_macro_headlines, get_event_source_url,
@@ -64,6 +68,7 @@ if _db_url.startswith("postgres://"):
     _db_url = _db_url.replace("postgres://", "postgresql://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = _db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 300  # 5 min browser cache for static assets
 
 # ============ INIT EXTENSIONS ============
 db.init_app(app)
@@ -124,7 +129,7 @@ POSITIONS_CACHE = {
     "timestamp": None,
 }
 POSITIONS_CACHE_LOCK = threading.Lock()
-POSITIONS_CACHE_TTL = 30  # 30 seconds - balances freshness with performance
+POSITIONS_CACHE_TTL = 60  # 60 seconds - macro fund doesn't need sub-minute quotes
 
 # ============ OTHER DATA CACHES ============
 # Short-lived caches for other frequently requested data
@@ -138,7 +143,7 @@ TRADES_CACHE_TTL = 60  # 1 minute
 
 DOMAINS_CACHE = {"data": None, "timestamp": None}
 DOMAINS_CACHE_LOCK = threading.Lock()
-DOMAINS_CACHE_TTL = 120  # 2 minutes
+DOMAINS_CACHE_TTL = 600  # 10 minutes - matches regime detail TTL
 
 NEWS_CACHE = {"data": None, "timestamp": None}
 NEWS_CACHE_LOCK = threading.Lock()
@@ -1700,6 +1705,59 @@ def api_regime_domains():
         return jsonify({"error": str(e), "domains": {}})
 
 
+# ============ REGIME DETAIL PAGE + API ============
+
+@app.route('/regimes/<regime_name>')
+def regime_page(regime_name):
+    """Render individual regime detail page."""
+    from flask import abort
+    if regime_name not in REGIME_NAMES:
+        abort(404)
+    return render_template(
+        'regime.html',
+        regime_name=regime_name,
+        regimes=REGIME_NAMES,
+        regime_display_names=REGIME_DISPLAY_NAMES,
+    )
+
+
+@app.route('/api/regime/<regime_name>')
+def api_regime_detail(regime_name):
+    """API endpoint for detailed regime data (single domain)."""
+    if regime_name not in REGIME_NAMES:
+        return jsonify({"error": f"Unknown regime: {regime_name}"}), 404
+
+    refresh = request.args.get("refresh", "").lower() in ("true", "1", "yes")
+
+    try:
+        settings = load_settings()
+        data = get_regime_detail(settings, regime_name, refresh=refresh)
+        if "error" in data and len(data) == 1:
+            return jsonify(data), 500
+        response = jsonify(data)
+        response.headers['Cache-Control'] = 'public, max-age=300'
+        return response
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/regime-summary')
+def api_regime_summary():
+    """Lightweight summary of all regime scores/labels for the main dashboard."""
+    try:
+        settings = load_settings()
+        data = get_regime_summary(settings)
+        response = jsonify(data)
+        response.headers['Cache-Control'] = 'public, max-age=300'
+        return response
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "regimes": []}), 500
+
+
 @app.route('/api/investors')
 @login_required
 def api_investors():
@@ -3234,104 +3292,136 @@ def _generate_palmer_analysis():
             "url": h.get("url", ""),
         })
     
-    # Generate LLM insight with professional macro brief style
+    # Generate portfolio assessment — is our book well-positioned right now?
     try:
         from openai import OpenAI
         client = OpenAI(api_key=settings.openai_api_key)
-        
+
         # Get detailed portfolio categorization for scenario analysis
         portfolio_positions = positions_data.get("positions", []) if positions_data else []
         portfolio_analysis = _categorize_portfolio_positions(portfolio_positions)
         scenario_matrix = portfolio_analysis.get("scenario_matrix", {})
-        
+
         # Build quantitative regime context using module-level helpers
         vix_context = _build_vix_context(vix_val)
         hy_context = _build_hy_context(hy_val)
         rate_context = _build_rates_context(yield_val)
-        
+
         # Build scenario impact descriptions
         scenario_impacts = _build_scenario_impacts(scenario_matrix)
-        
+
         # Format events with significance
         events_context = ""
         if fed_fiscal_events:
             event_details = []
-            for e in fed_fiscal_events[:4]:
+            for e in fed_fiscal_events[:6]:
                 evt_name = e.get("event", "")
                 actual = e.get("actual")
                 estimate = e.get("estimate")
-                
+
                 if actual is not None and estimate is not None:
                     try:
                         diff = float(actual) - float(estimate)
                         direction = "beat" if diff > 0 else "miss"
                         event_details.append(f"{evt_name}: {actual} vs {estimate} ({direction})")
-                    except:
+                    except Exception:
                         event_details.append(f"{evt_name}: {actual}")
                 elif actual is not None:
                     event_details.append(f"{evt_name}: {actual}")
                 else:
                     event_details.append(f"{evt_name} (pending)")
             events_context = " | ".join(event_details)
-        
-        # Format headlines
+
+        # Format headlines — include more for better context
         news_context = ""
         if headlines:
-            news_items = [h.get("headline", "")[:80] for h in headlines[:3] if h]
-            news_context = " | ".join(news_items)
-        
-        # Construct professional macro brief prompt
-        prompt = f"""You are a senior macro trader writing a morning brief for the investment committee. 
-Write a professional market overview that connects macro conditions to our specific portfolio positions.
+            news_items = [f"• {h.get('headline', '')}" for h in headlines[:5] if h]
+            news_context = chr(10).join(news_items)
 
-═══════════════════════════════════════════════════════════════
-MARKET REGIME: {regime_label}
-═══════════════════════════════════════════════════════════════
+        # Build per-position detail string
+        position_lines = []
+        for p in portfolio_positions:
+            symbol = p.get("symbol", "")
+            qty = p.get("qty", 0)
+            pnl = p.get("pnl", 0)
+            mv = p.get("market_value", 0)
+            opt = p.get("opt_info")
+            if opt:
+                underlying = opt.get("underlying", "")
+                opt_type = opt.get("opt_type", opt.get("type", ""))
+                strike = opt.get("strike", "")
+                expiry = opt.get("expiry", "")
+                position_lines.append(
+                    f"  {qty:+d} {underlying} {strike}{opt_type} exp {expiry} | MV ${mv:.0f} | P&L ${pnl:+.0f}"
+                )
+            elif symbol:
+                position_lines.append(f"  {qty:+d} {symbol} | MV ${mv:.0f} | P&L ${pnl:+.0f}")
+        positions_detail = chr(10).join(position_lines) if position_lines else "No positions"
 
-QUANTITATIVE LEVELS:
+        prompt = f"""You are the portfolio manager of LOX Fund, a small macro options fund.
+Your job: assess whether our current book is well-positioned given today's market moves and news.
+Answer the question: "Are we in a good spot or a bad spot right now, and what should we watch?"
+
+══════════════════════════════════════════════════
+CURRENT MARKET LEVELS
+══════════════════════════════════════════════════
 • {vix_context or "VIX data unavailable"}
 • {hy_context or "Credit spread data unavailable"}
 • {rate_context or "Rates data unavailable"}
+• CPI YoY: {f"{cpi_val:.1f}%" if cpi_val else "N/A"}
+• Yield Curve 2s10s: {f"{curve_val:.0f}bp" if curve_val else "N/A"}
 
-PORTFOLIO POSITIONING:
-{portfolio_analysis.get("summary", "No positions")}
+══════════════════════════════════════════════════
+TODAY'S NEWS & EVENTS
+══════════════════════════════════════════════════
+{news_context if news_context else "No headlines available"}
 
-SCENARIO P&L ATTRIBUTION:
-{chr(10).join(scenario_impacts) if scenario_impacts else "No scenario analysis available"}
+Calendar: {events_context if events_context else "No releases today"}
 
-TODAY'S CALENDAR:
-{events_context if events_context else "No significant releases"}
+══════════════════════════════════════════════════
+OUR POSITIONS (LIVE)
+══════════════════════════════════════════════════
+{positions_detail}
 
-RELEVANT HEADLINES:
-{news_context if news_context else "None"}
+Total Unrealized P&L: ${positions_data.get("total_pnl", 0):+,.0f}
+NAV: ${positions_data.get("nav_equity", 0):,.0f}
+Cash: ${positions_data.get("cash_available", 0):,.0f}
 
-═══════════════════════════════════════════════════════════════
-INSTRUCTIONS: Write a 3-4 sentence macro brief in PROFESSIONAL TONE:
+Category summary: {portfolio_analysis.get("summary", "N/A")}
 
-1. REGIME ASSESSMENT: State the current macro regime with quantitative anchors (VIX level, spread levels). Be direct.
+Scenario impacts:
+{chr(10).join(scenario_impacts) if scenario_impacts else "N/A"}
 
-2. PORTFOLIO IMPACT: Explain how current conditions affect our specific positions:
-   - For LONG PUTS: Describe what needs to happen for them to pay (underlying decline, vol spike)
-   - For LONG CALLS: Describe the tailwind/headwind they face
-   - For VOL POSITIONS: Comment on whether vol is cheap/expensive relative to realized
+══════════════════════════════════════════════════
+INSTRUCTIONS
+══════════════════════════════════════════════════
+Write a 4-6 sentence portfolio assessment. Structure it as:
 
-3. KEY RISK: Name ONE specific catalyst or threshold that would shift the portfolio P&L materially.
+1. VERDICT: Open with a one-sentence verdict — is the book in a good or bad position today?
+   Ground this in what's actually moving (news, data, VIX direction).
 
-STYLE REQUIREMENTS:
-- Write like a macro PM, not a news anchor
-- Use precise language: "10Y above 4.50% → multiple compression → long puts accelerate"
-- No hedging words ("could", "might", "possibly")
-- No sentiment language ("confident", "optimistic")
-- Reference specific positions by underlying (e.g., "HYG puts", "VIXM calls")
-- Maximum 4 sentences"""
+2. WHAT'S WORKING: Which specific positions benefit from today's market conditions?
+   Reference the actual tickers, strikes, and P&L where relevant.
+
+3. WHAT'S AT RISK: Which positions are under pressure or bleeding theta without a catalyst?
+
+4. WATCH: Name 1-2 specific catalysts or levels that would materially shift our P&L
+   this week (e.g., "CPI print Thursday", "VIX below 18 kills our vol book").
+
+STYLE:
+- Write as a PM talking to the IC, not a news anchor
+- Be direct: "Our XRT puts are printing" or "The AMZN calls are dead weight"
+- Reference actual position P&L when making points
+- No hedging words, no sentiment fluff
+- Maximum 6 sentences"""
 
         response = client.chat.completions.create(
             model=settings.openai_model or "gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            max_tokens=350,
+            temperature=0.3,
+            max_tokens=500,
         )
-        
+
         insight = response.choices[0].message.content.strip()
     except Exception as e:
         print(f"[Palmer] LLM error: {e}")
@@ -3756,21 +3846,31 @@ def start_background_threads():
     
     print(f"[Palmer] Starting background refresh thread (interval: {PALMER_REFRESH_INTERVAL}s)")
     print(f"[MC] Starting background refresh thread (interval: {MC_REFRESH_INTERVAL}s = 1 hour)")
+    print(f"[Regimes] Starting background prefetch thread (interval: 540s = 9 min)")
     
-    # Do initial refreshes in background
-    def initial_refresh():
-        # Backfill regime history on first boot (idempotent upsert)
+    # Palmer runs first (user-facing, fast — just needs an LLM call)
+    threading.Thread(target=_refresh_palmer_cache, daemon=True).start()
+
+    # MC simulation is slow — run independently
+    threading.Thread(target=_refresh_mc_cache, daemon=True).start()
+
+    # Regime cache + history backfill (lowest priority)
+    def deferred_refresh():
+        try:
+            from dashboard.regime_utils import _build_regime_cache
+            settings = load_settings()
+            _build_regime_cache(settings, refresh=False)
+            print("[Regimes] Initial cache warmed")
+        except Exception as e:
+            print(f"[Regimes] Initial cache warm failed (non-fatal): {e}")
+
         try:
             from dashboard.regime_history import backfill_regime_history
             backfill_regime_history(app)
         except Exception as e:
             print(f"[RegimeHistory] Backfill error (non-fatal): {e}")
-        
-        _refresh_mc_cache()  # MC first (Palmer uses cached MC)
-        _refresh_palmer_cache()
-    
-    init_thread = threading.Thread(target=initial_refresh, daemon=True)
-    init_thread.start()
+
+    threading.Thread(target=deferred_refresh, daemon=True).start()
     
     # Start Palmer background refresh thread (every 30 min)
     palmer_thread = threading.Thread(target=_palmer_background_refresh, daemon=True)
@@ -3779,6 +3879,22 @@ def start_background_threads():
     # Start Monte Carlo background refresh thread (every 1 hour)
     mc_thread = threading.Thread(target=_mc_background_refresh, daemon=True)
     mc_thread.start()
+
+    # Start regime data background prefetch (keeps cache warm, refreshes before TTL expires)
+    def _regime_background_refresh():
+        while True:
+            try:
+                time.sleep(540)  # 9 min — regime TTL is 10 min, refresh before expiry
+                from dashboard.regime_utils import _build_regime_cache
+                settings = load_settings()
+                _build_regime_cache(settings, refresh=False)
+                print("[Regimes] Background cache refreshed")
+            except Exception as e:
+                print(f"[Regimes] Background refresh error: {e}")
+                time.sleep(60)
+
+    regime_thread = threading.Thread(target=_regime_background_refresh, daemon=True)
+    regime_thread.start()
 
 
 # Alias for backward compatibility
