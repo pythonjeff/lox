@@ -1,24 +1,4 @@
-// LOX FUND Dashboard v2 - Resume Grade (Streamlined)
-
-let dismissedAlertTimestamp = null;
-
-function dismissAlert() {
-    const alert = document.getElementById('regime-alert');
-    if (alert) {
-        alert.style.display = 'none';
-        dismissedAlertTimestamp = new Date().toISOString();
-    }
-}
-
-function showRegimeAlert(details) {
-    const alert = document.getElementById('regime-alert');
-    const alertText = document.getElementById('alert-text');
-    if (!alert || !alertText || !details || details.length === 0) return;
-    
-    const change = details[0];
-    alertText.textContent = `${change.indicator} shifted: ${change.from} → ${change.to}`;
-    alert.style.display = 'flex';
-}
+// LOX FUND Dashboard v2 - Performance Focused
 
 function formatCurrency(value, decimals = 0) {
     if (Math.abs(value) < 100) decimals = 2;
@@ -89,7 +69,7 @@ function processPositionsData(data) {
     const heroAum = document.getElementById('hero-aum');
     if (heroAum && data.aum !== undefined) {
         const investorCount = data.investor_count || 0;
-        heroAum.innerHTML = `<span class="aum-badge">${investorCount} investors</span> · <span class="aum-value">${formatCurrency(data.aum)} AUM</span>`;
+        heroAum.innerHTML = `<span class="aum-badge">${investorCount} investors</span> · <span class="aum-value">${formatCurrency(data.aum)} seed capital</span>`;
     }
     
     // METRICS: NAV
@@ -115,99 +95,123 @@ function processPositionsData(data) {
     const countEl = document.getElementById('positions-count');
     countEl.textContent = data.positions ? `${data.positions.length} POSITIONS` : '—';
     
-    // POSITIONS: P&L badge
+    // POSITIONS: Unrealized P&L badge (muted styling)
     const posPnlEl = document.getElementById('positions-pnl');
     if (data.positions && data.positions.length > 0) {
         let totalPnl = 0;
-        let totalCost = 0;
-        data.positions.forEach(p => {
-            totalPnl += p.pnl || 0;
-            totalCost += Math.abs((p.market_value || 0) - (p.pnl || 0));
-        });
-        const pnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
-        posPnlEl.textContent = formatPercent(pnlPct, 1);
-        posPnlEl.className = 'badge-pnl ' + (pnlPct >= 0 ? 'positive' : 'negative');
+        data.positions.forEach(p => { totalPnl += p.pnl || 0; });
+        posPnlEl.textContent = formatCurrency(totalPnl);
+        posPnlEl.className = 'badge-pnl muted';
     }
     
-    // POSITIONS: Render list with thesis and indicators
+    // POSITIONS: Render as professional table
     const positionsList = document.getElementById('positions-list');
     if (!data.positions || data.positions.length === 0) {
         positionsList.innerHTML = '<div class="loading">No open positions</div>';
     } else {
-        positionsList.innerHTML = data.positions.map(pos => {
+        // Sort: winners first, then by absolute P&L descending
+        const sorted = [...data.positions].sort((a, b) => (b.pnl || 0) - (a.pnl || 0));
+
+        const rows = sorted.map(pos => {
             const pnlClass = pos.pnl >= 0 ? 'positive' : 'negative';
             const safeId = pos.symbol.replace(/[^a-zA-Z0-9]/g, '_');
 
-            // Format symbol
-            let symbol = pos.symbol;
-            let details = '';
+            let ticker, typeLabel, expiry = '';
             if (pos.opt_info) {
-                const type = (pos.opt_info.opt_type || '').toUpperCase().startsWith('C') ? 'C' : 'P';
-                symbol = `${pos.opt_info.underlying} $${pos.opt_info.strike}${type}`;
-                details = `<span class="position-expiry">${pos.opt_info.expiry}</span>`;
+                const optType = (pos.opt_info.opt_type || '').toUpperCase().startsWith('C') ? 'Call' : 'Put';
+                ticker = pos.opt_info.underlying;
+                typeLabel = `$${pos.opt_info.strike} ${optType}`;
+                expiry = pos.opt_info.expiry || '';
+            } else {
+                ticker = pos.symbol;
+                typeLabel = 'Equity';
             }
 
-            // Thesis (from API or placeholder)
-            const thesis = pos.thesis || 'Loading thesis...';
+            const qty = pos.qty || 0;
+            const mv = Math.abs(pos.market_value || 0);
+            const costBasis = mv - (pos.pnl || 0);
+            const pnl = pos.pnl || 0;
+            const pnlPct = pos.pnl_pct || 0;
 
-            // Thesis Indicators table (expandable)
+            // Thesis & indicators for expandable detail
+            const thesis = pos.thesis || '';
             const indicators = pos.indicators || [];
-            const indicatorsHtml = indicators.length > 0 ? `
-                <div class="thesis-indicators-wrapper">
-                    <button type="button" class="thesis-indicators-toggle" aria-expanded="false" aria-controls="indicators-${safeId}" data-target="indicators-${safeId}">
-                        <span class="toggle-chevron">▸</span> Thesis Indicators (${indicators.length})
-                    </button>
-                    <div class="thesis-indicators-table-wrap" id="indicators-${safeId}" hidden>
-                        <table class="thesis-indicators-table">
-                            <thead><tr><th>Indicator</th><th>Current</th><th>Target</th><th>Invalidation</th><th>Status</th></tr></thead>
-                            <tbody>
-                                ${indicators.map(ind => `
-                                    <tr>
-                                        <td>${escapeHtml(ind.name || '')}</td>
-                                        <td>${escapeHtml(ind.current_value || '—')}</td>
-                                        <td>${escapeHtml(ind.target_value || '—')}</td>
-                                        <td>${escapeHtml(ind.invalidation_value || '—')}</td>
-                                        <td><span class="indicator-status-dot ${ind.status || 'neutral'}" title="${ind.status || 'neutral'}"></span></td>
-                                    </tr>
-                                `).join('')}
+            const hasDetail = thesis || indicators.length > 0;
+
+            let detailHtml = '';
+            if (hasDetail) {
+                let indRows = '';
+                if (indicators.length > 0) {
+                    indRows = `
+                        <table class="pos-detail-indicators">
+                            <thead><tr><th>Indicator</th><th>Current</th><th>Target</th><th>Invalidation</th><th></th></tr></thead>
+                            <tbody>${indicators.map(ind => `
+                                <tr>
+                                    <td>${escapeHtml(ind.name || '')}</td>
+                                    <td>${escapeHtml(ind.current_value || '—')}</td>
+                                    <td>${escapeHtml(ind.target_value || '—')}</td>
+                                    <td>${escapeHtml(ind.invalidation_value || '—')}</td>
+                                    <td><span class="ind-dot ind-dot--${ind.status || 'neutral'}"></span></td>
+                                </tr>`).join('')}
                             </tbody>
-                        </table>
-                    </div>
-                </div>
-            ` : '';
+                        </table>`;
+                }
+                detailHtml = `
+                    <tr class="pos-detail-row" id="detail-${safeId}" style="display:none;">
+                        <td colspan="7">
+                            <div class="pos-detail-content">
+                                ${thesis ? `<div class="pos-detail-thesis" id="thesis-${safeId}">${escapeHtml(thesis)}</div>` : ''}
+                                ${indRows}
+                            </div>
+                        </td>
+                    </tr>`;
+            }
 
             return `
-                <div class="position-card">
-                    <div class="position-header">
-                        <div class="position-symbol-row">
-                            <span class="position-symbol">${symbol}</span>
-                            ${details}
-                        </div>
-                        <div class="position-pnl ${pnlClass}">
-                            ${formatCurrency(pos.pnl || 0)}
-                            <span class="pnl-percent">${formatPercent(pos.pnl_pct || 0, 1)}</span>
-                        </div>
-                    </div>
-                    <div class="position-meta">
-                        <span class="position-qty">${pos.qty > 0 ? '+' : ''}${pos.qty} @ ${formatCurrency(Math.abs(pos.market_value || 0) / Math.abs(pos.qty || 1))}</span>
-                        <span class="position-value">${formatCurrency(Math.abs(pos.market_value || 0))}</span>
-                    </div>
-                    ${indicatorsHtml}
-                    <div class="position-thesis">
-                        <span class="thesis-label">Thesis:</span>
-                        <div class="thesis-text-wrap">
-                            <span class="thesis-text thesis-truncated" id="thesis-${safeId}" data-full-thesis="">${escapeHtml(thesis)}</span>
-                            <button type="button" class="thesis-expand-btn" aria-label="Show full thesis" data-thesis-id="thesis-${safeId}" style="display: none;">Show more</button>
-                        </div>
-                    </div>
-                </div>
-            `;
+                <tr class="pos-row${hasDetail ? ' pos-row--expandable' : ''}" data-detail="detail-${safeId}">
+                    <td class="pos-td-ticker">
+                        <span class="pos-ticker">${ticker}</span>
+                        <span class="pos-type">${typeLabel}</span>
+                    </td>
+                    <td class="pos-td-expiry">${expiry}</td>
+                    <td class="pos-td-qty">${qty > 0 ? '+' : ''}${qty}</td>
+                    <td class="pos-td-cost">${formatCurrency(costBasis)}</td>
+                    <td class="pos-td-mv">${formatCurrency(mv)}</td>
+                    <td class="pos-td-pnl ${pnlClass}">${formatCurrency(pnl)}</td>
+                    <td class="pos-td-pct ${pnlClass}">${formatPercent(pnlPct, 1)}</td>
+                </tr>
+                ${detailHtml}`;
         }).join('');
 
-        // Wire up indicator toggles and thesis expand
-        setupPositionCardInteractions();
-        
-        // Lazily fetch AI-generated thesis (upgrades the simple fallback thesis)
+        positionsList.innerHTML = `
+            <table class="pos-table">
+                <thead>
+                    <tr>
+                        <th class="pos-th-ticker">Position</th>
+                        <th class="pos-th-expiry">Expiry</th>
+                        <th class="pos-th-qty">Qty</th>
+                        <th class="pos-th-cost">Cost</th>
+                        <th class="pos-th-mv">Mkt Val</th>
+                        <th class="pos-th-pnl">P&L</th>
+                        <th class="pos-th-pct">%</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+
+        // Wire up expandable rows
+        positionsList.querySelectorAll('.pos-row--expandable').forEach(row => {
+            row.addEventListener('click', () => {
+                const detailId = row.getAttribute('data-detail');
+                const detail = document.getElementById(detailId);
+                if (!detail) return;
+                const isOpen = detail.style.display !== 'none';
+                detail.style.display = isOpen ? 'none' : 'table-row';
+                row.classList.toggle('pos-row--open', !isOpen);
+            });
+        });
+
+        // Lazily fetch AI-generated thesis
         fetchPositionThesis(data.positions);
     }
 
@@ -222,46 +226,6 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-function setupPositionCardInteractions() {
-    // Indicator toggles
-    document.querySelectorAll('.thesis-indicators-toggle').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const id = btn.getAttribute('data-target');
-            const panel = document.getElementById(id);
-            if (!panel) return;
-            panel.hidden = !panel.hidden;
-            btn.setAttribute('aria-expanded', !panel.hidden);
-            const chevron = btn.querySelector('.toggle-chevron');
-            if (chevron) chevron.textContent = panel.hidden ? '▸' : '▾';
-        });
-    });
-
-    // Thesis expand/collapse
-    document.querySelectorAll('.thesis-expand-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const id = btn.getAttribute('data-thesis-id');
-            const el = document.getElementById(id);
-            if (!el) return;
-            const expanded = el.classList.toggle('thesis-expanded');
-            btn.textContent = expanded ? 'Show less' : 'Show more';
-        });
-    });
-
-    // Show "Show more" only when thesis overflows
-    requestAnimationFrame(refreshThesisExpandButtons);
-}
-
-function refreshThesisExpandButtons() {
-    document.querySelectorAll('.thesis-text').forEach(el => {
-        const btn = el.parentElement?.querySelector('.thesis-expand-btn');
-        if (!btn) return;
-        if (el.scrollHeight > el.clientHeight || el.classList.contains('thesis-expanded')) {
-            btn.style.display = 'inline-block';
-        } else {
-            btn.style.display = 'none';
-        }
-    });
-}
 
 // ============================================
 // POSITION THESIS (AI Generated)
@@ -288,183 +252,6 @@ async function fetchPositionThesis(positions) {
     }
 }
 
-// ============================================
-// MARKET CONTEXT (Enhanced - Regime + Metrics + Insight)
-// ============================================
-function processMarketContextData(data) {
-    // Regime badge
-    const regimeBadge = document.getElementById('regime-badge');
-    let regimeLabel = '—';
-    if (regimeBadge && data.traffic_lights?.regime) {
-        const regime = data.traffic_lights.regime;
-        regimeLabel = regime.label || '—';
-        regimeBadge.textContent = regimeLabel;
-        regimeBadge.className = 'regime-badge ' + (regimeLabel).toLowerCase().replace(' ', '-');
-    }
-    
-    // Key metrics with context
-    if (data.traffic_lights) {
-        const tl = data.traffic_lights;
-        
-        // VIX - Fear Gauge
-        const vixEl = document.getElementById('vix-value');
-        const vixContext = document.getElementById('vix-context');
-        if (vixEl && tl.volatility) {
-            const vixStr = tl.volatility.value || '—';
-            // Extract just the number for display
-            const vixNum = parseFloat(vixStr.replace(/[^0-9.]/g, ''));
-            vixEl.textContent = vixNum ? vixNum.toFixed(1) : '—';
-            
-            // Color and context based on level
-            if (vixNum < 15) {
-                vixEl.className = 'regime-metric-value green';
-                if (vixContext) vixContext.textContent = 'Complacent (<15)';
-            } else if (vixNum < 20) {
-                vixEl.className = 'regime-metric-value green';
-                if (vixContext) vixContext.textContent = 'Calm (15-20)';
-            } else if (vixNum < 25) {
-                vixEl.className = 'regime-metric-value yellow';
-                if (vixContext) vixContext.textContent = 'Elevated (20-25)';
-            } else if (vixNum < 30) {
-                vixEl.className = 'regime-metric-value yellow';
-                if (vixContext) vixContext.textContent = 'Fear (25-30)';
-            } else {
-                vixEl.className = 'regime-metric-value red';
-                if (vixContext) vixContext.textContent = 'Panic (>30)';
-            }
-        }
-        
-        // HY Spread - Credit Stress (basis points)
-        const creditEl = document.getElementById('credit-value');
-        const creditContext = document.getElementById('credit-context');
-        if (creditEl && tl.credit) {
-            const creditStr = tl.credit.value || '—';
-            const creditNum = parseFloat(creditStr.replace(/[^0-9.]/g, ''));
-            creditEl.textContent = creditNum ? `${Math.round(creditNum)}bp` : '—';
-            
-            // Color and context based on level
-            if (creditNum < 300) {
-                creditEl.className = 'regime-metric-value green';
-                if (creditContext) creditContext.textContent = 'Tight (<300bp)';
-            } else if (creditNum < 400) {
-                creditEl.className = 'regime-metric-value yellow';
-                if (creditContext) creditContext.textContent = 'Normal (300-400bp)';
-            } else if (creditNum < 500) {
-                creditEl.className = 'regime-metric-value yellow';
-                if (creditContext) creditContext.textContent = 'Wide (400-500bp)';
-            } else {
-                creditEl.className = 'regime-metric-value red';
-                if (creditContext) creditContext.textContent = 'Stress (>500bp)';
-            }
-        }
-        
-        // 10Y Yield - Rate Pressure
-        const ratesEl = document.getElementById('rates-value');
-        const ratesContext = document.getElementById('rates-context');
-        if (ratesEl && tl.rates) {
-            const ratesStr = tl.rates.value || '—';
-            const ratesNum = parseFloat(ratesStr.replace(/[^0-9.]/g, ''));
-            ratesEl.textContent = ratesNum ? `${ratesNum.toFixed(2)}%` : '—';
-            
-            // Color and context based on level
-            if (ratesNum < 3.5) {
-                ratesEl.className = 'regime-metric-value green';
-                if (ratesContext) ratesContext.textContent = 'Accommodative (<3.5%)';
-            } else if (ratesNum < 4.25) {
-                ratesEl.className = 'regime-metric-value yellow';
-                if (ratesContext) ratesContext.textContent = 'Neutral (3.5-4.25%)';
-            } else if (ratesNum < 4.75) {
-                ratesEl.className = 'regime-metric-value yellow';
-                if (ratesContext) ratesContext.textContent = 'Tight (4.25-4.75%)';
-            } else {
-                ratesEl.className = 'regime-metric-value red';
-                if (ratesContext) ratesContext.textContent = 'Restrictive (>4.75%)';
-            }
-        }
-        
-        // CPI YoY - Inflation
-        const cpiEl = document.getElementById('cpi-value');
-        const cpiContext = document.getElementById('cpi-context');
-        if (cpiEl && tl.inflation) {
-            const cpiStr = tl.inflation.value || '—';
-            const cpiNum = parseFloat(cpiStr.replace(/[^0-9.]/g, ''));
-            cpiEl.textContent = cpiNum ? `${cpiNum.toFixed(1)}%` : '—';
-            
-            // Color and context based on level
-            if (cpiNum > 4.0) {
-                cpiEl.className = 'regime-metric-value red';
-                if (cpiContext) cpiContext.textContent = 'Hot (>4%)';
-            } else if (cpiNum > 3.0) {
-                cpiEl.className = 'regime-metric-value yellow';
-                if (cpiContext) cpiContext.textContent = 'Sticky (3-4%)';
-            } else if (cpiNum > 2.0) {
-                cpiEl.className = 'regime-metric-value green';
-                if (cpiContext) cpiContext.textContent = 'Target (2-3%)';
-            } else {
-                cpiEl.className = 'regime-metric-value green';
-                if (cpiContext) cpiContext.textContent = 'Cool (<2%)';
-            }
-        }
-        
-        // 2s10s Yield Curve Spread
-        const curveEl = document.getElementById('curve-value');
-        const curveContext = document.getElementById('curve-context');
-        if (curveEl && tl.yield_curve) {
-            const curveStr = tl.yield_curve.value || '—';
-            const curveNum = parseFloat(curveStr.replace(/[^0-9.-]/g, ''));
-            curveEl.textContent = !isNaN(curveNum) ? `${curveNum.toFixed(0)}bp` : '—';
-            
-            // Color and context based on level
-            if (curveNum < -50) {
-                curveEl.className = 'regime-metric-value red';
-                if (curveContext) curveContext.textContent = 'Deep inversion';
-            } else if (curveNum < 0) {
-                curveEl.className = 'regime-metric-value yellow';
-                if (curveContext) curveContext.textContent = 'Inverted';
-            } else if (curveNum < 50) {
-                curveEl.className = 'regime-metric-value yellow';
-                if (curveContext) curveContext.textContent = 'Flat (0-50bp)';
-            } else {
-                curveEl.className = 'regime-metric-value green';
-                if (curveContext) curveContext.textContent = 'Steep (>50bp)';
-            }
-        }
-    }
-    
-    // AI Insight
-    const insightText = document.getElementById('insight-text');
-    const insightTime = document.getElementById('insight-time');
-    const implicationText = document.getElementById('implication-text');
-    
-    if (insightText) {
-        if (data.summary) {
-            insightText.textContent = data.summary;
-        } else if (data.analysis) {
-            const firstSentence = data.analysis.split('.')[0] + '.';
-            insightText.textContent = firstSentence;
-        } else {
-            insightText.textContent = 'Market analysis loading...';
-        }
-        if (insightTime) insightTime.textContent = formatTime();
-    }
-    
-    // Portfolio implication based on regime (mean-reversion / bearish bias strategy)
-    if (implicationText) {
-        const implications = {
-            'RISK-ON': 'Complacency rising—prime environment for mean reversion puts on extended names. Calls serve as hedges against short delta. Low VIX = cheap vol for long-dated protection.',
-            'CAUTIOUS': 'Inflection point. Tighten stops on existing puts, scale into hedges. Watch for breakdown confirmation before adding bearish exposure.',
-            'RISK-OFF': 'Thesis playing out—puts gaining. Consider taking profits on winners, let hedges (calls) decay. Elevated vol = expensive to initiate new positions.',
-        };
-        implicationText.textContent = implications[regimeLabel] || 'Monitoring for mean reversion setups.';
-    }
-    
-    // Regime change alert
-    if (data.regime_changed && data.regime_change_details) {
-        if (!dismissedAlertTimestamp || new Date(data.timestamp) > new Date(dismissedAlertTimestamp)) {
-            showRegimeAlert(data.regime_change_details);
-        }
-    }
-}
 
 // ============================================
 // TRADE PERFORMANCE (Closed Trades)
@@ -525,76 +312,6 @@ function processClosedTradesData(data) {
         }).join('');
     }
     
-    // ── Operating P&L (30-day net after costs) ──
-    renderOperatingPnl(data.trades || []);
-}
-
-function renderOperatingPnl(trades) {
-    const section = document.getElementById('ops-pnl-section');
-    if (!section) return;
-    
-    // Monthly infrastructure costs
-    const MONTHLY_COSTS = [
-        { name: 'Alpaca', amount: 99 },
-        { name: 'FMP', amount: 69 },
-    ];
-    const totalCosts = MONTHLY_COSTS.reduce((sum, c) => sum + c.amount, 0);
-    
-    // Calculate realized P&L from trades closed in the last 30 days
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    
-    let pnl30d = 0;
-    let tradeCount30d = 0;
-    
-    for (const t of trades) {
-        // exit_date may come as RFC 2822 ("Thu, 05 Feb 2026 15:54:21 GMT") or ISO string
-        let exitDate = null;
-        if (t.exit_date) {
-            exitDate = new Date(t.exit_date);
-            if (isNaN(exitDate.getTime())) exitDate = null;
-        }
-        if (exitDate && exitDate >= thirtyDaysAgo) {
-            pnl30d += t.pnl || 0;
-            tradeCount30d++;
-        }
-    }
-    
-    const netPnl = pnl30d - totalCosts;
-    
-    section.style.display = 'block';
-    
-    // Period label
-    const periodEl = document.getElementById('ops-pnl-period');
-    if (periodEl) {
-        periodEl.textContent = `${tradeCount30d} trades closed in last 30d`;
-    }
-    
-    // Gross P&L
-    const grossEl = document.getElementById('ops-gross-pnl');
-    if (grossEl) {
-        grossEl.textContent = formatCurrency(pnl30d);
-        grossEl.className = 'ops-pnl-value ' + (pnl30d >= 0 ? 'positive' : 'negative');
-    }
-    
-    // Costs
-    const costsEl = document.getElementById('ops-costs');
-    if (costsEl) {
-        costsEl.textContent = formatCurrency(-totalCosts);
-    }
-    
-    // Cost breakdown
-    const breakdownEl = document.getElementById('ops-breakdown');
-    if (breakdownEl) {
-        breakdownEl.textContent = MONTHLY_COSTS.map(c => `${c.name} $${c.amount}`).join(' · ');
-    }
-    
-    // Net P&L
-    const netEl = document.getElementById('ops-net-pnl');
-    if (netEl) {
-        netEl.textContent = formatCurrency(netPnl);
-        netEl.className = 'ops-pnl-value ' + (netPnl >= 0 ? 'positive' : 'negative');
-    }
 }
 
 // Render institutional-grade performance metrics
@@ -774,227 +491,33 @@ function renderPerformanceMetrics(metrics, tradeCount, winRate) {
 }
 
 // ============================================
-// REGIME PERFORMANCE (Resume Builder - Features 1-6)
-// ============================================
-
-let regimeEquityChart = null;
-
-const REGIME_COLORS = {
-    'RISK-ON': { bg: 'rgba(0, 168, 107, 0.18)', border: '#00a86b', text: '#00a86b', badge: 'risk-on' },
-    'CAUTIOUS': { bg: 'rgba(245, 166, 35, 0.22)', border: '#f5a623', text: '#f5a623', badge: 'cautious' },
-    'RISK-OFF': { bg: 'rgba(230, 57, 70, 0.18)', border: '#e63946', text: '#e63946', badge: 'risk-off' },
-};
-
-function processRegimePerformance(data) {
-    if (data.error && !data.by_regime) {
-        console.error('[Regime Perf] Error:', data.error);
-        return;
-    }
-
-    // ── Edge Summary Card ──
-    const edgeCard = document.getElementById('edge-card');
-    if (edgeCard && data.edge) {
-        const e = data.edge;
-        edgeCard.style.display = 'block';
-
-        // Total P&L
-        const pnlEl = document.getElementById('edge-total-pnl');
-        if (pnlEl && e.total_pnl !== undefined) {
-            pnlEl.textContent = formatCurrency(e.total_pnl);
-            pnlEl.className = 'edge-stat-value ' + (e.total_pnl >= 0 ? 'positive' : 'negative');
-        }
-
-        // Best environment
-        const bestEl = document.getElementById('edge-best-regime');
-        const bestDetail = document.getElementById('edge-best-detail');
-        if (bestEl && e.best_regime) {
-            bestEl.textContent = e.best_regime;
-            bestEl.className = 'edge-stat-value ' + (REGIME_COLORS[e.best_regime]?.badge || '');
-            if (bestDetail) {
-                let detail = 'Best Environment';
-                if (e.best_regime_wr) detail += ` (${e.best_regime_wr}% WR)`;
-                bestDetail.textContent = detail;
-            }
-        }
-
-        // Win rate
-        const wrEl = document.getElementById('edge-win-rate');
-        if (wrEl && e.overall_win_rate !== undefined) {
-            wrEl.textContent = e.overall_win_rate + '%';
-            wrEl.className = 'edge-stat-value ' + (e.overall_win_rate >= 55 ? 'positive' : '');
-        }
-
-        // Profit factor
-        const pfEl = document.getElementById('edge-profit-factor');
-        if (pfEl && e.profit_factor !== undefined) {
-            const pf = e.profit_factor;
-            pfEl.textContent = pf >= 999 ? '∞' : pf.toFixed(1) + 'x';
-            pfEl.className = 'edge-stat-value ' + (pf >= 1.5 ? 'positive' : pf >= 1.0 ? '' : 'negative');
-        }
-    }
-
-    // ── Performance-by-Regime Table (enriched with hold time & puts/calls) ──
-    const perfSection = document.getElementById('regime-perf-section');
-    const perfBody = document.getElementById('regime-perf-body');
-    if (perfBody && data.by_regime && Object.keys(data.by_regime).length > 0) {
-        perfSection.style.display = 'block';
-        const order = ['RISK-ON', 'CAUTIOUS', 'RISK-OFF'];
-        const sorted = Object.entries(data.by_regime).sort(
-            (a, b) => order.indexOf(a[0]) - order.indexOf(b[0])
-        );
-        perfBody.innerHTML = sorted.map(([regime, s]) => {
-            const rc = REGIME_COLORS[regime] || {};
-            const pnlClass = s.total_pnl >= 0 ? 'positive' : 'negative';
-            const hold = s.avg_hold_days !== null ? s.avg_hold_days + 'd' : '—';
-            const pc = `${s.puts || 0}P/${s.calls || 0}C`;
-            return `<tr>
-                <td><span class="regime-badge ${rc.badge || ''}">${regime}</span></td>
-                <td>${s.trades}</td>
-                <td>${s.win_rate.toFixed(0)}%</td>
-                <td class="${s.avg_return >= 0 ? 'positive' : 'negative'}">${s.avg_return >= 0 ? '+' : ''}${s.avg_return.toFixed(1)}%</td>
-                <td>${hold}</td>
-                <td>${pc}</td>
-                <td class="${pnlClass}">${formatCurrency(s.total_pnl)}</td>
-            </tr>`;
-        }).join('');
-    }
-
-    // ── Regime-Aware Equity Curve (from closed trades) ──
-    const chartSection = document.getElementById('regime-chart-section');
-    if (chartSection && data.equity_series && data.equity_series.length > 1 && typeof Chart !== 'undefined') {
-        chartSection.style.display = 'block';
-        renderRegimeEquityCurve(data.equity_series, data.regime_bands);
-    }
-
-}
-
-function renderRegimeEquityCurve(equitySeries, regimeBands) {
-    const canvas = document.getElementById('regime-equity-chart');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-
-    // Destroy previous chart
-    if (regimeEquityChart) {
-        regimeEquityChart.destroy();
-        regimeEquityChart = null;
-    }
-
-    // Build data as {x, y} for time-scale axis
-    const chartData = equitySeries.map(p => ({ x: p.date, y: p.pnl }));
-
-    // Build regime background bands as Chart.js annotations
-    const bandAnnotations = {};
-    if (regimeBands && regimeBands.length > 0) {
-        regimeBands.forEach((band, i) => {
-            const rc = REGIME_COLORS[band.regime] || {};
-            bandAnnotations['band' + i] = {
-                type: 'box',
-                xMin: band.start,
-                xMax: band.end,
-                backgroundColor: rc.bg || 'rgba(200,200,200,0.1)',
-                borderWidth: 0,
-                drawTime: 'beforeDatasetsDraw',
-            };
-        });
-    }
-
-    regimeEquityChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            datasets: [{
-                label: 'Cumulative P&L',
-                data: chartData,
-                borderColor: '#0066ff',
-                backgroundColor: 'rgba(0, 102, 255, 0.08)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.3,
-                pointRadius: 3,
-                pointHoverRadius: 6,
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { display: false },
-                annotation: {
-                    annotations: bandAnnotations,
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(ctx) {
-                            const val = ctx.parsed.y;
-                            return `P&L: ${val >= 0 ? '+' : ''}$${val.toFixed(0)}`;
-                        }
-                    }
-                },
-            },
-            scales: {
-                x: {
-                    type: 'time',
-                    time: {
-                        unit: 'day',
-                        displayFormats: { day: 'MMM d' },
-                        tooltipFormat: 'MMM d, yyyy',
-                    },
-                    display: true,
-                    grid: { display: false },
-                    ticks: {
-                        font: { size: 10, family: 'Inter' },
-                        color: '#999',
-                        maxTicksLimit: 8,
-                    }
-                },
-                y: {
-                    display: true,
-                    grid: { color: 'rgba(0,0,0,0.05)' },
-                    ticks: {
-                        font: { size: 10, family: 'Inter' },
-                        color: '#999',
-                        callback: function(val) { return (val >= 0 ? '+' : '') + '$' + val.toFixed(0); }
-                    }
-                }
-            }
-        }
-    });
-
-    // Build legend for regime bands
-    const legendEl = document.getElementById('regime-chart-legend');
-    if (legendEl) {
-        legendEl.innerHTML = ['RISK-ON', 'CAUTIOUS', 'RISK-OFF'].map(r => {
-            const rc = REGIME_COLORS[r];
-            return `<span class="chart-legend-item">
-                <span class="chart-legend-dot" style="background:${rc.border}"></span>${r}
-            </span>`;
-        }).join('');
-    }
-}
-
-// ============================================
-// INIT & REFRESH (4 endpoints)
+// INIT & REFRESH
 // ============================================
 
 async function initDashboardParallel() {
-    console.log('[Dashboard] Starting parallel load (v3 regime resume)...');
+    console.log('[Dashboard] Starting parallel load (performance-focused)...');
     const startTime = performance.now();
-    
+
     const fetches = [
         fetch('/api/positions').then(r => r.json()).catch(e => ({ error: e.message, positions: [] })),
-        fetch('/api/regime-analysis').then(r => r.json()).catch(e => ({ error: e.message })),
         fetch('/api/closed-trades').then(r => r.json()).catch(e => ({ error: e.message, trades: [] })),
-        fetch('/api/regime-performance').then(r => r.json()).catch(e => ({ error: e.message, by_regime: {} })),
+        fetch('/api/position-thesis').then(r => r.json()).catch(e => ({ error: e.message })),
     ];
-    
+
     try {
-        const [positionsData, marketData, tradesData, regimePerf] = await Promise.all(fetches);
-        
+        const [positionsData, tradesData, thesisData] = await Promise.all(fetches);
+
         processPositionsData(positionsData);
-        processMarketContextData(marketData);
         processClosedTradesData(tradesData);
-        processRegimePerformance(regimePerf);
-        
+
+        if (thesisData && thesisData.theses) {
+            Object.entries(thesisData.theses).forEach(([symbol, thesis]) => {
+                const safeId = symbol.replace(/[^a-zA-Z0-9]/g, '_');
+                const el = document.getElementById(`thesis-${safeId}`);
+                if (el) el.textContent = thesis;
+            });
+        }
+
         const elapsed = (performance.now() - startTime).toFixed(0);
         console.log(`[Dashboard] Load complete in ${elapsed}ms`);
     } catch (err) {
@@ -1009,19 +532,15 @@ initDashboardParallel();
 // REFRESH INTERVALS
 // ============================================
 
-// LIVE data: Positions refresh every 30 seconds (matches server cache TTL)
+// LIVE data: Positions refresh every 60 seconds (matches server cache TTL)
 setInterval(() => {
     fetch('/api/positions')
         .then(r => r.json())
         .then(processPositionsData)
         .catch(console.error);
-}, 30000);
+}, 60000);
 
-// Market context & trades: Refresh every 5 minutes
+// Trades: Refresh every 5 minutes
 setInterval(() => {
-    Promise.all([
-        fetch('/api/regime-analysis').then(r => r.json()).then(processMarketContextData).catch(console.error),
-        fetch('/api/closed-trades').then(r => r.json()).then(processClosedTradesData).catch(console.error),
-        fetch('/api/regime-performance').then(r => r.json()).then(processRegimePerformance).catch(console.error),
-    ]);
+    fetch('/api/closed-trades').then(r => r.json()).then(processClosedTradesData).catch(console.error);
 }, 300000);

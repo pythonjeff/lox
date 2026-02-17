@@ -26,11 +26,13 @@ def register_research_commands(app: typer.Typer) -> None:
     from lox.cli_commands.research.portfolio_cmd import register as register_portfolio
     from lox.cli_commands.research.chat_cmd import register as register_chat
     from lox.cli_commands.research.oi_scan_cmd import register as register_oi_scan
+    from lox.cli_commands.research.cvna_cmd import register as register_cvna
     
     register_regimes(research_app)
     register_ticker(research_app)
     register_portfolio(research_app)
     register_chat(research_app)
     register_oi_scan(research_app)
+    register_cvna(research_app)
     
     app.add_typer(research_app, name="research")

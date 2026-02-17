@@ -36,8 +36,8 @@ REGIME_WEIGHTS = {
 }
 
 # ── 12 domain names (ordered for display) ────────────────────────────────
-CORE_DOMAINS = ["growth", "inflation", "volatility", "credit", "rates", "funding"]
-EXTENDED_DOMAINS = ["consumer", "fiscal", "positioning", "monetary", "usd", "commodities"]
+CORE_DOMAINS = ["growth", "inflation", "volatility", "credit", "rates", "liquidity"]
+EXTENDED_DOMAINS = ["consumer", "fiscal", "usd", "commodities"]
 ALL_DOMAINS = CORE_DOMAINS + EXTENDED_DOMAINS
 
 
@@ -56,13 +56,11 @@ class UnifiedRegimeState:
     volatility: Optional[RegimeResult] = None
     credit: Optional[RegimeResult] = None
     rates: Optional[RegimeResult] = None
-    funding: Optional[RegimeResult] = None
+    liquidity: Optional[RegimeResult] = None
 
-    # Extended 6 (for overlay/context)
+    # Extended 4 (for overlay/context)
     consumer: Optional[RegimeResult] = None
     fiscal: Optional[RegimeResult] = None
-    positioning: Optional[RegimeResult] = None
-    monetary: Optional[RegimeResult] = None
     usd: Optional[RegimeResult] = None
     commodities: Optional[RegimeResult] = None
 
@@ -186,26 +184,25 @@ class UnifiedRegimeState:
                 params["equity_drift_adj"] -= 0.02
                 params["jump_prob_adj"] *= 1.3
 
-        # ── Funding regime adjustments (continuous score) ─────────────────
-        if self.funding:
-            if self.funding.score >= 75:
+        # ── Liquidity regime adjustments (continuous score) ────────────────
+        if self.liquidity:
+            if self.liquidity.score >= 75:
                 params["spread_drift_adj"] += 0.01
                 params["equity_drift_adj"] -= 0.03
                 params["jump_prob_adj"] *= 1.5
-                drivers["spread_drift_adj"].append(f"Funding({self.funding.score:.0f}) +1%")
-                drivers["equity_drift_adj"].append(f"Funding({self.funding.score:.0f}) -3%")
-                drivers["jump_prob_adj"].append(f"Funding({self.funding.score:.0f}) +50%")
-            elif self.funding.score >= 65:
-                # Structural tightening: RRP depleted + reserves thin
+                drivers["spread_drift_adj"].append(f"Liquidity({self.liquidity.score:.0f}) +1%")
+                drivers["equity_drift_adj"].append(f"Liquidity({self.liquidity.score:.0f}) -3%")
+                drivers["jump_prob_adj"].append(f"Liquidity({self.liquidity.score:.0f}) +50%")
+            elif self.liquidity.score >= 65:
                 params["spread_drift_adj"] += 0.005
                 params["equity_drift_adj"] -= 0.015
                 params["jump_prob_adj"] *= 1.25
-                drivers["spread_drift_adj"].append(f"Funding({self.funding.score:.0f}) +0.5%")
-                drivers["equity_drift_adj"].append(f"Funding({self.funding.score:.0f}) -1.5%")
-                drivers["jump_prob_adj"].append(f"Funding({self.funding.score:.0f}) +25%")
-            elif self.funding.score >= 55:
+                drivers["spread_drift_adj"].append(f"Liquidity({self.liquidity.score:.0f}) +0.5%")
+                drivers["equity_drift_adj"].append(f"Liquidity({self.liquidity.score:.0f}) -1.5%")
+                drivers["jump_prob_adj"].append(f"Liquidity({self.liquidity.score:.0f}) +25%")
+            elif self.liquidity.score >= 55:
                 params["spread_drift_adj"] += 0.003
-                drivers["spread_drift_adj"].append(f"Funding({self.funding.score:.0f}) +0.3%")
+                drivers["spread_drift_adj"].append(f"Liquidity({self.liquidity.score:.0f}) +0.3%")
 
         # ── Consumer regime adjustments ───────────────────────────────────
         if self.consumer and self.consumer.score > 65:
@@ -216,17 +213,6 @@ class UnifiedRegimeState:
         elif self.consumer and self.consumer.score < 35:
             params["equity_drift_adj"] += 0.01
             drivers["equity_drift_adj"].append(f"Consumer({self.consumer.score:.0f}) +1%")
-
-        # ── Positioning regime adjustments ────────────────────────────────
-        if self.positioning:
-            if self.positioning.score > 65:
-                params["jump_prob_adj"] *= 1.50
-                drivers["jump_prob_adj"].append(f"Positioning({self.positioning.score:.0f}) +50%")
-                params["equity_vol_adj"] *= 1.20
-                drivers["equity_vol_adj"].append(f"Positioning({self.positioning.score:.0f}) +20%")
-            elif self.positioning.score < 30:
-                params["jump_prob_adj"] *= 1.25  # complacency is a risk
-                drivers["jump_prob_adj"].append(f"Positioning({self.positioning.score:.0f}) +25%")
 
         # ── USD regime adjustments ────────────────────────────────────────
         if self.usd:
@@ -287,7 +273,10 @@ def build_unified_regime_state(
     refresh: bool = False,
 ) -> UnifiedRegimeState:
     """
-    Build unified regime state by running all 12 regime classifiers.
+    Build unified regime state by running all regime classifiers.
+
+    Uses ThreadPoolExecutor to run independent regime builders in parallel,
+    reducing cold-cache latency from ~10-15s to ~3-5s.
 
     Args:
         settings: Config settings (loaded if None)
@@ -297,14 +286,18 @@ def build_unified_regime_state(
     Returns:
         UnifiedRegimeState with all regime classifications
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import time as _time
+
     if settings is None:
         settings = load_settings()
 
+    _t0 = _time.monotonic()
     asof = datetime.now().strftime("%Y-%m-%d")
     state = UnifiedRegimeState(asof=asof)
 
     # ═══════════════════════════════════════════════════════════════════════
-    # Fetch macro data (shared by Growth + Inflation)
+    # Phase 1: Fetch macro data (shared by Growth, Inflation, Rates, Consumer)
     # ═══════════════════════════════════════════════════════════════════════
     macro_state = None
     try:
@@ -313,499 +306,668 @@ def build_unified_regime_state(
     except Exception as e:
         logger.warning(f"Failed to build macro state: {e}")
 
-    # ── Growth Regime ─────────────────────────────────────────────────────
-    try:
-        from lox.growth.regime import classify_growth
+    _t_macro = _time.monotonic()
+    logger.info(f"[Perf] macro_state built in {(_t_macro - _t0)*1000:.0f}ms")
 
-        payrolls_3m_level: float | None = None
-        ism_val: float | None = None
-        claims_4wk: float | None = None
-        indpro_yoy: float | None = None
+    # ═══════════════════════════════════════════════════════════════════════
+    # Phase 2: Run all regime builders in parallel
+    # ═══════════════════════════════════════════════════════════════════════
 
-        if macro_state:
-            inp = macro_state.inputs
-            # Convert payroll % to approximate level change in thousands
-            # PAYEMS is ~157,000K. payrolls_3m_annualized is % growth.
-            # Monthly level change ≈ (PAYEMS_level * pct / 100) / 12
-            if inp.payrolls_3m_annualized is not None:
-                payrolls_3m_level = inp.payrolls_3m_annualized * 157_000 / 100 / 12
-            claims_4wk = inp.initial_claims_4w
-
-        # Try to get ISM from Trading Economics
+    def _build_growth():
         try:
-            from lox.altdata.trading_economics import get_ism_manufacturing
-            ism_val = get_ism_manufacturing()
-        except Exception:
-            pass
+            from lox.growth.regime import classify_growth
 
-        # Try INDPRO from FRED
-        try:
-            from lox.data.fred import FredClient
-            fred = FredClient(api_key=settings.FRED_API_KEY)
-            indpro_df = fred.fetch_series("INDPRO", start_date=start_date, refresh=refresh)
-            if indpro_df is not None and len(indpro_df) >= 13:
-                indpro_df = indpro_df.sort_values("date")
-                latest = indpro_df["value"].iloc[-1]
-                yr_ago = indpro_df["value"].iloc[-13]
-                if yr_ago > 0:
-                    indpro_yoy = (latest / yr_ago - 1.0) * 100.0
-        except Exception:
-            pass
+            payrolls_3m_level = None
+            ism_val = None
+            claims_4wk = None
+            indpro_yoy = None
+            payrolls_mom_val = None
+            unemployment_val = None
+            lei_yoy_val = None
 
-        state.growth = classify_growth(
-            payrolls_3m_ann=payrolls_3m_level,
-            ism=ism_val,
-            claims_4wk=claims_4wk,
-            indpro_yoy=indpro_yoy,
-        )
-    except Exception as e:
-        logger.warning(f"Failed to build growth regime: {e}")
+            if macro_state:
+                inp = macro_state.inputs
+                if inp.payrolls_3m_annualized is not None:
+                    payrolls_3m_level = inp.payrolls_3m_annualized * 157_000 / 100 / 12
+                claims_4wk = inp.initial_claims_4w
+                payrolls_mom_val = inp.payrolls_mom
+                unemployment_val = inp.unemployment_rate
 
-    # ── Inflation Regime ──────────────────────────────────────────────────
-    try:
-        from lox.inflation.regime import classify_inflation
-
-        cpi_yoy: float | None = None
-        core_pce_yoy: float | None = None
-        breakeven_5y: float | None = None
-        ppi_yoy: float | None = None
-
-        if macro_state:
-            inp = macro_state.inputs
-            cpi_yoy = inp.cpi_yoy
-            breakeven_5y = inp.breakeven_5y
-
-        # Core PCE from FRED
-        try:
-            from lox.data.fred import FredClient
-            fred = FredClient(api_key=settings.FRED_API_KEY)
-            pce_df = fred.fetch_series("PCEPILFE", start_date=start_date, refresh=refresh)
-            if pce_df is not None and len(pce_df) >= 13:
-                pce_df = pce_df.sort_values("date")
-                core_pce_yoy = (pce_df["value"].iloc[-1] / pce_df["value"].iloc[-13] - 1.0) * 100.0
-        except Exception:
-            pass
-
-        # PPI from FRED
-        try:
-            from lox.data.fred import FredClient
-            fred = FredClient(api_key=settings.FRED_API_KEY)
-            ppi_df = fred.fetch_series("PPIFIS", start_date=start_date, refresh=refresh)
-            if ppi_df is not None and len(ppi_df) >= 13:
-                ppi_df = ppi_df.sort_values("date")
-                ppi_yoy = (ppi_df["value"].iloc[-1] / ppi_df["value"].iloc[-13] - 1.0) * 100.0
-        except Exception:
-            pass
-
-        state.inflation = classify_inflation(
-            cpi_yoy=cpi_yoy,
-            core_pce_yoy=core_pce_yoy,
-            breakeven_5y=breakeven_5y,
-            ppi_yoy=ppi_yoy,
-        )
-    except Exception as e:
-        logger.warning(f"Failed to build inflation regime: {e}")
-
-    # ── Macro Quadrant (derived) ──────────────────────────────────────────
-    state.macro_quadrant = _compute_macro_quadrant(state.growth, state.inflation)
-
-    # ── Volatility Regime ─────────────────────────────────────────────────
-    try:
-        from lox.volatility.signals import build_volatility_state
-        from lox.volatility.regime import classify_volatility_regime
-
-        vol_state = build_volatility_state(settings=settings, start_date=start_date, refresh=refresh)
-        vol_regime = classify_volatility_regime(vol_state.inputs)
-
-        inp = vol_state.inputs
-        state.volatility = RegimeResult(
-            name=vol_regime.name,
-            label=vol_regime.label,
-            description=vol_regime.description,
-            score=vol_regime.score if hasattr(vol_regime, "score") else (80 if "shock" in vol_regime.name else 50),
-            domain="volatility",
-            tags=list(vol_regime.tags) if hasattr(vol_regime, "tags") else [],
-            metrics={
-                "VIX": f"{inp.vix:.1f}" if inp.vix is not None else None,
-                "VIX z": f"{inp.z_vix:+.1f}" if inp.z_vix is not None else None,
-                "VIX 5d Chg": f"{inp.vix_chg_5d_pct:+.1f}%" if inp.vix_chg_5d_pct is not None else None,
-                "Spike 20d": f"{inp.spike_20d_pct:.0f}%" if inp.spike_20d_pct is not None else None,
-                "Term Spread": f"{inp.vix_term_spread:+.2f}" if inp.vix_term_spread is not None else None,
-            },
-        )
-    except Exception as e:
-        logger.warning(f"Failed to build volatility regime: {e}")
-
-    # ── Credit Regime ─────────────────────────────────────────────────────
-    try:
-        from lox.credit.regime import classify_credit
-        from lox.data.fred import FredClient
-        import pandas as pd
-
-        fred = FredClient(api_key=settings.FRED_API_KEY)
-
-        hy_df = fred.fetch_series("BAMLH0A0HYM2", start_date=start_date, refresh=refresh)
-        bbb_df = fred.fetch_series("BAMLC0A4CBBB", start_date=start_date, refresh=refresh)
-        aaa_df = fred.fetch_series("BAMLC0A1CAAA", start_date=start_date, refresh=refresh)
-
-        hy_oas_val: float | None = None
-        bbb_oas_val: float | None = None
-        aaa_oas_val: float | None = None
-        hy_30d_chg: float | None = None
-        hy_90d_pctl: float | None = None
-
-        if hy_df is not None and not hy_df.empty:
-            hy_df = hy_df.sort_values("date")
-            # HY OAS is already in percentage points (e.g., 3.50 = 350 bps)
-            hy_oas_val = float(hy_df["value"].iloc[-1]) * 100  # convert to bps
-            if len(hy_df) >= 22:
-                hy_30d_chg = (float(hy_df["value"].iloc[-1]) - float(hy_df["value"].iloc[-22])) * 100
-            if len(hy_df) >= 63:
-                recent = hy_df["value"].iloc[-63:]
-                hy_90d_pctl = float((recent <= hy_df["value"].iloc[-1]).mean() * 100)
-
-        if bbb_df is not None and not bbb_df.empty:
-            bbb_oas_val = float(bbb_df.sort_values("date")["value"].iloc[-1]) * 100
-
-        if aaa_df is not None and not aaa_df.empty:
-            aaa_oas_val = float(aaa_df.sort_values("date")["value"].iloc[-1]) * 100
-
-        # ── Layer 3: Shadow credit data ───────────────────────────────
-        ccc_oas_val: float | None = None
-        bb_oas_val: float | None = None
-        single_b_oas_val: float | None = None
-        cc_delinq_val: float | None = None
-        sloos_val: float | None = None
-
-        try:
-            ccc_df = fred.fetch_series("BAMLH0A3HYC", start_date=start_date, refresh=refresh)
-            if ccc_df is not None and not ccc_df.empty:
-                ccc_oas_val = float(ccc_df.sort_values("date")["value"].iloc[-1]) * 100
-        except Exception:
-            pass
-
-        try:
-            bb_df = fred.fetch_series("BAMLH0A1HYBB", start_date=start_date, refresh=refresh)
-            if bb_df is not None and not bb_df.empty:
-                bb_oas_val = float(bb_df.sort_values("date")["value"].iloc[-1]) * 100
-        except Exception:
-            pass
-
-        try:
-            b_df = fred.fetch_series("BAMLH0A2HYB", start_date=start_date, refresh=refresh)
-            if b_df is not None and not b_df.empty:
-                single_b_oas_val = float(b_df.sort_values("date")["value"].iloc[-1]) * 100
-        except Exception:
-            pass
-
-        try:
-            delinq_df = fred.fetch_series("DRCCLACBS", start_date=start_date, refresh=refresh)
-            if delinq_df is not None and not delinq_df.empty:
-                cc_delinq_val = float(delinq_df.sort_values("date")["value"].iloc[-1])
-        except Exception:
-            pass
-
-        try:
-            sloos_df = fred.fetch_series("DRTSCLCC", start_date=start_date, refresh=refresh)
-            if sloos_df is not None and not sloos_df.empty:
-                sloos_val = float(sloos_df.sort_values("date")["value"].iloc[-1])
-        except Exception:
-            pass
-
-        state.credit = classify_credit(
-            hy_oas=hy_oas_val,
-            bbb_oas=bbb_oas_val,
-            aaa_oas=aaa_oas_val,
-            hy_oas_30d_chg=hy_30d_chg,
-            hy_oas_90d_percentile=hy_90d_pctl,
-            # Layer 3: Shadow credit
-            ccc_oas=ccc_oas_val,
-            bb_oas=bb_oas_val,
-            single_b_oas=single_b_oas_val,
-            cc_delinquency_rate=cc_delinq_val,
-            sloos_tightening=sloos_val,
-        )
-    except Exception as e:
-        logger.warning(f"Failed to build credit regime: {e}")
-
-    # ── Rates Regime ──────────────────────────────────────────────────────
-    try:
-        from lox.rates.signals import build_rates_state
-        from lox.rates.regime import classify_rates_regime
-
-        rates_state = build_rates_state(settings=settings, start_date=start_date, refresh=refresh)
-        rates_regime = classify_rates_regime(rates_state.inputs)
-
-        inp = rates_state.inputs
-        state.rates = RegimeResult(
-            name=rates_regime.name,
-            label=rates_regime.label,
-            description=rates_regime.description,
-            score=rates_regime.score if hasattr(rates_regime, "score") else 50,
-            domain="rates",
-            tags=list(rates_regime.tags) if hasattr(rates_regime, "tags") else [],
-            metrics={
-                "10Y": f"{inp.ust_10y:.2f}%" if inp.ust_10y is not None else None,
-                "2Y": f"{inp.ust_2y:.2f}%" if inp.ust_2y is not None else None,
-                "3M": f"{inp.ust_3m:.2f}%" if inp.ust_3m is not None else None,
-                "2s10s": f"{inp.curve_2s10s * 100:+.0f}bp" if inp.curve_2s10s is not None else None,
-                "10Y 20d Chg": f"{inp.ust_10y_chg_20d * 100:+.0f}bp" if inp.ust_10y_chg_20d is not None else None,
-            },
-        )
-    except Exception as e:
-        logger.warning(f"Failed to build rates regime: {e}")
-
-    # ── Funding Regime ────────────────────────────────────────────────────
-    try:
-        from lox.funding.signals import build_funding_state
-        from lox.funding.regime import classify_funding_regime
-
-        funding_state = build_funding_state(settings=settings, start_date=start_date, refresh=refresh)
-        # Pass full inputs (corridor dynamics + structural liquidity amplifiers)
-        funding_regime = classify_funding_regime(funding_state.inputs)
-
-        inp = funding_state.inputs
-        tags = []
-        if funding_regime.score >= 75:
-            tags.append("risk_off")
-        if funding_regime.score >= 65:
-            tags.append("structural_tightening")
-
-        state.funding = RegimeResult(
-            name=funding_regime.name,
-            label=funding_regime.label,
-            description=funding_regime.description if hasattr(funding_regime, "description") else "",
-            score=funding_regime.score,
-            domain="funding",
-            tags=tags,
-            metrics={
-                "SOFR": f"{inp.sofr:.2f}%" if inp.sofr is not None else None,
-                "EFFR": f"{inp.effr:.2f}%" if inp.effr is not None else None,
-                "IORB": f"{inp.iorb:.2f}%" if inp.iorb is not None else None,
-                "Corridor": f"{inp.spread_corridor_bps:+.1f}bp" if inp.spread_corridor_bps is not None else None,
-                "RRP": f"${inp.on_rrp_usd_bn / 1000:.0f}B" if inp.on_rrp_usd_bn is not None else None,
-                "Reserves": f"${inp.bank_reserves_usd_bn / 1_000_000:.1f}T" if inp.bank_reserves_usd_bn is not None else None,
-            },
-        )
-    except Exception as e:
-        logger.warning(f"Failed to build funding regime: {e}")
-
-    # ── Consumer Regime (replaces Housing) ────────────────────────────────
-    try:
-        from lox.consumer.regime import classify_consumer
-
-        michigan_sent: float | None = None
-        michigan_exp: float | None = None
-        retail_mom: float | None = None
-        personal_spend: float | None = None
-        cc_debt_yoy: float | None = None
-        mtg_30y: float | None = None
-
-        # Michigan Sentiment from FRED (fallback for TE)
-        try:
-            from lox.data.fred import FredClient
-            fred = FredClient(api_key=settings.FRED_API_KEY)
-            sent_df = fred.fetch_series("UMCSENT", start_date=start_date, refresh=refresh)
-            if sent_df is not None and not sent_df.empty:
-                michigan_sent = float(sent_df.sort_values("date")["value"].iloc[-1])
-        except Exception:
-            pass
-
-        # Try TE for expectations
-        try:
-            from lox.altdata.trading_economics import get_michigan_expectations
-            michigan_exp = get_michigan_expectations()
-        except Exception:
-            pass
-
-        # Retail sales from FRED
-        try:
-            from lox.data.fred import FredClient
-            fred = FredClient(api_key=settings.FRED_API_KEY)
-            rs_df = fred.fetch_series("RSXFS", start_date=start_date, refresh=refresh)
-            if rs_df is not None and len(rs_df) >= 2:
-                rs_df = rs_df.sort_values("date")
-                retail_mom = (rs_df["value"].iloc[-1] / rs_df["value"].iloc[-2] - 1.0) * 100.0
-        except Exception:
-            pass
-
-        # Consumer credit (for YoY change)
-        try:
-            from lox.data.fred import FredClient
-            fred = FredClient(api_key=settings.FRED_API_KEY)
-            cc_df = fred.fetch_series("TOTALSL", start_date=start_date, refresh=refresh)
-            if cc_df is not None and len(cc_df) >= 13:
-                cc_df = cc_df.sort_values("date")
-                cc_debt_yoy = (cc_df["value"].iloc[-1] / cc_df["value"].iloc[-13] - 1.0) * 100.0
-        except Exception:
-            pass
-
-        # Mortgage rate from macro_state or FRED
-        if macro_state and macro_state.inputs.mortgage_30y:
-            mtg_30y = macro_state.inputs.mortgage_30y
-        else:
             try:
-                from lox.data.fred import FredClient
-                fred = FredClient(api_key=settings.FRED_API_KEY)
-                mtg_df = fred.fetch_series("MORTGAGE30US", start_date=start_date, refresh=refresh)
-                if mtg_df is not None and not mtg_df.empty:
-                    mtg_30y = float(mtg_df.sort_values("date")["value"].iloc[-1])
+                from lox.altdata.trading_economics import get_ism_manufacturing
+                ism_val = get_ism_manufacturing()
             except Exception:
                 pass
 
-        state.consumer = classify_consumer(
-            michigan_sentiment=michigan_sent,
-            michigan_expectations=michigan_exp,
-            retail_sales_control_mom=retail_mom,
-            personal_spending_mom=personal_spend,
-            credit_card_debt_yoy_chg=cc_debt_yoy,
-            mortgage_30y=mtg_30y,
-        )
-    except Exception as e:
-        logger.warning(f"Failed to build consumer regime: {e}")
+            try:
+                from lox.data.fred import FredClient
+                fred = FredClient(api_key=settings.FRED_API_KEY)
+                indpro_df = fred.fetch_series("INDPRO", start_date=start_date, refresh=refresh)
+                if indpro_df is not None and len(indpro_df) >= 13:
+                    indpro_df = indpro_df.sort_values("date")
+                    latest = indpro_df["value"].iloc[-1]
+                    yr_ago = indpro_df["value"].iloc[-13]
+                    if yr_ago > 0:
+                        indpro_yoy = (latest / yr_ago - 1.0) * 100.0
+            except Exception:
+                pass
 
-    # ── Fiscal Regime (FPI scoring engine) ────────────────────────────────
-    try:
-        from lox.fiscal.signals import build_fiscal_state as _build_fiscal_state
-        from lox.fiscal.scoring import score_fiscal_regime as _score_fiscal
+            try:
+                import pandas as _pd_lei
+                from lox.data.fred import FredClient
+                fred = FredClient(api_key=settings.FRED_API_KEY)
+                lei_df = fred.fetch_series("USSLIND", start_date=start_date, refresh=refresh)
+                if lei_df is not None and len(lei_df) >= 13:
+                    lei_df = lei_df.sort_values("date")
+                    latest_date = _pd_lei.to_datetime(lei_df["date"].iloc[-1])
+                    if (_pd_lei.Timestamp.now() - latest_date).days < 180:
+                        lei_yoy_val = (lei_df["value"].iloc[-1] / lei_df["value"].iloc[-13] - 1.0) * 100.0
+            except Exception:
+                pass
 
-        fiscal_st = _build_fiscal_state(settings=settings, start_date="2011-01-01", refresh=refresh)
-        fiscal_sc = _score_fiscal(fiscal_st.inputs)
+            ism_new_orders_val = None
+            try:
+                from lox.altdata.trading_economics import _fmp_latest_actual
+                ism_new_orders_val = _fmp_latest_actual(["ism", "new", "orders"])
+            except Exception:
+                pass
 
-        state.fiscal = RegimeResult(
-            name=fiscal_sc.regime_name,
-            label=fiscal_sc.regime_label,
-            description=fiscal_sc.regime_description,
-            score=fiscal_sc.fpi,
-            domain="fiscal",
-            tags=["risk_off"] if fiscal_sc.fpi >= 65 else [],
-            metrics={
-                "FPI": f"{fiscal_sc.fpi:.0f}/100",
-                "Deficit 12m": f"${fiscal_st.inputs.deficit_12m / 1e6:.2f}T" if fiscal_st.inputs.deficit_12m else None,
-                "z Deficit": f"{fiscal_st.inputs.z_deficit_12m:+.2f}" if fiscal_st.inputs.z_deficit_12m is not None else None,
-            },
-        )
-    except Exception as e:
-        logger.warning(f"Failed to build fiscal regime: {e}")
+            retail_mom_val = None
+            try:
+                from lox.altdata.trading_economics import get_retail_sales_control
+                retail_mom_val = get_retail_sales_control()
+            except Exception:
+                pass
 
-    # ── Positioning Regime ────────────────────────────────────────────────
-    try:
-        from lox.positioning.regime import classify_positioning
+            mich_exp_val = None
+            try:
+                from lox.altdata.trading_economics import get_michigan_expectations
+                mich_exp_val = get_michigan_expectations()
+            except Exception:
+                pass
 
-        vix_term_slope: float | None = None
-        put_call: float | None = None
-        aaii_bull: float | None = None
+            result = classify_growth(
+                payrolls_3m_ann=payrolls_3m_level,
+                ism=ism_val,
+                claims_4wk=claims_4wk,
+                indpro_yoy=indpro_yoy,
+                payrolls_mom=payrolls_mom_val,
+                unemployment_rate=unemployment_val,
+                lei_yoy=lei_yoy_val,
+                ism_new_orders=ism_new_orders_val,
+            )
 
-        # VIX term slope from volatility state
-        if state.volatility and state.volatility.metrics:
-            # Try to compute from VIX and term spread
-            vix_val = state.volatility.metrics.get("VIX")
-            term_spread_str = state.volatility.metrics.get("Term Spread")
-            if vix_val and term_spread_str:
+            if result:
+                if macro_state:
+                    inp_m = macro_state.inputs
+                    result.metrics["curve_2s10s"] = inp_m.curve_2s10s
+                    result.metrics["hy_oas"] = inp_m.hy_oas * 100 if inp_m.hy_oas is not None else None
+                    result.metrics["real_yield"] = inp_m.real_yield_proxy_10y
+                    result.metrics["vix"] = inp_m.vix
+                else:
+                    result.metrics["curve_2s10s"] = None
+                    result.metrics["hy_oas"] = None
+                    result.metrics["real_yield"] = None
+                    result.metrics["vix"] = None
+                result.metrics["retail_sales_mom"] = retail_mom_val
+                result.metrics["consumer_expectations"] = mich_exp_val
+            return result
+        except Exception as e:
+            logger.warning(f"Failed to build growth regime: {e}")
+            return None
+
+    def _build_inflation():
+        try:
+            from lox.inflation.regime import classify_inflation
+
+            cpi_yoy = None
+            core_pce_yoy = None
+            breakeven_5y = None
+            ppi_yoy = None
+            core_cpi_yoy_val = None
+            median_cpi_yoy_val = None
+            cpi_3m_ann_val = None
+            cpi_6m_ann_val = None
+            breakeven_5y5y_val = None
+            breakeven_10y_val = None
+            trimmed_mean_pce_val = None
+            eff_ff_val = None
+
+            if macro_state:
+                inp = macro_state.inputs
+                cpi_yoy = inp.cpi_yoy
+                breakeven_5y = inp.breakeven_5y
+                core_cpi_yoy_val = inp.core_cpi_yoy
+                median_cpi_yoy_val = inp.median_cpi_yoy
+                cpi_3m_ann_val = inp.cpi_3m_annualized
+                cpi_6m_ann_val = inp.cpi_6m_annualized
+                breakeven_5y5y_val = inp.breakeven_5y5y
+                breakeven_10y_val = inp.breakeven_10y
+                eff_ff_val = inp.eff_fed_funds
+
+            try:
+                from lox.data.fred import FredClient
+                fred = FredClient(api_key=settings.FRED_API_KEY)
+                pce_df = fred.fetch_series("PCEPILFE", start_date=start_date, refresh=refresh)
+                if pce_df is not None and len(pce_df) >= 13:
+                    pce_df = pce_df.sort_values("date")
+                    core_pce_yoy = (pce_df["value"].iloc[-1] / pce_df["value"].iloc[-13] - 1.0) * 100.0
+            except Exception:
+                pass
+
+            try:
+                from lox.data.fred import FredClient
+                fred = FredClient(api_key=settings.FRED_API_KEY)
+                tm_df = fred.fetch_series("PCETRIM12M159SFRBDAL", start_date=start_date, refresh=refresh)
+                if tm_df is not None and not tm_df.empty:
+                    trimmed_mean_pce_val = float(tm_df.sort_values("date")["value"].iloc[-1])
+            except Exception:
+                pass
+
+            try:
+                from lox.data.fred import FredClient
+                fred = FredClient(api_key=settings.FRED_API_KEY)
+                ppi_df = fred.fetch_series("PPIFIS", start_date=start_date, refresh=refresh)
+                if ppi_df is not None and len(ppi_df) >= 13:
+                    ppi_df = ppi_df.sort_values("date")
+                    ppi_yoy = (ppi_df["value"].iloc[-1] / ppi_df["value"].iloc[-13] - 1.0) * 100.0
+            except Exception:
+                pass
+
+            oil_yoy_val = None
+            try:
+                from lox.data.fred import FredClient
+                fred = FredClient(api_key=settings.FRED_API_KEY)
+                oil_df = fred.fetch_series("DCOILWTICO", start_date=start_date, refresh=refresh)
+                if oil_df is not None and len(oil_df) >= 252:
+                    oil_df = oil_df.sort_values("date")
+                    oil_latest = oil_df["value"].iloc[-1]
+                    oil_yr_ago = oil_df["value"].iloc[-252]
+                    if oil_yr_ago > 0:
+                        oil_yoy_val = (oil_latest / oil_yr_ago - 1.0) * 100.0
+            except Exception:
+                pass
+
+            result = classify_inflation(
+                cpi_yoy=cpi_yoy,
+                core_pce_yoy=core_pce_yoy,
+                breakeven_5y=breakeven_5y,
+                ppi_yoy=ppi_yoy,
+                core_cpi_yoy=core_cpi_yoy_val,
+                trimmed_mean_pce_yoy=trimmed_mean_pce_val,
+                median_cpi_yoy=median_cpi_yoy_val,
+                cpi_3m_ann=cpi_3m_ann_val,
+                cpi_6m_ann=cpi_6m_ann_val,
+                breakeven_5y5y=breakeven_5y5y_val,
+                breakeven_10y=breakeven_10y_val,
+                oil_price_yoy_pct=oil_yoy_val,
+            )
+
+            if result:
+                result.metrics["oil_yoy"] = oil_yoy_val
+                if eff_ff_val is not None and cpi_yoy is not None:
+                    result.metrics["real_fed_funds"] = round(eff_ff_val - cpi_yoy, 2)
+                else:
+                    result.metrics["real_fed_funds"] = None
+                if breakeven_10y_val is not None and breakeven_5y is not None:
+                    result.metrics["be_slope"] = round(breakeven_10y_val - breakeven_5y, 3)
+                else:
+                    result.metrics["be_slope"] = None
+            return result
+        except Exception as e:
+            logger.warning(f"Failed to build inflation regime: {e}")
+            return None
+
+    def _build_volatility():
+        try:
+            from lox.volatility.signals import build_volatility_state
+            from lox.volatility.regime import classify_volatility_regime
+
+            vol_state = build_volatility_state(settings=settings, start_date=start_date, refresh=refresh)
+            vol_regime = classify_volatility_regime(vol_state.inputs)
+
+            inp = vol_state.inputs
+            _z = inp.z_vix if inp.z_vix is not None else 0
+            _vol_score = max(0, min(100, 50 + _z * 15))
+            if inp.vol_pressure_score is not None:
+                _vol_score = max(0, min(100, 50 + inp.vol_pressure_score * 15))
+            return RegimeResult(
+                name=vol_regime.name,
+                label=vol_regime.label,
+                description=vol_regime.description,
+                score=_vol_score,
+                domain="volatility",
+                tags=list(vol_regime.tags) if hasattr(vol_regime, "tags") else [],
+                metrics={
+                    "VIX": f"{inp.vix:.1f}" if inp.vix is not None else None,
+                    "VIX z": f"{inp.z_vix:+.1f}" if inp.z_vix is not None else None,
+                    "VX Contango": f"{inp.vx_contango_pct:+.1f}%" if inp.vx_contango_pct is not None else None,
+                    "Spot Basis": f"{inp.spot_basis_pct:+.1f}%" if inp.spot_basis_pct is not None else None,
+                    "9d/VIX Ratio": f"{inp.vix9d_vix_ratio:.2f}" if inp.vix9d_vix_ratio is not None else None,
+                    "Term Spread": f"{inp.vix_term_spread:+.2f}" if inp.vix_term_spread is not None else None,
+                    "VIX 5d Chg": f"{inp.vix_chg_5d_pct:+.1f}%" if inp.vix_chg_5d_pct is not None else None,
+                    "Spike 20d": f"{inp.spike_20d_pct:.0f}%" if inp.spike_20d_pct is not None else None,
+                    "VIX 9d": f"{inp.vix9d:.1f}" if inp.vix9d is not None else None,
+                    "VIX 3m": f"{inp.vix3m:.1f}" if inp.vix3m is not None else None,
+                    "VX M1": f"{inp.vx_m1:.2f}" if inp.vx_m1 is not None else None,
+                    "VX M2": f"{inp.vx_m2:.2f}" if inp.vx_m2 is not None else None,
+                    "Vol Pressure": f"{inp.vol_pressure_score:+.2f}" if inp.vol_pressure_score is not None else None,
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to build volatility regime: {e}")
+            return None
+
+    def _build_credit():
+        try:
+            from lox.credit.regime import classify_credit
+            from lox.data.fred import FredClient
+            import pandas as pd
+
+            fred = FredClient(api_key=settings.FRED_API_KEY)
+
+            hy_df = fred.fetch_series("BAMLH0A0HYM2", start_date=start_date, refresh=refresh)
+            bbb_df = fred.fetch_series("BAMLC0A4CBBB", start_date=start_date, refresh=refresh)
+            aaa_df = fred.fetch_series("BAMLC0A1CAAA", start_date=start_date, refresh=refresh)
+
+            hy_oas_val = None
+            bbb_oas_val = None
+            aaa_oas_val = None
+            hy_30d_chg = None
+            hy_90d_pctl = None
+
+            if hy_df is not None and not hy_df.empty:
+                hy_df = hy_df.sort_values("date")
+                hy_oas_val = float(hy_df["value"].iloc[-1]) * 100
+                if len(hy_df) >= 22:
+                    hy_30d_chg = (float(hy_df["value"].iloc[-1]) - float(hy_df["value"].iloc[-22])) * 100
+                if len(hy_df) >= 63:
+                    recent = hy_df["value"].iloc[-63:]
+                    hy_90d_pctl = float((recent <= hy_df["value"].iloc[-1]).mean() * 100)
+
+            if bbb_df is not None and not bbb_df.empty:
+                bbb_oas_val = float(bbb_df.sort_values("date")["value"].iloc[-1]) * 100
+
+            if aaa_df is not None and not aaa_df.empty:
+                aaa_oas_val = float(aaa_df.sort_values("date")["value"].iloc[-1]) * 100
+
+            ccc_oas_val = None
+            bb_oas_val = None
+            single_b_oas_val = None
+            cc_delinq_val = None
+            sloos_val = None
+
+            try:
+                ccc_df = fred.fetch_series("BAMLH0A3HYC", start_date=start_date, refresh=refresh)
+                if ccc_df is not None and not ccc_df.empty:
+                    ccc_oas_val = float(ccc_df.sort_values("date")["value"].iloc[-1]) * 100
+            except Exception:
+                pass
+
+            try:
+                bb_df = fred.fetch_series("BAMLH0A1HYBB", start_date=start_date, refresh=refresh)
+                if bb_df is not None and not bb_df.empty:
+                    bb_oas_val = float(bb_df.sort_values("date")["value"].iloc[-1]) * 100
+            except Exception:
+                pass
+
+            try:
+                b_df = fred.fetch_series("BAMLH0A2HYB", start_date=start_date, refresh=refresh)
+                if b_df is not None and not b_df.empty:
+                    single_b_oas_val = float(b_df.sort_values("date")["value"].iloc[-1]) * 100
+            except Exception:
+                pass
+
+            try:
+                delinq_df = fred.fetch_series("DRCCLACBS", start_date=start_date, refresh=refresh)
+                if delinq_df is not None and not delinq_df.empty:
+                    cc_delinq_val = float(delinq_df.sort_values("date")["value"].iloc[-1])
+            except Exception:
+                pass
+
+            try:
+                sloos_df = fred.fetch_series("DRTSCLCC", start_date=start_date, refresh=refresh)
+                if sloos_df is not None and not sloos_df.empty:
+                    sloos_val = float(sloos_df.sort_values("date")["value"].iloc[-1])
+            except Exception:
+                pass
+
+            return classify_credit(
+                hy_oas=hy_oas_val,
+                bbb_oas=bbb_oas_val,
+                aaa_oas=aaa_oas_val,
+                hy_oas_30d_chg=hy_30d_chg,
+                hy_oas_90d_percentile=hy_90d_pctl,
+                ccc_oas=ccc_oas_val,
+                bb_oas=bb_oas_val,
+                single_b_oas=single_b_oas_val,
+                cc_delinquency_rate=cc_delinq_val,
+                sloos_tightening=sloos_val,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to build credit regime: {e}")
+            return None
+
+    def _build_rates():
+        try:
+            from lox.rates.signals import build_rates_state
+            from lox.rates.regime import classify_rates_regime
+
+            rates_state = build_rates_state(settings=settings, start_date=start_date, refresh=refresh)
+            rates_regime = classify_rates_regime(rates_state.inputs)
+
+            inp = rates_state.inputs
+            _rz = abs(inp.z_ust_10y) if inp.z_ust_10y is not None else 0
+            _curve_pen = 15 if (inp.curve_2s10s is not None and inp.curve_2s10s < 0) else 0
+            _rates_score = max(0, min(100, 50 + _rz * 12 + _curve_pen))
+            return RegimeResult(
+                name=rates_regime.name,
+                label=rates_regime.label,
+                description=rates_regime.description,
+                score=_rates_score,
+                domain="rates",
+                tags=list(rates_regime.tags) if hasattr(rates_regime, "tags") else [],
+                metrics={
+                    "10Y": f"{inp.ust_10y:.2f}%" if inp.ust_10y is not None else None,
+                    "2Y": f"{inp.ust_2y:.2f}%" if inp.ust_2y is not None else None,
+                    "3M": f"{inp.ust_3m:.2f}%" if inp.ust_3m is not None else None,
+                    "2s10s": f"{inp.curve_2s10s * 100:+.0f}bp" if inp.curve_2s10s is not None else None,
+                    "10Y 20d Chg": f"{inp.ust_10y_chg_20d * 100:+.0f}bp" if inp.ust_10y_chg_20d is not None else None,
+                    "3M10Y": f"{inp.curve_3m10y * 100:+.0f}bp" if inp.curve_3m10y is not None else None,
+                    "2s10s 20d Chg": f"{inp.curve_2s10s_chg_20d * 100:+.0f}bp" if inp.curve_2s10s_chg_20d is not None else None,
+                    "10Y z": f"{inp.z_ust_10y:+.1f}" if inp.z_ust_10y is not None else None,
+                    "Real 10Y": f"{macro_state.inputs.real_yield_proxy_10y:.2f}%" if macro_state and macro_state.inputs.real_yield_proxy_10y is not None else None,
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to build rates regime: {e}")
+            return None
+
+    def _build_liquidity():
+        try:
+            from lox.funding.signals import build_funding_state
+            from lox.funding.regime import classify_funding_regime
+
+            funding_state = build_funding_state(settings=settings, start_date=start_date, refresh=refresh)
+            funding_regime = classify_funding_regime(funding_state.inputs)
+            f_inp = funding_state.inputs
+
+            m_inp = None
+            try:
+                from lox.monetary.signals import build_monetary_state
+                monetary_state = build_monetary_state(settings=settings, start_date=start_date, refresh=refresh)
+                m_inp = monetary_state.inputs
+            except Exception:
+                pass
+
+            tags = []
+            if funding_regime.score >= 75:
+                tags.append("risk_off")
+            if funding_regime.score >= 65:
+                tags.append("structural_tightening")
+
+            liq_metrics = {
+                "SOFR": f"{f_inp.sofr:.2f}%" if f_inp.sofr is not None else None,
+                "EFFR": f"{f_inp.effr:.2f}%" if f_inp.effr is not None else None,
+                "IORB": f"{f_inp.iorb:.2f}%" if f_inp.iorb is not None else None,
+                "Corridor": f"{f_inp.spread_corridor_bps:+.1f}bp" if f_inp.spread_corridor_bps is not None else None,
+                "Reserves": f"${f_inp.bank_reserves_usd_bn / 1_000_000:.1f}T" if f_inp.bank_reserves_usd_bn is not None else None,
+                "Reserve z": f"{f_inp.z_bank_reserves:+.1f}" if f_inp.z_bank_reserves is not None else None,
+                "RRP": f"${f_inp.on_rrp_usd_bn / 1000:.0f}B" if f_inp.on_rrp_usd_bn is not None else None,
+                "RRP 13w Chg": f"${f_inp.on_rrp_chg_13w / 1000:+,.0f}B" if f_inp.on_rrp_chg_13w is not None else None,
+                "TGA": f"${f_inp.tga_usd_bn / 1000:.0f}B" if f_inp.tga_usd_bn is not None else None,
+            }
+            if m_inp:
+                liq_metrics["Fed Assets"] = f"${m_inp.fed_assets / 1e6:.1f}T" if m_inp.fed_assets is not None else None
+                liq_metrics["Fed Assets 13w"] = f"${m_inp.fed_assets_chg_13w / 1000:+,.0f}B" if m_inp.fed_assets_chg_13w is not None else None
+                liq_metrics["Fed Assets z"] = f"{m_inp.z_fed_assets_chg_13w:+.1f}" if m_inp.z_fed_assets_chg_13w is not None else None
+                liq_metrics["Reserves 13w"] = f"${m_inp.reserves_chg_13w / 1000:+,.0f}B" if m_inp.reserves_chg_13w is not None else None
+
+            return RegimeResult(
+                name=funding_regime.name,
+                label=funding_regime.label,
+                description=funding_regime.description if hasattr(funding_regime, "description") else "",
+                score=funding_regime.score,
+                domain="liquidity",
+                tags=tags,
+                metrics=liq_metrics,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to build liquidity regime: {e}")
+            return None
+
+    def _build_consumer():
+        try:
+            from lox.consumer.regime import classify_consumer
+
+            michigan_sent = None
+            michigan_exp = None
+            retail_mom = None
+            personal_spend = None
+            cc_debt_yoy = None
+            mtg_30y = None
+
+            try:
+                from lox.data.fred import FredClient
+                fred = FredClient(api_key=settings.FRED_API_KEY)
+                sent_df = fred.fetch_series("UMCSENT", start_date=start_date, refresh=refresh)
+                if sent_df is not None and not sent_df.empty:
+                    michigan_sent = float(sent_df.sort_values("date")["value"].iloc[-1])
+            except Exception:
+                pass
+
+            try:
+                from lox.altdata.trading_economics import get_michigan_expectations
+                michigan_exp = get_michigan_expectations()
+            except Exception:
+                pass
+
+            try:
+                from lox.data.fred import FredClient
+                fred = FredClient(api_key=settings.FRED_API_KEY)
+                rs_df = fred.fetch_series("RSXFS", start_date=start_date, refresh=refresh)
+                if rs_df is not None and len(rs_df) >= 2:
+                    rs_df = rs_df.sort_values("date")
+                    retail_mom = (rs_df["value"].iloc[-1] / rs_df["value"].iloc[-2] - 1.0) * 100.0
+            except Exception:
+                pass
+
+            try:
+                from lox.data.fred import FredClient
+                fred = FredClient(api_key=settings.FRED_API_KEY)
+                cc_df = fred.fetch_series("TOTALSL", start_date=start_date, refresh=refresh)
+                if cc_df is not None and len(cc_df) >= 13:
+                    cc_df = cc_df.sort_values("date")
+                    cc_debt_yoy = (cc_df["value"].iloc[-1] / cc_df["value"].iloc[-13] - 1.0) * 100.0
+            except Exception:
+                pass
+
+            if macro_state and macro_state.inputs.mortgage_30y:
+                mtg_30y = macro_state.inputs.mortgage_30y
+            else:
                 try:
-                    vix_f = float(str(vix_val).replace("%", ""))
-                    spread_f = float(str(term_spread_str).replace("%", "").replace("+", ""))
-                    # term_spread = VIX - VIX3M (positive = backwardation)
-                    # So VIX3M = VIX - spread, slope = VIX3M / VIX
-                    vix3m = vix_f - spread_f
-                    if vix_f > 0:
-                        vix_term_slope = vix3m / vix_f
+                    from lox.data.fred import FredClient
+                    fred = FredClient(api_key=settings.FRED_API_KEY)
+                    mtg_df = fred.fetch_series("MORTGAGE30US", start_date=start_date, refresh=refresh)
+                    if mtg_df is not None and not mtg_df.empty:
+                        mtg_30y = float(mtg_df.sort_values("date")["value"].iloc[-1])
                 except Exception:
                     pass
 
-        # Try TE for AAII sentiment
+            result = classify_consumer(
+                michigan_sentiment=michigan_sent,
+                michigan_expectations=michigan_exp,
+                retail_sales_control_mom=retail_mom,
+                personal_spending_mom=personal_spend,
+                credit_card_debt_yoy_chg=cc_debt_yoy,
+                mortgage_30y=mtg_30y,
+            )
+            if result:
+                result.metrics["credit_yoy"] = cc_debt_yoy
+                if macro_state:
+                    result.metrics["home_prices_yoy"] = macro_state.inputs.home_prices_yoy
+                else:
+                    result.metrics["home_prices_yoy"] = None
+                try:
+                    from lox.data.fred import FredClient
+                    _fred = FredClient(api_key=settings.FRED_API_KEY)
+                    _sr = _fred.fetch_series("PSAVERT", start_date=start_date, refresh=refresh)
+                    result.metrics["savings_rate"] = float(_sr.sort_values("date")["value"].iloc[-1]) if _sr is not None and not _sr.empty else None
+                except Exception:
+                    result.metrics["savings_rate"] = None
+                try:
+                    from lox.data.fred import FredClient
+                    _fred = FredClient(api_key=settings.FRED_API_KEY)
+                    _del = _fred.fetch_series("DRALACBN", start_date=start_date, refresh=refresh)
+                    result.metrics["delinquency"] = float(_del.sort_values("date")["value"].iloc[-1]) if _del is not None and not _del.empty else None
+                except Exception:
+                    result.metrics["delinquency"] = None
+                try:
+                    from lox.data.fred import FredClient
+                    _fred = FredClient(api_key=settings.FRED_API_KEY)
+                    _auto = _fred.fetch_series("SUBLPDCLATRNQ", start_date=start_date, refresh=refresh)
+                    result.metrics["auto_tightening"] = float(_auto.sort_values("date")["value"].iloc[-1]) if _auto is not None and not _auto.empty else None
+                except Exception:
+                    result.metrics["auto_tightening"] = None
+            return result
+        except Exception as e:
+            logger.warning(f"Failed to build consumer regime: {e}")
+            return None
+
+    def _build_fiscal():
         try:
-            from lox.altdata.trading_economics import get_aaii_bullish_sentiment
-            aaii_bull = get_aaii_bullish_sentiment()
-        except Exception:
-            pass
+            from lox.fiscal.signals import build_fiscal_state as _build_fiscal_state
+            from lox.fiscal.scoring import score_fiscal_regime as _score_fiscal
 
-        state.positioning = classify_positioning(
-            vix_term_slope=vix_term_slope,
-            put_call_ratio=put_call,
-            aaii_bull_pct=aaii_bull,
-        )
-    except Exception as e:
-        logger.warning(f"Failed to build positioning regime: {e}")
+            fiscal_st = _build_fiscal_state(settings=settings, start_date="2011-01-01", refresh=refresh)
+            fiscal_sc = _score_fiscal(fiscal_st.inputs)
 
-    # ── Monetary Regime ───────────────────────────────────────────────────
-    try:
-        from lox.monetary.signals import build_monetary_state
-        from lox.monetary.regime import classify_monetary_regime
+            return RegimeResult(
+                name=fiscal_sc.regime_name,
+                label=fiscal_sc.regime_label,
+                description=fiscal_sc.regime_description,
+                score=fiscal_sc.fpi,
+                domain="fiscal",
+                tags=["risk_off"] if fiscal_sc.fpi >= 65 else [],
+                metrics={
+                    "Deficit 12m": f"${fiscal_st.inputs.deficit_12m / 1e6:.2f}T" if fiscal_st.inputs.deficit_12m else None,
+                    "z Deficit": f"{fiscal_st.inputs.z_deficit_12m:+.2f}" if fiscal_st.inputs.z_deficit_12m is not None else None,
+                    "TGA": f"${fiscal_st.inputs.tga_level / 1000:.0f}B" if fiscal_st.inputs.tga_level is not None else None,
+                    "TGA 28d Chg": f"${fiscal_st.inputs.tga_chg_28d / 1000:+.0f}B" if fiscal_st.inputs.tga_chg_28d is not None else None,
+                    "Interest YoY": f"{fiscal_st.inputs.interest_expense_yoy:+.1f}%" if fiscal_st.inputs.interest_expense_yoy is not None else None,
+                    "Deficit/Receipts": f"{fiscal_st.inputs.deficit_pct_receipts * 100:.0f}%" if fiscal_st.inputs.deficit_pct_receipts is not None else None,
+                    "Auction Tail": f"{fiscal_st.inputs.auction_tail_bps:+.1f}bp" if fiscal_st.inputs.auction_tail_bps is not None else None,
+                    "Dealer Take": f"{fiscal_st.inputs.dealer_take_pct:.1f}%" if fiscal_st.inputs.dealer_take_pct is not None else None,
+                    "Deficit Trend": f"{fiscal_st.inputs.deficit_trend_slope:+.2f}" if fiscal_st.inputs.deficit_trend_slope is not None else None,
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to build fiscal regime: {e}")
+            return None
 
-        monetary_state = build_monetary_state(settings=settings, start_date=start_date, refresh=refresh)
-        monetary_regime = classify_monetary_regime(monetary_state.inputs)
+    def _build_usd():
+        try:
+            from lox.usd.signals import build_usd_state
+            from lox.usd.regime import classify_usd_regime_from_state
 
-        score = 70 if "qt_biting" in monetary_regime.name else (30 if "abundant" in monetary_regime.name else 50)
-        inp = monetary_state.inputs
-        state.monetary = RegimeResult(
-            name=monetary_regime.name,
-            label=monetary_regime.label,
-            description=monetary_regime.description,
-            score=score,
-            domain="monetary",
-            tags=[],
-            metrics={
-                "Fed Assets": f"${inp.fed_assets / 1e6:.1f}T" if inp.fed_assets is not None else None,
-                "Reserves": f"${inp.total_reserves / 1e6:.1f}T" if inp.total_reserves is not None else None,
-                "Reserves z": f"{inp.z_total_reserves:+.1f}" if inp.z_total_reserves is not None else None,
-                "RRP": f"${inp.on_rrp / 1000:.0f}B" if inp.on_rrp is not None else None,
-                "EFFR": f"{inp.effr:.2f}%" if inp.effr is not None else None,
-            },
-        )
-    except Exception as e:
-        logger.warning(f"Failed to build monetary regime: {e}")
+            usd_state = build_usd_state(settings=settings, start_date=start_date, refresh=refresh)
+            usd_regime = classify_usd_regime_from_state(usd_state)
 
-    # ── USD Regime ────────────────────────────────────────────────────────
-    try:
-        from lox.usd.signals import build_usd_state
-        from lox.usd.regime import classify_usd_regime_from_state
+            inp = usd_state.inputs
 
-        usd_state = build_usd_state(settings=settings, start_date=start_date, refresh=refresh)
-        usd_regime = classify_usd_regime_from_state(usd_state)
+            # Continuous 0-100 score from strength z-score
+            # strength_score is a composite z-score: positive = strong $, negative = weak $
+            # Map z from -2.5..+2.5 → 0..100  (strong dollar = higher stress for markets)
+            _ss = inp.usd_strength_score if inp.usd_strength_score is not None else 0
+            _usd_score = max(0, min(100, 50 + _ss * 20))
 
-        inp = usd_state.inputs
-        state.usd = RegimeResult(
-            name=usd_regime.name,
-            label=usd_regime.label,
-            description=usd_regime.description,
-            score=usd_regime.score,
-            domain="usd",
-            tags=list(usd_regime.tags),
-            metrics={
-                "DXY": f"{inp.usd_index_broad:.1f}" if inp.usd_index_broad is not None else None,
-                "20d Chg": f"{inp.usd_chg_20d_pct:+.1f}%" if inp.usd_chg_20d_pct is not None else None,
-                "60d Chg": f"{inp.usd_chg_60d_pct:+.1f}%" if inp.usd_chg_60d_pct is not None else None,
-            },
-        )
-    except Exception as e:
-        logger.warning(f"Failed to build USD regime: {e}")
+            return RegimeResult(
+                name=usd_regime.name,
+                label=usd_regime.label,
+                description=usd_regime.description,
+                score=_usd_score,
+                domain="usd",
+                tags=list(usd_regime.tags),
+                metrics={
+                    "DXY": f"{inp.usd_index_broad:.1f}" if inp.usd_index_broad is not None else None,
+                    "20d Chg": f"{inp.usd_chg_20d_pct:+.1f}%" if inp.usd_chg_20d_pct is not None else None,
+                    "60d Chg": f"{inp.usd_chg_60d_pct:+.1f}%" if inp.usd_chg_60d_pct is not None else None,
+                    "USD z": f"{inp.z_usd_level:+.1f}" if inp.z_usd_level is not None else None,
+                    "60d z": f"{inp.z_usd_chg_60d:+.1f}" if inp.z_usd_chg_60d is not None else None,
+                    "Strength": f"{inp.usd_strength_score:+.2f}" if inp.usd_strength_score is not None else None,
+                    "YoY Chg": f"{inp.usd_yoy_chg_pct:+.1f}%" if inp.usd_yoy_chg_pct is not None else None,
+                    "200d MA Dist": f"{inp.usd_200d_ma_dist_pct:+.1f}%" if inp.usd_200d_ma_dist_pct is not None else None,
+                    "90d RVol": f"{inp.usd_90d_rvol:.1f}%" if inp.usd_90d_rvol is not None else None,
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to build USD regime: {e}")
+            return None
 
-    # ── Commodities Regime ────────────────────────────────────────────────
-    try:
-        from lox.commodities.signals import build_commodities_state
-        from lox.commodities.regime import classify_commodities_regime
+    def _build_commodities():
+        try:
+            from lox.commodities.signals import build_commodities_state
+            from lox.commodities.regime import classify_commodities_regime
 
-        comm_state = build_commodities_state(settings=settings, start_date=start_date, refresh=refresh)
-        comm_regime = classify_commodities_regime(comm_state.inputs)
+            comm_state = build_commodities_state(settings=settings, start_date=start_date, refresh=refresh)
+            comm_regime = classify_commodities_regime(comm_state.inputs)
 
-        inp = comm_state.inputs
-        state.commodities = RegimeResult(
-            name=comm_regime.name,
-            label=comm_regime.label,
-            description=comm_regime.description,
-            score=comm_regime.score if hasattr(comm_regime, "score") else 50,
-            domain="commodities",
-            tags=list(comm_regime.tags) if hasattr(comm_regime, "tags") else [],
-            metrics={
-                "Gold": f"${inp.gold:.0f}" if inp.gold is not None else None,
-                "WTI": f"${inp.wti:.1f}" if inp.wti is not None else None,
-                "Copper": f"${inp.copper:.1f}" if inp.copper is not None else None,
-                "Broad 60d": f"{inp.broad_ret_60d_pct:+.1f}%" if inp.broad_ret_60d_pct is not None else None,
-            },
-        )
-    except Exception as e:
-        logger.warning(f"Failed to build commodities regime: {e}")
+            inp = comm_state.inputs
+            _cp = inp.commodity_pressure_score if inp.commodity_pressure_score is not None else 0
+            _comm_score = max(0, min(100, 50 + _cp * 15))
+            return RegimeResult(
+                name=comm_regime.name,
+                label=comm_regime.label,
+                description=comm_regime.description,
+                score=_comm_score,
+                domain="commodities",
+                tags=list(comm_regime.tags) if hasattr(comm_regime, "tags") else [],
+                metrics={
+                    "Gold": f"${inp.gold:.0f}" if inp.gold is not None else None,
+                    "Silver": f"${inp.silver:.2f}" if inp.silver is not None else None,
+                    "WTI": f"${inp.wti:.1f}" if inp.wti is not None else None,
+                    "Copper": f"${inp.copper:.1f}" if inp.copper is not None else None,
+                    "Broad 60d": f"{inp.broad_ret_60d_pct:+.1f}%" if inp.broad_ret_60d_pct is not None else None,
+                    "Gold 20d Ret": f"{inp.gold_ret_20d_pct:+.1f}%" if inp.gold_ret_20d_pct is not None else None,
+                    "WTI 20d Ret": f"{inp.wti_ret_20d_pct:+.1f}%" if inp.wti_ret_20d_pct is not None else None,
+                    "Copper 60d Ret": f"{inp.copper_ret_60d_pct:+.1f}%" if inp.copper_ret_60d_pct is not None else None,
+                    "Pressure": f"{inp.commodity_pressure_score:+.2f}" if inp.commodity_pressure_score is not None else None,
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to build commodities regime: {e}")
+            return None
+
+    # ── Submit all builders to thread pool ─────────────────────────────────
+    builders = {
+        "growth": _build_growth,
+        "inflation": _build_inflation,
+        "volatility": _build_volatility,
+        "credit": _build_credit,
+        "rates": _build_rates,
+        "liquidity": _build_liquidity,
+        "consumer": _build_consumer,
+        "fiscal": _build_fiscal,
+        "usd": _build_usd,
+        "commodities": _build_commodities,
+    }
+
+    with ThreadPoolExecutor(max_workers=10, thread_name_prefix="regime") as pool:
+        futures = {pool.submit(fn): name for name, fn in builders.items()}
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                result = future.result()
+                if result is not None:
+                    setattr(state, name, result)
+            except Exception as e:
+                logger.warning(f"Regime builder '{name}' raised: {e}")
+
+    _t_regimes = _time.monotonic()
+    logger.info(f"[Perf] all regimes built in {(_t_regimes - _t_macro)*1000:.0f}ms (total {(_t_regimes - _t0)*1000:.0f}ms)")
+
+    # ── Macro Quadrant (derived from Growth + Inflation) ──────────────────
+    state.macro_quadrant = _compute_macro_quadrant(state.growth, state.inflation)
 
     # ═══════════════════════════════════════════════════════════════════════
     # Calculate weighted overall risk score
@@ -817,7 +979,6 @@ def build_unified_regime_state(
         if regime is not None:
             w = REGIME_WEIGHTS.get(regime.label, REGIME_WEIGHTS.get(domain.title(), 0))
             if w == 0:
-                # Try matching by domain title
                 w = REGIME_WEIGHTS.get(domain.title(), 0.05)
             weighted_sum += regime.score * w
             weight_total += w

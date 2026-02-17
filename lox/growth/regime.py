@@ -264,5 +264,7 @@ def classify_growth(
             "indpro_yoy": indpro_yoy,
             "unemployment_rate": unemployment_rate,
             "lei_yoy": lei_yoy,
+            "payrolls_mom": payrolls_mom,
+            "ism_new_orders": ism_new_orders,
         },
     )

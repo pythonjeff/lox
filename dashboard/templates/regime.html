@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOX FUND | {{ regime_display_names.get(regime_name, regime_name) }} Regime</title>
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='images/icons8-chart-material-two-tone-32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='images/icons8-chart-material-two-tone-16.png') }}">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
+    <!-- Chart.js for pillar chart -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+</head>
+<body>
+    <!-- Hamburger Nav Panel -->
+    <div class="nav-scrim" id="nav-scrim"></div>
+    <nav class="nav-panel" id="nav-panel">
+        <div class="nav-panel-header">
+            <span class="nav-brand">LOX FUND</span>
+            <button class="nav-close" id="nav-close" aria-label="Close menu">&times;</button>
+        </div>
+        <div class="nav-links">
+            <a href="/" class="nav-item">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                Dashboard
+            </a>
+            <a href="/lived-inflation" class="nav-item">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                Lived Inflation Index
+            </a>
+            <div class="nav-group">
+                <button class="nav-item nav-toggle expanded" id="regimes-toggle" type="button">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><polyline points="7 16 11 10 15 13 21 5"/></svg>
+                    Regimes
+                    <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="nav-sub-items expanded" id="regimes-sub">
+                    {% for r in regimes %}
+                    <a href="/regimes/{{ r }}" class="nav-sub-item{% if r == regime_name %} active{% endif %}">{{ regime_display_names.get(r, r) }}</a>
+                    {% endfor %}
+                </div>
+            </div>
+            <a href="/my-account" class="nav-item">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                My Account
+            </a>
+        </div>
+    </nav>
+
+    <div class="container regime-page" data-regime="{{ regime_name }}">
+        <!-- Header -->
+        <header class="header-compact">
+            <div class="header-left">
+                <button class="hamburger-btn" id="hamburger-btn" aria-label="Menu">
+                    <span></span><span></span><span></span>
+                </button>
+                <a href="/" class="logo-group">
+                    <span class="logo-text">LOX</span>
+                    <span class="logo-fund">FUND</span>
+                </a>
+            </div>
+            <div class="header-right">
+                {% if current_user.is_authenticated %}
+                <a href="{{ url_for('my_account') }}" class="btn-my-account" title="My Account">My Account</a>
+                {% else %}
+                <a href="{{ url_for('auth.login') }}" class="btn-my-account" title="Investor Login">Investor Login</a>
+                {% endif %}
+            </div>
+        </header>
+
+        <!-- Loading State -->
+        <div id="regime-loading" class="regime-loading">
+            <div class="regime-loading-spinner"></div>
+            <p>Loading regime data...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="regime-error" class="regime-error" style="display:none;">
+            <p id="regime-error-msg">Failed to load regime data.</p>
+            <button class="regime-btn regime-btn-refresh" onclick="loadRegimeData(false)">Retry</button>
+        </div>
+
+        <!-- Regime Content (hidden until data loads) -->
+        <div id="regime-content" style="display:none;">
+
+            <!-- 1. DARK HERO ZONE -->
+            <section class="rg-hero">
+                <div class="rg-hero-glow" id="rg-hero-glow"></div>
+                <div class="rg-hero-body">
+                    <!-- Row 1: Score block + Meta -->
+                    <div class="rg-hero-top">
+                        <div class="rg-hero-score-block" id="rg-hero-score-block">
+                            <span class="rg-hero-score-num" id="rg-hero-score-num">&mdash;</span>
+                            <span class="rg-hero-score-label">SCORE</span>
+                        </div>
+                        <div class="rg-hero-meta">
+                            <div class="rg-hero-meta-top">
+                                <h1 class="rg-hero-title" id="rg-hero-title">&mdash;</h1>
+                                <span class="rg-hero-badge" id="rg-hero-badge">&mdash;</span>
+                                <span class="rg-score-delta" id="rg-score-delta" style="display:none;"></span>
+                            </div>
+                            <div class="rg-hero-meta-bottom">
+                                <span class="rg-hero-asof" id="rg-hero-asof">&mdash;</span>
+                                <button class="rg-hero-refresh" id="regime-refresh-btn" title="Refresh data">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                                    Refresh
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Row 2: Spectrum bar -->
+                    <div class="rg-spectrum-wrap" id="rg-spectrum-wrap"></div>
+                    <p class="rg-hero-blurb" id="rg-hero-blurb"></p>
+                </div>
+            </section>
+
+            <!-- 2. METRICS TABLE -->
+            <section class="rg-section">
+                <div class="rg-section-header">
+                    <h3 class="rg-section-title">Regime Metrics</h3>
+                    <button class="rg-weights-toggle" id="rg-weights-toggle" type="button">Show Weights</button>
+                </div>
+                <div class="rg-metrics-table-wrap" id="rg-metrics-table-wrap">
+                    <table class="rg-metrics-table" id="rg-metrics-table">
+                        <thead>
+                            <tr>
+                                <th class="rg-th-name">Metric</th>
+                                <th class="rg-th-value">Value</th>
+                                <th class="rg-th-range">Scale</th>
+                                <th class="rg-th-signal">Signal</th>
+                                <th class="rg-th-weight">Wt</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rg-metrics-tbody"></tbody>
+                    </table>
+                </div>
+                <div class="rg-metrics-empty" id="rg-metrics-empty" style="display:none;">No metrics available.</div>
+            </section>
+
+            <!-- 5. PILLAR CHART / DETAIL CARD -->
+            <section class="rg-section" id="rg-pillars-section" style="display:none;">
+                <h3 class="rg-section-title">Pillar Decomposition</h3>
+                <div class="rg-pillar-chart-wrap">
+                    <canvas id="rg-pillar-chart"></canvas>
+                </div>
+                <div class="rg-key-drivers" id="rg-key-drivers" style="display:none;">
+                    <h4 class="rg-section-subtitle">Key Drivers</h4>
+                    <ol id="rg-key-drivers-list"></ol>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='regime.js') }}?v=4"></script>
+    <script>
+        // Hamburger nav toggle
+        const hamburgerBtn = document.getElementById('hamburger-btn');
+        const navScrim = document.getElementById('nav-scrim');
+        const navClose = document.getElementById('nav-close');
+        function openNav() { document.body.classList.add('nav-open'); }
+        function closeNav() { document.body.classList.remove('nav-open'); }
+        hamburgerBtn.addEventListener('click', openNav);
+        navScrim.addEventListener('click', closeNav);
+        navClose.addEventListener('click', closeNav);
+
+        // Regimes sub-nav toggle
+        const regimesToggle = document.getElementById('regimes-toggle');
+        const regimesSub = document.getElementById('regimes-sub');
+        regimesToggle.addEventListener('click', function() {
+            this.classList.toggle('expanded');
+            regimesSub.classList.toggle('expanded');
+        });
+    </script>
+</body>
+</html>

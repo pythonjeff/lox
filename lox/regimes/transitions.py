@@ -449,14 +449,14 @@ def extract_leading_indicators(unified_state) -> LeadingIndicatorSignals:
             signals.vix_level = unified_state.volatility.metrics.get('vix')
             signals.vix_term_spread = unified_state.volatility.metrics.get('vix_term_spread')
     
-    # Funding regime - stress signals
-    if unified_state.funding:
-        funding_name = unified_state.funding.name.lower()
-        if "stress" in funding_name or unified_state.funding.score > 70:
+    # Liquidity regime - stress signals
+    if unified_state.liquidity:
+        liq_name = unified_state.liquidity.name.lower()
+        if "stress" in liq_name or unified_state.liquidity.score > 70:
             signals.funding_stress = True
         
-        if hasattr(unified_state.funding, 'metrics'):
-            signals.funding_spread_bps = unified_state.funding.metrics.get('sofr_effr_spread_bps')
+        if hasattr(unified_state.liquidity, 'metrics'):
+            signals.funding_spread_bps = unified_state.liquidity.metrics.get('sofr_effr_spread_bps')
     
     # Credit regime - credit spreads widening signal
     if hasattr(unified_state, 'credit') and unified_state.credit:

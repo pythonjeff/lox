@@ -68,6 +68,9 @@ DEFAULT_SERIES = {
     "DRTSCLCC": FredSeries("DRTSCLCC", "quarterly"),  # SLOOS: Tightening Standards for C&I Loans
     # wages (for LII wage gap)
     "CES0500000003": FredSeries("CES0500000003", "monthly"),  # Average Hourly Earnings, All Employees, Total Private
+    # auto loan stress (CVNA thesis monitoring)
+    "DRALACBN": FredSeries("DRALACBN", "quarterly"),  # Delinquency Rate on Consumer Loans, All Commercial Banks
+    "SUBLPDCLATRNQ": FredSeries("SUBLPDCLATRNQ", "quarterly"),  # Net % Banks Tightening Subprime Auto Loan Standards
 }
 
 # Optional series that won't crash if unavailable
@@ -96,6 +99,8 @@ OPTIONAL_SERIES = {
     # "SKEW",  # CBOE SKEW Index — fetched separately
     "USSLIND",  # Conference Board LEI
     "DRTSCLCC",  # SLOOS Lending Standards
+    "DRALACBN",  # Consumer Loan Delinquency Rate
+    "SUBLPDCLATRNQ",  # Subprime Auto Loan Standards
 }
 
 

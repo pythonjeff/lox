@@ -35,12 +35,18 @@ def build_usd_dataset(settings: Settings, start_date: str = "2011-01-01", refres
     merged["USD_CHG_20D_PCT"] = (merged["USD_BROAD"] / merged["USD_BROAD"].shift(20) - 1.0) * 100.0
     merged["USD_CHG_60D_PCT"] = (merged["USD_BROAD"] / merged["USD_BROAD"].shift(60) - 1.0) * 100.0
 
-    # Standardize
-    merged["Z_USD_LEVEL"] = zscore(merged["USD_BROAD"], window=252)
-    merged["Z_USD_CHG_60D"] = zscore(merged["USD_CHG_60D_PCT"], window=252)
+    # Standardize (3-year window so sustained moves aren't normalized away)
+    merged["Z_USD_LEVEL"] = zscore(merged["USD_BROAD"], window=756)
+    merged["Z_USD_CHG_60D"] = zscore(merged["USD_CHG_60D_PCT"], window=756)
 
     # Composite score (positive = stronger USD regime)
     merged["USD_STRENGTH_SCORE"] = 0.60 * merged["Z_USD_LEVEL"] + 0.40 * merged["Z_USD_CHG_60D"]
+
+    # Extended metrics
+    merged["USD_YOY_CHG_PCT"] = (merged["USD_BROAD"] / merged["USD_BROAD"].shift(252) - 1.0) * 100.0
+    ma200 = merged["USD_BROAD"].rolling(200).mean()
+    merged["USD_200D_MA_DIST_PCT"] = (merged["USD_BROAD"] / ma200 - 1.0) * 100.0
+    merged["USD_90D_RVOL"] = merged["USD_BROAD"].pct_change().rolling(63).std() * (252 ** 0.5) * 100.0
 
     return merged
 
@@ -59,6 +65,9 @@ def build_usd_state(settings: Settings, start_date: str = "2011-01-01", refresh:
         usd_strength_score=score,
         is_usd_strong=bool(score is not None and score > 1.0),
         is_usd_weak=bool(score is not None and score < -1.0),
+        usd_yoy_chg_pct=float(last["USD_YOY_CHG_PCT"]) if pd.notna(last.get("USD_YOY_CHG_PCT")) else None,
+        usd_200d_ma_dist_pct=float(last["USD_200D_MA_DIST_PCT"]) if pd.notna(last.get("USD_200D_MA_DIST_PCT")) else None,
+        usd_90d_rvol=float(last["USD_90D_RVOL"]) if pd.notna(last.get("USD_90D_RVOL")) else None,
         components={"w_z_usd_level": 0.60, "w_z_usd_chg_60d": 0.40},
     )
 

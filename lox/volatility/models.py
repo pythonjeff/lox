@@ -32,6 +32,14 @@ class VolatilityInputs(BaseModel):
     persist_20d: Optional[float] = None
     threshold_vix: Optional[float] = None
 
+    # VX futures term structure (from CBOE settlement CSV)
+    vx_m1: Optional[float] = None          # front-month VX settle price
+    vx_m2: Optional[float] = None          # second-month VX settle price
+    vx_contango_pct: Optional[float] = None  # (M2/M1 - 1)*100; negative = backwardation
+    spot_minus_m1: Optional[float] = None    # VIX spot - M1 settle; positive = spot premium (panic)
+    spot_basis_pct: Optional[float] = None   # (spot/M1 - 1)*100; positive = backwardation signal
+    vix9d_vix_ratio: Optional[float] = None  # VIX9D/VIX; >1 = near-term fear exceeds 30d
+
     # Composite (positive => more volatility pressure)
     vol_pressure_score: Optional[float] = None
 
