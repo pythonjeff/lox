@@ -57,7 +57,7 @@ REGIME_LABEL_SEVERITY = {
     "Elevated volatility (fragile risk)": "elevated",
     "Vol shock / stress (hedging bid)": "high",
     # Credit (threshold-derived)
-    "Credit Euphoria": "moderate", "Credit Tight": "low", "Credit Neutral": "low",
+    "Credit Euphoria": "moderate", "Credit Calm": "low", "Credit Neutral": "low",
     "Credit Widening": "elevated", "Credit Stress": "high", "Credit Crisis": "high",
     # Rates (threshold-derived)
     "Accommodative": "low", "Neutral Rates": "low", "Restrictive": "moderate",
@@ -107,7 +107,7 @@ REGIME_SCORE_THRESHOLDS = {
         (80, "Above Target", "Hot Inflation"),
     ],
     "credit": [
-        (25, "Credit Euphoria", "Credit Tight"), (40, "Credit Tight", "Credit Neutral"),
+        (25, "Credit Euphoria", "Credit Calm"), (40, "Credit Calm", "Credit Neutral"),
         (55, "Credit Neutral", "Credit Widening"), (65, "Credit Widening", "Credit Stress"),
         (80, "Credit Stress", "Credit Crisis"),
     ],

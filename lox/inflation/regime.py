@@ -1,5 +1,5 @@
 """
-Inflation regime classifier — two-layer approach.
+Inflation regime classifier — three-layer approach.
 
 Layer 1 (Base Score): Actual inflation readings across measures.
     - CPI YoY, Core CPI, Core PCE, Trimmed Mean PCE, Median CPI
@@ -10,6 +10,14 @@ Layer 2 (Amplifiers): Momentum, breadth, expectations, supply pipeline.
     - Breadth: Median CPI vs headline (broad-based or concentrated)
     - Expectations: 5y5y forward anchoring, breakeven slope
     - Supply pipeline: PPI > CPI gap, oil momentum
+
+Layer 3 (Decomposition): Shelter vs supercore vs core goods.
+    - Shelter CPI: ~36% of CPI basket, lags actual rents by 12 months.
+      When shelter is decelerating, headline overstates true demand pressure.
+    - Supercore CPI (services ex shelter): demand/wage-driven sticky inflation.
+      This is what Powell actually monitors — the demand-pull signal.
+    - Core goods: tradeable, volatile, supply-chain driven.
+      Mean-reverts faster than services.
 
 Score 0 = deflationary / risk-on → 100 = hot inflation / risk-off.
 """
@@ -32,23 +40,29 @@ def classify_inflation(
     breakeven_5y: float | None,
     ppi_yoy: float | None,
     *,
-    # New Layer 1 inputs (breadth measures)
+    # Layer 1 inputs (breadth measures)
     core_cpi_yoy: float | None = None,
     trimmed_mean_pce_yoy: float | None = None,
     median_cpi_yoy: float | None = None,
-    # New Layer 2 inputs (momentum)
+    # Layer 2 inputs (momentum)
     cpi_3m_ann: float | None = None,
     cpi_6m_ann: float | None = None,
-    # New Layer 2 inputs (expectations)
+    # Layer 2 inputs (expectations)
     breakeven_5y5y: float | None = None,
     breakeven_10y: float | None = None,
-    # New Layer 2 inputs (supply pipeline)
+    # Layer 2 inputs (supply pipeline)
     oil_price_yoy_pct: float | None = None,
+    import_price_yoy: float | None = None,
+    # Layer 3 inputs (decomposition)
+    shelter_cpi_yoy: float | None = None,
+    supercore_yoy: float | None = None,
+    core_goods_yoy: float | None = None,
 ) -> RegimeResult:
-    """Classify the Inflation regime using two-layer approach.
+    """Classify the Inflation regime using three-layer approach.
 
     Layer 1 — Base score from actual inflation readings.
     Layer 2 — Amplifiers from momentum, breadth, expectations, supply.
+    Layer 3 — Decomposition: shelter lag vs supercore vs core goods.
 
     Args:
         cpi_yoy: CPI All Urban YoY % change.
@@ -63,6 +77,11 @@ def classify_inflation(
         breakeven_5y5y: 5y5y forward inflation expectation rate.
         breakeven_10y: 10-year breakeven inflation rate.
         oil_price_yoy_pct: WTI crude oil YoY % change.
+        import_price_yoy: Import Price Index YoY % (FRED IR). Captures tariff/FX
+            pass-through into what US consumers actually pay for imports.
+        shelter_cpi_yoy: Shelter CPI YoY % (CUSR0000SAH1).
+        supercore_yoy: Services ex rent of shelter YoY % (CUSR0000SASL2RS).
+        core_goods_yoy: Core goods (commodities ex food & energy) YoY % (CUSR0000SACL1E).
     """
 
     # ═════════════════════════════════════════════════════════════════════════
@@ -203,6 +222,80 @@ def classify_inflation(
             amplifier -= 3
             tags.append("energy_disinflation")
 
+    # ── Import Prices: tariff / FX pass-through into consumer costs ──────
+    # Rising import prices = direct cost-push from tariffs, weaker dollar,
+    # or global supply disruption. Leads PPI/CPI by 1-3 months.
+    if import_price_yoy is not None:
+        if import_price_yoy > 10:
+            amplifier += 5
+            tags.append("import_cost_push")
+        elif import_price_yoy > 5:
+            amplifier += 3
+            tags.append("import_pressure")
+        elif import_price_yoy > 2:
+            amplifier += 1
+        elif import_price_yoy < -5:
+            amplifier -= 3
+            tags.append("import_disinflation")
+        elif import_price_yoy < -2:
+            amplifier -= 1
+
+    # Import-PPI gap: when import prices run above PPI, the tariff/trade
+    # channel is pushing costs faster than domestic production can absorb.
+    if import_price_yoy is not None and ppi_yoy is not None:
+        import_ppi_gap = import_price_yoy - ppi_yoy
+        if import_ppi_gap > 3.0:
+            amplifier += 3
+            tags.append("tariff_pass_through")
+        elif import_ppi_gap < -3.0:
+            amplifier -= 2
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # LAYER 3: Decomposition — shelter lag vs supercore vs core goods
+    # ═════════════════════════════════════════════════════════════════════════
+    #
+    # Shelter CPI uses 6-12 month lagged lease data. When shelter is running
+    # hot but supercore (services ex shelter) is cooling, the headline number
+    # overstates actual demand pressure. Conversely, when supercore is
+    # accelerating, that's the sticky wage/demand signal the Fed cares about.
+
+    # Supercore acceleration: if supercore >> core CPI, demand-driven
+    # inflation is running hotter than headline suggests.
+    if supercore_yoy is not None and core_cpi_yoy is not None:
+        supercore_gap = supercore_yoy - core_cpi_yoy
+        if supercore_gap > 1.0:
+            amplifier += 5
+            tags.append("supercore_hot")
+        elif supercore_gap > 0.3:
+            amplifier += 2
+            tags.append("supercore_elevated")
+        elif supercore_gap < -1.0:
+            amplifier -= 4
+            tags.append("supercore_cooling")
+        elif supercore_gap < -0.3:
+            amplifier -= 2
+
+    # Shelter overhang: if shelter >> supercore, headline is inflated by
+    # stale rent data. True demand pressure is lower than headline shows.
+    if shelter_cpi_yoy is not None and supercore_yoy is not None:
+        shelter_premium = shelter_cpi_yoy - supercore_yoy
+        if shelter_premium > 2.0:
+            amplifier -= 3
+            tags.append("shelter_overhang")
+        elif shelter_premium < -1.0:
+            amplifier += 2
+            tags.append("shelter_catch_up")
+
+    # Goods deflation + sticky services = classic post-supply-shock pattern.
+    # The goods drag masks underlying services stickiness.
+    if core_goods_yoy is not None and supercore_yoy is not None:
+        if core_goods_yoy < 0 and supercore_yoy > 3.0:
+            amplifier += 3
+            tags.append("goods_services_split")
+        elif core_goods_yoy < -1.0 and supercore_yoy < 2.0:
+            amplifier -= 2
+            tags.append("broad_disinflation")
+
     # ═════════════════════════════════════════════════════════════════════════
     # COMBINE AND LABEL
     # ═════════════════════════════════════════════════════════════════════════
@@ -260,5 +353,9 @@ def classify_inflation(
             "cpi_3m_ann": cpi_3m_ann,
             "cpi_6m_ann": cpi_6m_ann,
             "oil_price_yoy_pct": oil_price_yoy_pct,
+            "import_price_yoy": import_price_yoy,
+            "shelter_cpi_yoy": shelter_cpi_yoy,
+            "supercore_yoy": supercore_yoy,
+            "core_goods_yoy": core_goods_yoy,
         },
     )

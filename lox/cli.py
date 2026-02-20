@@ -344,10 +344,13 @@ app.add_typer(crypto_app, name="crypto")
 
 # ── Keep regimes ──────────────────────────────────────────────────────────
 @regime_app.command("vol")
-def regime_vol(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+def regime_vol(
+    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
+):
     """Volatility regime."""
     from lox.cli_commands.regimes.volatility_cmd import volatility_snapshot
-    volatility_snapshot(llm=llm)
+    volatility_snapshot(llm=llm, refresh=refresh)
 
 
 @regime_app.command("fiscal")
@@ -377,31 +380,42 @@ def regime_funding(
 
 
 @regime_app.command("rates")
-def regime_rates():
+def regime_rates(
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
+):
     """Rates regime."""
     from lox.cli_commands.regimes.rates_cmd import rates_snapshot
-    rates_snapshot()
+    rates_snapshot(refresh=refresh)
 
 
 @regime_app.command("commodities")
-def regime_commodities(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+def regime_commodities(
+    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
+):
     """Commodities regime."""
     from lox.cli_commands.regimes.commodities_cmd import _run_commodities_snapshot
-    _run_commodities_snapshot(llm=llm)
+    _run_commodities_snapshot(llm=llm, refresh=refresh)
 
 
 @regime_app.command("monetary")
-def regime_monetary(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+def regime_monetary(
+    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
+):
     """Monetary regime."""
     from lox.cli_commands.regimes.monetary_cmd import _run_monetary_snapshot
-    _run_monetary_snapshot(llm=llm)
+    _run_monetary_snapshot(llm=llm, refresh=refresh)
 
 
 @regime_app.command("usd")
-def regime_usd(llm: bool = typer.Option(False, "--llm", help="Include LLM")):
+def regime_usd(
+    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
+):
     """USD regime."""
     from lox.cli_commands.regimes.usd_cmd import run_usd_snapshot
-    run_usd_snapshot(llm=llm)
+    run_usd_snapshot(llm=llm, refresh=refresh)
 
 
 # ── NEW regimes (Feb 2026 restructure) ───────────────────────────────────

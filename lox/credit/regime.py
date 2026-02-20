@@ -329,7 +329,7 @@ def classify_credit(
     elif score >= 40:
         label = "Credit Neutral"
     elif score >= 25:
-        label = "Credit Tight"
+        label = "Credit Calm"
     else:
         label = "Credit Euphoria"
 
