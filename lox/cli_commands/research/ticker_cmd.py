@@ -28,7 +28,7 @@ def register(app: typer.Typer) -> None:
     def ticker_cmd(
         symbol: str = typer.Argument(..., help="Ticker symbol (e.g., AAPL, NVDA, SPY)"),
         chart: bool = typer.Option(True, "--chart/--no-chart", help="Generate price chart"),
-        llm: bool = typer.Option(True, "--llm/--no-llm", help="Include LLM analysis"),
+        llm: bool = typer.Option(False, "--llm/--no-llm", help="Include LLM analysis (off by default)"),
     ):
         """
         Hedge fund level ticker analysis.

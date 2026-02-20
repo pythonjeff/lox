@@ -24,7 +24,7 @@ def classify_monetary_regime(inputs: MonetaryInputs) -> MonetaryRegime:
     """
     Lean monetary regime classifier (MVP) using only:
     1) EFFR (DFF)
-    2) Total reserves (TOTRESNS)
+    2) Reserve balances (WRESBAL)
     3) Fed balance sheet size Δ (WALCL Δ)
     4) ON RRP usage (RRPONTSYD)
 

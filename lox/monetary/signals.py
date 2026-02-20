@@ -13,8 +13,8 @@ from lox.monetary.models import MonetaryInputs, MonetaryState
 MONETARY_FRED_SERIES: Dict[str, str] = {
     # 1) Policy rate
     "EFFR": "DFF",
-    # 2) Total reserves (weekly, USD millions)
-    "RESERVES": "TOTRESNS",
+    # 2) Reserve balances at the Fed (weekly Wed, USD millions) — H.4.1 release
+    "RESERVES": "WRESBAL",
     # 3) Fed balance sheet total assets (weekly, USD millions)
     "FED_ASSETS": "WALCL",
     # 4) ON RRP usage (daily, USD)
@@ -73,11 +73,11 @@ def build_monetary_dataset(settings: Settings, start_date: str = "2011-01-01", r
 
     # ---------------------------------------------------------------------
     # Unit normalization (for consistent formatting + deltas):
-    # - TOTRESNS is reported in $ billions on FRED; convert to $ millions to match WALCL.
+    # - WRESBAL is already in $ millions on FRED — no conversion needed.
     # - RRPONTSYD is reported in $ billions on FRED; convert to $ millions to match WALCL.
     # ---------------------------------------------------------------------
     if "RESERVES" in merged.columns:
-        merged["RESERVES"] = pd.to_numeric(merged["RESERVES"], errors="coerce") * 1000.0
+        merged["RESERVES"] = pd.to_numeric(merged["RESERVES"], errors="coerce")
     if "ON_RRP" in merged.columns:
         merged["ON_RRP"] = pd.to_numeric(merged["ON_RRP"], errors="coerce") * 1000.0
 
@@ -123,7 +123,7 @@ def build_monetary_state(settings: Settings, start_date: str = "2011-01-01", ref
         asof=str(pd.to_datetime(last["date"]).date()),
         start_date=start_date,
         inputs=inputs,
-        notes="Monetary MVP: EFFR (DFF), total reserves (TOTRESNS), Fed assets (WALCL), ON RRP (RRPONTSYD).",
+        notes="Monetary MVP: EFFR (DFF), reserve balances (WRESBAL, weekly), Fed assets (WALCL), ON RRP (RRPONTSYD).",
     )
 
 

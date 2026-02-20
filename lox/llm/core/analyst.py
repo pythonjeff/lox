@@ -143,7 +143,7 @@ DOMAIN_CONTEXT = {
         "news_keywords": ["Fed", "FOMC", "QT", "QE", "balance sheet", "reserves", "liquidity", "Powell", "monetary policy"],
         "macro_keywords": ["inflation", "employment", "rate decision", "dot plot"],
         "trading_focus": "liquidity-sensitive assets, bank equities, risk assets broadly",
-        "data_sources": ["FRED WALCL", "FRED TOTRESNS", "FRED RRPONTSYD", "Federal Reserve H.4.1"],
+        "data_sources": ["FRED WALCL", "FRED WRESBAL", "FRED RRPONTSYD", "Federal Reserve H.4.1"],
     },
     "fiscal": {
         "description": "US fiscal regime (deficits, Treasury issuance, TGA, auction demand)",
