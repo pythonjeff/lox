@@ -9,6 +9,7 @@ def _run_commodities_snapshot(
     start: str = "2011-01-01",
     refresh: bool = False,
     llm: bool = False,
+    ticker: str = "",
     features: bool = False,
     json_out: bool = False,
     delta: str = "",
@@ -163,6 +164,7 @@ from lox.data.market import fetch_equity_daily_closes
             snapshot=snapshot_data,
             regime_label=regime.label,
             regime_description=regime.description,
+            ticker=ticker,
         )
 
 
@@ -171,7 +173,8 @@ def register(commod_app: typer.Typer) -> None:
     @commod_app.callback(invoke_without_command=True)
     def commodities_default(
         ctx: typer.Context,
-        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
         delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
@@ -181,13 +184,14 @@ def register(commod_app: typer.Typer) -> None:
     ):
         """Commodities regime (oil/gold/copper/broad index)"""
         if ctx.invoked_subcommand is None:
-            _run_commodities_snapshot(llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
+            _run_commodities_snapshot(llm=llm, ticker=ticker, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
 
     @commod_app.command("snapshot")
     def snapshot(
         start: str = typer.Option("2011-01-01", "--start"),
         refresh: bool = typer.Option(False, "--refresh"),
-        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
         delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
@@ -196,4 +200,4 @@ def register(commod_app: typer.Typer) -> None:
         trades: bool = typer.Option(False, "--trades", help="Show quick trade expressions for current regime"),
     ):
         """Commodities snapshot: oil/gold/copper/broad index."""
-        _run_commodities_snapshot(start=start, refresh=refresh, llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
+        _run_commodities_snapshot(start=start, refresh=refresh, llm=llm, ticker=ticker, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)

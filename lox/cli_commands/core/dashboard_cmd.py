@@ -96,8 +96,8 @@ def register(app: typer.Typer) -> None:
 def register_pillar_commands(app: typer.Typer) -> None:
     """Register individual pillar commands for quick access."""
     
-    def _run_llm_analysis(settings, domain: str, snapshot: dict, regime_label: str, regime_description: str, console: Console):
-        """Shared LLM analysis runner (compact, metrics-focused output)."""
+    def _run_llm_analysis(settings, domain: str, snapshot: dict, regime_label: str, regime_description: str, console: Console, ticker: str = ""):
+        """Shared LLM chat launcher for dashboard pillar commands."""
         from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
         print_llm_regime_analysis(
             settings=settings,
@@ -106,11 +106,13 @@ def register_pillar_commands(app: typer.Typer) -> None:
             regime_label=regime_label,
             regime_description=regime_description,
             console=console,
+            ticker=ticker,
         )
     
     @app.command("inflation")
     def inflation_cmd(
-        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
         delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
@@ -202,11 +204,12 @@ def register_pillar_commands(app: typer.Typer) -> None:
         console.print(Panel(body, title="Inflation", expand=False))
         
         if llm:
-            _run_llm_analysis(settings, "inflation", snapshot, pillar.regime or "unknown", pillar._interpret(), console)
+            _run_llm_analysis(settings, "inflation", snapshot, pillar.regime or "unknown", pillar._interpret(), console, ticker=ticker)
     
     @app.command("growth")
     def growth_cmd(
-        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
         delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
@@ -294,11 +297,12 @@ def register_pillar_commands(app: typer.Typer) -> None:
         console.print(Panel(body, title="Growth", expand=False))
         
         if llm:
-            _run_llm_analysis(settings, "growth", snapshot, pillar.regime or "unknown", pillar._interpret(), console)
+            _run_llm_analysis(settings, "growth", snapshot, pillar.regime or "unknown", pillar._interpret(), console, ticker=ticker)
     
     @app.command("liquidity")
     def liquidity_cmd(
-        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
         delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
@@ -395,11 +399,12 @@ def register_pillar_commands(app: typer.Typer) -> None:
         console.print(Panel(body, title="Liquidity", expand=False))
         
         if llm:
-            _run_llm_analysis(settings, "liquidity", snapshot, pillar.regime or "unknown", pillar._interpret(), console)
+            _run_llm_analysis(settings, "liquidity", snapshot, pillar.regime or "unknown", pillar._interpret(), console, ticker=ticker)
     
     @app.command("vol")
     def vol_cmd(
-        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
         delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
@@ -508,4 +513,4 @@ def register_pillar_commands(app: typer.Typer) -> None:
         console.print(Panel(body, title="Volatility", expand=False))
         
         if llm:
-            _run_llm_analysis(settings, "volatility", snapshot, pillar.regime or "unknown", pillar._interpret(), console)
+            _run_llm_analysis(settings, "volatility", snapshot, pillar.regime or "unknown", pillar._interpret(), console, ticker=ticker)

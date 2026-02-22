@@ -345,128 +345,141 @@ app.add_typer(crypto_app, name="crypto")
 # ── Keep regimes ──────────────────────────────────────────────────────────
 @regime_app.command("vol")
 def regime_vol(
-    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
 ):
     """Volatility regime."""
     from lox.cli_commands.regimes.volatility_cmd import volatility_snapshot
-    volatility_snapshot(llm=llm, refresh=refresh)
+    volatility_snapshot(llm=llm, ticker=ticker, refresh=refresh)
 
 
 @regime_app.command("fiscal")
 def regime_fiscal(
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED / fiscaldata downloads"),
-    llm: bool = typer.Option(False, "--llm", help="Get LLM analysis"),
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector"),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
     delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
 ):
     """Fiscal regime."""
     from lox.cli_commands.regimes.fiscal_cmd import fiscal_snapshot
-    fiscal_snapshot(refresh=refresh, llm=llm, features=features, json_out=json_out, delta=delta)
+    fiscal_snapshot(refresh=refresh, llm=llm, ticker=ticker, features=features, json_out=json_out, delta=delta)
 
 
 @regime_app.command("funding")
 def regime_funding(
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
-    llm: bool = typer.Option(False, "--llm", help="Get LLM analysis"),
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector"),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
     delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
 ):
     """Funding regime."""
     from lox.cli_commands.regimes.funding_cmd import funding_snapshot
-    funding_snapshot(refresh=refresh, llm=llm, features=features, json_out=json_out, delta=delta)
+    funding_snapshot(refresh=refresh, llm=llm, ticker=ticker, features=features, json_out=json_out, delta=delta)
 
 
 @regime_app.command("rates")
 def regime_rates(
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
 ):
     """Rates regime."""
     from lox.cli_commands.regimes.rates_cmd import rates_snapshot
-    rates_snapshot(refresh=refresh)
+    rates_snapshot(llm=llm, ticker=ticker, refresh=refresh)
 
 
 @regime_app.command("commodities")
 def regime_commodities(
-    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
 ):
     """Commodities regime."""
     from lox.cli_commands.regimes.commodities_cmd import _run_commodities_snapshot
-    _run_commodities_snapshot(llm=llm, refresh=refresh)
+    _run_commodities_snapshot(llm=llm, ticker=ticker, refresh=refresh)
 
 
 @regime_app.command("monetary")
 def regime_monetary(
-    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
 ):
     """Monetary regime."""
     from lox.cli_commands.regimes.monetary_cmd import _run_monetary_snapshot
-    _run_monetary_snapshot(llm=llm, refresh=refresh)
+    _run_monetary_snapshot(llm=llm, ticker=ticker, refresh=refresh)
 
 
 @regime_app.command("usd")
 def regime_usd(
-    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
 ):
     """USD regime."""
     from lox.cli_commands.regimes.usd_cmd import run_usd_snapshot
-    run_usd_snapshot(llm=llm, refresh=refresh)
+    run_usd_snapshot(llm=llm, ticker=ticker, refresh=refresh)
 
 
 # ── NEW regimes (Feb 2026 restructure) ───────────────────────────────────
 @regime_app.command("growth")
 def regime_growth(
-    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
 ):
     """Growth regime (split from macro)."""
     from lox.cli_commands.regimes.growth_cmd import growth_snapshot
-    growth_snapshot(llm=llm, refresh=refresh)
+    growth_snapshot(llm=llm, ticker=ticker, refresh=refresh)
 
 
 @regime_app.command("inflation")
 def regime_inflation(
-    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
 ):
     """Inflation regime (split from macro)."""
     from lox.cli_commands.regimes.inflation_cmd import inflation_snapshot
-    inflation_snapshot(llm=llm, refresh=refresh)
+    inflation_snapshot(llm=llm, ticker=ticker, refresh=refresh)
 
 
 @regime_app.command("credit")
 def regime_credit(
-    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
 ):
     """Credit / spreads regime."""
     from lox.cli_commands.regimes.credit_cmd import credit_snapshot
-    credit_snapshot(llm=llm, refresh=refresh)
+    credit_snapshot(llm=llm, ticker=ticker, refresh=refresh)
 
 
 @regime_app.command("consumer")
 def regime_consumer(
-    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
 ):
     """Consumer health regime (replaces housing)."""
     from lox.cli_commands.regimes.consumer_cmd import consumer_snapshot
-    consumer_snapshot(llm=llm, refresh=refresh)
+    consumer_snapshot(llm=llm, ticker=ticker, refresh=refresh)
 
 
 @regime_app.command("positioning")
 def regime_positioning(
-    llm: bool = typer.Option(False, "--llm", help="Include LLM"),
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
 ):
     """Market positioning regime."""
     from lox.cli_commands.regimes.positioning_cmd import positioning_snapshot
-    positioning_snapshot(llm=llm, refresh=refresh)
+    positioning_snapshot(llm=llm, ticker=ticker, refresh=refresh)
 
 
 @regime_app.command("crypto")
@@ -475,7 +488,8 @@ def regime_crypto(
     exchange: str = typer.Option("", "--exchange", "-e", help="Override CCXT exchange"),
     short_tf: str = typer.Option("15m", "--short-tf", help="Short timeframe"),
     long_tf: str = typer.Option("4h", "--long-tf", help="Long timeframe"),
-    llm: bool = typer.Option(False, "--llm", help="Add LLM analysis"),
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
 ):
     """Crypto regime — funding, technicals, momentum."""
     from rich.console import Console
@@ -565,48 +579,23 @@ def regime_crypto(
     ))
 
     if llm:
-        if not settings.openai_api_key:
-            console.print("[yellow]OPENAI_API_KEY not set — skipping LLM[/yellow]")
-            return
-
         from lox.data.crypto_perps import CryptoPerpsData as CPD
-        from rich.markdown import Markdown
+        from lox.cli_commands.shared.regime_chat import start_regime_chat
 
-        console.print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
-
-        llm_data = CPD.format_multi_for_llm(snapshots)
-
-        try:
-            from openai import OpenAI
-        except ImportError:
-            console.print("[red]openai package required for --llm[/red]")
-            return
-
-        client = OpenAI(api_key=settings.openai_api_key, base_url=settings.OPENAI_BASE_URL)
-
-        prompt = (
-            f"The crypto perps regime is: {regime.label} (score {regime.score:.0f}/100). "
-            f"Signals: {regime.description}. Tags: {', '.join(regime.tags)}.\n\n"
-            f"Market data:\n{llm_data}\n\n"
-            "Given this regime classification and market data, provide:\n"
-            "1. Key risk factors right now (2-3 bullets)\n"
-            "2. What would change the regime (catalysts in each direction)\n"
-            "3. Positioning implications for perps traders (1-2 sentences)\n"
-            "Be specific with numbers. Max 200 words."
+        snapshot_data = {
+            "regime_score": regime.score,
+            "tags": regime.tags,
+            "market_data": CPD.format_multi_for_llm(snapshots),
+        }
+        start_regime_chat(
+            settings=settings,
+            domain="crypto",
+            snapshot=snapshot_data,
+            regime_label=regime.label,
+            regime_description=regime.description,
+            ticker=ticker,
+            console=console,
         )
-
-        resp = client.chat.completions.create(
-            model=settings.openai_model,
-            messages=[
-                {"role": "system", "content": "You are a crypto macro analyst. Be concise and data-driven."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.3,
-            max_tokens=1000,
-        )
-
-        analysis = resp.choices[0].message.content or ""
-        console.print(Panel(Markdown(analysis), title="Regime Analysis", expand=False))
 
 
 # ── MACRO alias (shows Growth + Inflation + quadrant) ────────────────────

@@ -6,7 +6,7 @@ from rich import print
 from lox.cli_commands.shared.regime_display import render_regime_panel
 
 
-def _run_volatility_snapshot(start: str = "2011-01-01", refresh: bool = False, llm: bool = False):
+def _run_volatility_snapshot(start: str = "2011-01-01", refresh: bool = False, llm: bool = False, ticker: str = ""):
     """Shared implementation for volatility snapshot."""
     from lox.config import load_settings
     from lox.volatility.signals import build_volatility_state
@@ -65,12 +65,13 @@ def _run_volatility_snapshot(start: str = "2011-01-01", refresh: bool = False, l
             snapshot=snapshot_data,
             regime_label=regime.label,
             regime_description=regime.description,
+            ticker=ticker,
         )
 
 
-def volatility_snapshot(llm: bool = False, start: str = "2011-01-01", refresh: bool = False):
+def volatility_snapshot(llm: bool = False, ticker: str = "", start: str = "2011-01-01", refresh: bool = False):
     """Entry point for `lox regime vol` (no subcommand)."""
-    _run_volatility_snapshot(start=start, refresh=refresh, llm=llm)
+    _run_volatility_snapshot(start=start, refresh=refresh, llm=llm, ticker=ticker)
 
 
 def register(vol_app: typer.Typer) -> None:
@@ -78,20 +79,22 @@ def register(vol_app: typer.Typer) -> None:
     @vol_app.callback(invoke_without_command=True)
     def volatility_default(
         ctx: typer.Context,
-        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     ):
         """Volatility regime (VIX: level/momentum/term structure)"""
         if ctx.invoked_subcommand is None:
-            _run_volatility_snapshot(llm=llm)
+            _run_volatility_snapshot(llm=llm, ticker=ticker)
 
     @vol_app.command("snapshot")
     def snapshot(
         start: str = typer.Option("2011-01-01", "--start"),
         refresh: bool = typer.Option(False, "--refresh"),
-        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     ):
         """Volatility snapshot (VIX-based): level, momentum, term structure."""
-        _run_volatility_snapshot(start=start, refresh=refresh, llm=llm)
+        _run_volatility_snapshot(start=start, refresh=refresh, llm=llm, ticker=ticker)
 
     @vol_app.command("term-structure")
     def term_structure(

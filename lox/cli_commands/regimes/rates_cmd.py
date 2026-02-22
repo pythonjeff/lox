@@ -24,6 +24,7 @@ def _run_rates_snapshot(
     start: str = "2011-01-01",
     refresh: bool = False,
     llm: bool = False,
+    ticker: str = "",
     features: bool = False,
     json_out: bool = False,
     delta: str = "",
@@ -143,6 +144,7 @@ def _run_rates_snapshot(
             snapshot=snapshot_data,
             regime_label=regime.label or regime.name,
             regime_description=regime.description,
+            ticker=ticker,
         )
 
 
@@ -156,7 +158,8 @@ def register(rates_app: typer.Typer) -> None:
     @rates_app.callback(invoke_without_command=True)
     def rates_default(
         ctx: typer.Context,
-        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
         delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
@@ -166,13 +169,14 @@ def register(rates_app: typer.Typer) -> None:
     ):
         """Rates / yield curve regime (UST level/slope/momentum)"""
         if ctx.invoked_subcommand is None:
-            _run_rates_snapshot(llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
+            _run_rates_snapshot(llm=llm, ticker=ticker, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
 
     @rates_app.command("snapshot")
     def rates_snapshot(
         start: str = typer.Option("2011-01-01", "--start", help="Start date YYYY-MM-DD"),
         refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
-        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
         delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
@@ -181,4 +185,4 @@ def register(rates_app: typer.Typer) -> None:
         trades: bool = typer.Option(False, "--trades", help="Show quick trade expressions for current regime"),
     ):
         """Rates / yield curve regime snapshot."""
-        _run_rates_snapshot(start=start, refresh=refresh, llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
+        _run_rates_snapshot(start=start, refresh=refresh, llm=llm, ticker=ticker, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)

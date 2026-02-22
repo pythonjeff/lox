@@ -218,4 +218,5 @@ def inflation_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
             snapshot=snapshot,
             regime_label=result.label,
             regime_description=result.description,
+            ticker=ticker,
         )

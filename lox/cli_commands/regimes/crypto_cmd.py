@@ -22,6 +22,7 @@ def run_crypto_snapshot(
     features: bool = False,
     json_out: bool = False,
     llm: bool = False,
+    ticker: str = "",
 ) -> None:
     """Shared implementation for crypto snapshot."""
     from lox.cli_commands.shared.labs_utils import handle_output_flags
@@ -119,6 +120,7 @@ def run_crypto_snapshot(
             snapshot=snapshot_data,
             regime_label=f"{symbol} trend: {snap.trend_60d}",
             regime_description=f"30d volatility: {snap.vol_30d:.1%}",
+            ticker=ticker,
         )
 
 
@@ -128,13 +130,14 @@ def register(crypto_app: typer.Typer) -> None:
     def crypto_default(
         ctx: typer.Context,
         symbol: str = typer.Option("BTC/USD", "--symbol", help='Crypto pair symbol, e.g. "BTC/USD"'),
-        llm: bool = typer.Option(False, "--llm", help="Get LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
     ):
         """Crypto snapshots and LLM outlooks"""
         if ctx.invoked_subcommand is None:
-            run_crypto_snapshot(symbol=symbol, llm=llm, features=features, json_out=json_out)
+            run_crypto_snapshot(symbol=symbol, llm=llm, ticker=ticker, features=features, json_out=json_out)
 
     @crypto_app.command("snapshot")
     def crypto_snapshot(
@@ -143,12 +146,13 @@ def register(crypto_app: typer.Typer) -> None:
         start: str = typer.Option("2017-01-01", "--start", help="Start date YYYY-MM-DD for price data"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
-        llm: bool = typer.Option(False, "--llm", help="Get LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     ):
         """Compute and print a quantitative snapshot for a crypto pair (returns, trend, volatility)."""
         run_crypto_snapshot(
             symbol=symbol, benchmark=benchmark, start=start,
-            features=features, json_out=json_out, llm=llm,
+            features=features, json_out=json_out, llm=llm, ticker=ticker,
         )
 
     @crypto_app.command("outlook")

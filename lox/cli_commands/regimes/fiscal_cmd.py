@@ -103,30 +103,50 @@ def _tga_level_ctx(z_level: float | None) -> str:
     return f"{v:+.2f} → {label}"
 
 
-def _auction_tail_ctx(tail_bps: float | None) -> str:
+def _auction_tail_ctx(tail_bps: float | None, *, is_proxy: bool = True) -> str:
     if not isinstance(tail_bps, (int, float)):
         return "n/a"
     v = float(tail_bps)
-    if v < 2.0:
-        label = "Strong demand"
+    if v < 1.0:
+        label = "Through / strong"
+    elif v < 3.0:
+        label = "Normal"
     elif v < 5.0:
-        label = "Mixed / watch"
+        label = "Elevated → watch"
     else:
-        label = "Weak demand → stress watch"
-    return f"{v:.1f}bp → {label}"
+        label = "Wide tail → stress"
+    suffix = " (proxy: high−median)" if is_proxy else ""
+    return f"{v:.1f}bp → {label}{suffix}"
 
 
 def _dealer_take_ctx(pct: float | None) -> str:
     if not isinstance(pct, (int, float)):
         return "n/a"
     v = float(pct)
-    if v < 15.0:
-        label = "Strong real-money demand"
+    if v < 10.0:
+        label = "Minimal dealer absorption"
+    elif v < 20.0:
+        label = "Normal intermediation"
     elif v < 35.0:
-        label = "Mixed / watch"
+        label = "Elevated → watch"
     else:
-        label = "Dealers absorbing supply → stress watch"
+        label = "Dealers forced buyers → stress"
     return f"{v:.1f}% → {label}"
+
+
+def _btc_ctx(btc: float | None) -> str:
+    if not isinstance(btc, (int, float)):
+        return "n/a"
+    v = float(btc)
+    if v >= 2.8:
+        label = "Strong"
+    elif v >= 2.3:
+        label = "Normal"
+    elif v >= 2.0:
+        label = "Soft → watch"
+    else:
+        label = "Weak → stress"
+    return f"{v:.2f}x → {label}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -138,6 +158,7 @@ def _run_fiscal_snapshot(
     refresh: bool = False,
     full: bool = False,
     llm: bool = False,
+    ticker: str = "",
     features: bool = False,
     json_out: bool = False,
     delta: str = "",
@@ -225,6 +246,20 @@ def _run_fiscal_snapshot(
     tail_disp = f"{float(tail_bps):.1f}bp" if isinstance(tail_bps, (int, float)) else "n/a"
     dealer_disp = f"{float(dealer_take):.1f}%" if isinstance(dealer_take, (int, float)) else "n/a"
 
+    # Per-tenor auction detail
+    by_tenor = auctions.get("by_tenor") if auctions else None
+    recent_auctions = auctions.get("recent") if auctions else None
+
+    # Use worst-tenor metrics for regime classification (more sensitive to stress)
+    worst_tail = tail_bps
+    worst_dealer = dealer_take
+    if by_tenor and isinstance(by_tenor.get("worst"), dict):
+        worst = by_tenor["worst"]
+        if isinstance(worst.get("tail_bps"), (int, float)):
+            worst_tail = max(float(worst["tail_bps"]), float(tail_bps or 0))
+        if isinstance(worst.get("dealer_take_pct"), (int, float)):
+            worst_dealer = max(float(worst["dealer_take_pct"]), float(dealer_take or 0))
+
     # TGA interpretation
     tga_interp = "n/a"
     if isinstance(tga_z, (int, float)) and isinstance(tga.get("tga_d_4w") if tga else None, (int, float)):
@@ -247,8 +282,8 @@ def _run_fiscal_snapshot(
         if net and isinstance(net.get("long_duration_share"), (int, float))
         else None,
         tga_z_d_4w=float(tga.get("tga_z_d_4w")) if tga and isinstance(tga.get("tga_z_d_4w"), (int, float)) else None,
-        auction_tail_bps=float(tail_bps) if isinstance(tail_bps, (int, float)) else None,
-        dealer_take_pct=float(dealer_take) if isinstance(dealer_take, (int, float)) else None,
+        auction_tail_bps=float(worst_tail) if isinstance(worst_tail, (int, float)) else None,
+        dealer_take_pct=float(worst_dealer) if isinstance(worst_dealer, (int, float)) else None,
     )
 
     series_used = d.get("series_used") if isinstance(d.get("series_used"), dict) else {}
@@ -258,6 +293,10 @@ def _run_fiscal_snapshot(
     fiscaldata_disp = ", ".join(str(x) for x in fiscaldata_series) if fiscaldata_series else "n/a"
 
     # Build snapshot and features for output flags
+    # Extract worst-tenor metrics for snapshot / features
+    _front = by_tenor.get("front", {}) if by_tenor else {}
+    _back = by_tenor.get("back", {}) if by_tenor else {}
+
     snapshot_data = {
         "deficit_12m": d.get("deficit_12m"),
         "deficit_pct_gdp": deficit_pct_gdp,
@@ -270,6 +309,10 @@ def _run_fiscal_snapshot(
         "tga_z_d_4w": tga_z,
         "auction_tail_bps": tail_bps,
         "dealer_take_pct": dealer_take,
+        "tail_front_bps": _front.get("tail_bps"),
+        "tail_back_bps": _back.get("tail_bps"),
+        "dealer_front_pct": _front.get("dealer_take_pct"),
+        "dealer_back_pct": _back.get("dealer_take_pct"),
         "regime": regime.label or regime.name,
     }
 
@@ -279,8 +322,12 @@ def _run_fiscal_snapshot(
         "deficit_impulse_pct_gdp": impulse,
         "long_duration_share": long_share,
         "tga_z_d_4w": tga_z,
-        "auction_tail_bps": tail_bps,
-        "dealer_take_pct": dealer_take,
+        "auction_tail_bps": worst_tail,
+        "dealer_take_pct": worst_dealer,
+        "tail_front_bps": _front.get("tail_bps"),
+        "tail_back_bps": _back.get("tail_bps"),
+        "dealer_front_pct": _front.get("dealer_take_pct"),
+        "dealer_back_pct": _back.get("dealer_take_pct"),
     }
 
     # Handle --features and --json flags
@@ -374,9 +421,40 @@ def _run_fiscal_snapshot(
         {"name": "Long issuance share", "value": long_share_disp, "context": _duration_share_ctx(float(long_share)) if isinstance(long_share, (int, float)) else "n/a"},
         {"name": "TGA level", "value": tga_level, "context": f"z={tga_z_level_disp}" if isinstance(tga_z_level, (int, float)) else "n/a"},
         {"name": "TGA (4w z-score)", "value": tga_z_disp, "context": _tga_z_ctx(float(tga_z)) if isinstance(tga_z, (int, float)) else "n/a"},
-        {"name": "Auction tail", "value": tail_disp, "context": _auction_tail_ctx(float(tail_bps)) if isinstance(tail_bps, (int, float)) else "n/a"},
-        {"name": "Dealer take", "value": dealer_disp, "context": _dealer_take_ctx(float(dealer_take)) if isinstance(dealer_take, (int, float)) else "n/a"},
     ]
+
+    # Per-tenor auction quality (replaces misleading blended rows)
+    _tenor_labels = {"front": "2Y-5Y", "back": "7Y-30Y"}
+    if by_tenor:
+        for bucket in ("front", "back"):
+            b = by_tenor.get(bucket, {})
+            if not isinstance(b, dict) or not b.get("n"):
+                continue
+            prefix = _tenor_labels.get(bucket, bucket)
+            n_auctions = b.get("n", 0)
+            b_tail = b.get("tail_bps")
+            b_dealer = b.get("dealer_take_pct")
+            b_btc = b.get("btc")
+            metrics.append({
+                "name": f"Tail ({prefix})",
+                "value": f"{float(b_tail):.1f}bp" if isinstance(b_tail, (int, float)) else "n/a",
+                "context": _auction_tail_ctx(b_tail) if isinstance(b_tail, (int, float)) else "n/a",
+            })
+            metrics.append({
+                "name": f"Dealer take ({prefix})",
+                "value": f"{float(b_dealer):.1f}%" if isinstance(b_dealer, (int, float)) else "n/a",
+                "context": _dealer_take_ctx(b_dealer) if isinstance(b_dealer, (int, float)) else "n/a",
+            })
+            if isinstance(b_btc, (int, float)):
+                metrics.append({
+                    "name": f"Bid/cover ({prefix})",
+                    "value": f"{float(b_btc):.2f}x",
+                    "context": _btc_ctx(b_btc),
+                })
+    else:
+        metrics.append({"name": "Auction tail (all)", "value": tail_disp, "context": _auction_tail_ctx(tail_bps) if isinstance(tail_bps, (int, float)) else "n/a"})
+        metrics.append({"name": "Dealer take (all)", "value": dealer_disp, "context": _dealer_take_ctx(dealer_take) if isinstance(dealer_take, (int, float)) else "n/a"})
+
     # Append MC impact to description if available
     full_desc = fpi_desc
     if mc_impact:
@@ -393,6 +471,51 @@ def _run_fiscal_snapshot(
         sub_scores=sub_scores,
     ))
 
+    # Recent individual auctions detail table
+    if recent_auctions:
+        from rich.table import Table as RichTable
+        at = RichTable(
+            title="Recent Coupon Auctions (individual)",
+            show_header=True,
+            header_style="bold yellow",
+            box=None,
+            padding=(0, 1),
+        )
+        at.add_column("Date", style="dim")
+        at.add_column("Term")
+        at.add_column("Tail", justify="right")
+        at.add_column("Dealer %", justify="right")
+        at.add_column("BTC", justify="right")
+        at.add_column("Signal", style="dim")
+        for ra in recent_auctions:
+            t = ra.get("tail_bps")
+            d_pct = ra.get("dealer_take_pct")
+            btc_v = ra.get("btc")
+            # Color-code the signal
+            stress_flags = 0
+            if isinstance(t, (int, float)) and float(t) >= 3.0:
+                stress_flags += 1
+            if isinstance(d_pct, (int, float)) and float(d_pct) >= 20.0:
+                stress_flags += 1
+            if isinstance(btc_v, (int, float)) and float(btc_v) < 2.3:
+                stress_flags += 1
+            if stress_flags >= 2:
+                signal = "[red]STRESS[/red]"
+            elif stress_flags == 1:
+                signal = "[yellow]WATCH[/yellow]"
+            else:
+                signal = "[green]OK[/green]"
+            at.add_row(
+                str(ra.get("date", "")),
+                str(ra.get("term", "")),
+                f"{float(t):.1f}bp" if isinstance(t, (int, float)) else "—",
+                f"{float(d_pct):.1f}%" if isinstance(d_pct, (int, float)) else "—",
+                f"{float(btc_v):.2f}x" if isinstance(btc_v, (int, float)) else "—",
+                signal,
+            )
+        console.print()
+        console.print(at)
+
     if llm:
         from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
 
@@ -407,8 +530,10 @@ def _run_fiscal_snapshot(
             "tga_level": tga.get("tga_level") if tga else None,
             "tga_z_d_4w": tga_z,
             "tga_d_4w": tga.get("tga_d_4w") if tga else None,
-            "auction_tail_bps": tail_bps,
-            "dealer_take_pct": dealer_take,
+            "auction_tail_bps_blended": tail_bps,
+            "dealer_take_pct_blended": dealer_take,
+            "auction_by_tenor": by_tenor,
+            "recent_auctions": recent_auctions,
         }
         print_llm_regime_analysis(
             settings=settings,
@@ -416,6 +541,7 @@ def _run_fiscal_snapshot(
             snapshot=snapshot_data,
             regime_label=regime.label or regime.name,
             regime_description=regime.description,
+            ticker=ticker,
         )
 
 
@@ -432,7 +558,8 @@ def register(fiscal_app: typer.Typer) -> None:
     @fiscal_app.callback(invoke_without_command=True)
     def fiscal_default(
         ctx: typer.Context,
-        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
         delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
@@ -442,7 +569,7 @@ def register(fiscal_app: typer.Typer) -> None:
     ):
         """US fiscal regime (deficits, issuance mix, auctions, TGA)"""
         if ctx.invoked_subcommand is None:
-            _run_fiscal_snapshot(llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
+            _run_fiscal_snapshot(llm=llm, ticker=ticker, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
 
     @fiscal_app.command("snapshot")
     def fiscal_snapshot(
@@ -457,7 +584,8 @@ def register(fiscal_app: typer.Typer) -> None:
             "--full",
             help="Print the full fiscal state (TGA/interest placeholders) and the richer regime classifier.",
         ),
-        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
         delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
@@ -472,7 +600,7 @@ def register(fiscal_app: typer.Typer) -> None:
         it prints the rolling 12m deficit plus a skeleton regime label.
         Use --full for the richer snapshot + classifier.
         """
-        _run_fiscal_snapshot(lookback_years=lookback_years, refresh=refresh, full=full, llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
+        _run_fiscal_snapshot(lookback_years=lookback_years, refresh=refresh, full=full, llm=llm, ticker=ticker, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
 
     @fiscal_app.command("outlook")
     def fiscal_outlook(
