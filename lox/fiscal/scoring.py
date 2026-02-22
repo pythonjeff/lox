@@ -139,10 +139,25 @@ def _auction_absorption_score(inputs: FiscalInputs) -> FiscalSubScore:
     vals = [inputs.z_auction_tail_bps, inputs.z_dealer_take_pct]
     # Bid-to-cover: lower = worse absorption. Invert so higher score = more stress.
     if inputs.bid_to_cover_avg is not None:
-        # Typical BTC ~2.3-2.8. Below 2.0 is weak.
-        btc_z = -(inputs.bid_to_cover_avg - 2.5) / 0.3  # inverted: lower BTC → higher z
+        btc_z = -(inputs.bid_to_cover_avg - 2.5) / 0.3
         vals.append(btc_z)
     score = _pctile_score(*vals)
+
+    # Floor: absolute tail/dealer levels override if z-scores understate stress.
+    # Blended z-scores can be diluted when some tenors are fine and others stressed.
+    floor = 0.0
+    if inputs.auction_tail_bps is not None:
+        if inputs.auction_tail_bps >= 5.0:
+            floor = max(floor, 60.0)
+        elif inputs.auction_tail_bps >= 3.0:
+            floor = max(floor, 45.0)
+    if inputs.dealer_take_pct is not None:
+        if inputs.dealer_take_pct >= 35.0:
+            floor = max(floor, 60.0)
+        elif inputs.dealer_take_pct >= 25.0:
+            floor = max(floor, 45.0)
+    score = max(score, floor)
+
     return FiscalSubScore(
         name="Auction Absorption",
         score=score,
@@ -151,6 +166,8 @@ def _auction_absorption_score(inputs: FiscalInputs) -> FiscalSubScore:
             "z_auction_tail_bps": inputs.z_auction_tail_bps,
             "z_dealer_take_pct": inputs.z_dealer_take_pct,
             "bid_to_cover_avg": inputs.bid_to_cover_avg,
+            "auction_tail_bps_raw": inputs.auction_tail_bps,
+            "dealer_take_pct_raw": inputs.dealer_take_pct,
         },
         weight=0.20,
     )
@@ -226,9 +243,10 @@ def _label_from_fpi(fpi: float, auction_score: float) -> tuple[str, str]:
     else:
         idx = len(_FPI_LABELS) - 1
 
-    # Auction absorption override: if auction sub-score > 80 and we're not
-    # already at max, escalate by one notch.
-    if auction_score > 80 and idx < len(_FPI_LABELS) - 1:
+    # Auction absorption override: if auction sub-score > 60 and we're not
+    # already at max, escalate by one notch. Auctions are the most
+    # market-visible stress signal and should escalate the label early.
+    if auction_score > 60 and idx < len(_FPI_LABELS) - 1:
         idx += 1
 
     return _FPI_LABELS[idx][2], _FPI_LABELS[idx][3]

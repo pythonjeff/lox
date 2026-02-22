@@ -7,7 +7,7 @@ from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 
 
-def positioning_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
+def positioning_snapshot(*, llm: bool = False, ticker: str = "", refresh: bool = False) -> None:
     """Entry point for `lox regime positioning`."""
     settings = load_settings()
 
@@ -69,4 +69,5 @@ def positioning_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
             snapshot={"vix_term_slope": vix_term_slope, "put_call": put_call, "aaii_bull": aaii_bull},
             regime_label=result.label,
             regime_description=result.description,
+            ticker=ticker,
         )

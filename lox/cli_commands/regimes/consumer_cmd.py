@@ -7,7 +7,7 @@ from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 
 
-def consumer_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
+def consumer_snapshot(*, llm: bool = False, ticker: str = "", refresh: bool = False) -> None:
     """Entry point for `lox regime consumer`."""
     settings = load_settings()
     from lox.data.fred import FredClient
@@ -103,4 +103,5 @@ def consumer_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
             snapshot={"michigan": michigan_sent, "retail_mom": retail_mom, "mortgage_30y": mortgage_30y},
             regime_label=result.label,
             regime_description=result.description,
+            ticker=ticker,
         )

@@ -142,11 +142,13 @@ def classify_fiscal_regime_snapshot(
         # If most net issuance is coming from the long bucket, duration absorption risk rises.
         long_tilt = float(long_duration_issuance_share) >= 0.40
 
-    # Auction absorption (best-effort): these are the highest-signal "market absorption" fields once wired.
+    # Auction absorption: tighter thresholds to catch stress earlier.
+    # Tails >= 3bp consistently signal weaker-than-expected demand;
+    # dealer take >= 25% means dealers are absorbing meaningful supply.
     weak_auctions = False
-    if isinstance(auction_tail_bps, (int, float)) and float(auction_tail_bps) >= 5.0:
+    if isinstance(auction_tail_bps, (int, float)) and float(auction_tail_bps) >= 3.0:
         weak_auctions = True
-    if isinstance(dealer_take_pct, (int, float)) and float(dealer_take_pct) >= 35.0:
+    if isinstance(dealer_take_pct, (int, float)) and float(dealer_take_pct) >= 25.0:
         weak_auctions = True
 
     # Liquidity pulse from TGA: bias the stress label one notch.

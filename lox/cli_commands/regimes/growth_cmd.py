@@ -8,7 +8,7 @@ from lox.cli_commands.shared.regime_display import render_regime_panel
 from lox.config import load_settings
 
 
-def growth_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
+def growth_snapshot(*, llm: bool = False, ticker: str = "", refresh: bool = False) -> None:
     """Entry point for `lox regime growth`."""
     settings = load_settings()
 
@@ -122,4 +122,5 @@ def growth_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
             snapshot=snapshot,
             regime_label=result.label,
             regime_description=result.description,
+            ticker=ticker,
         )

@@ -38,6 +38,7 @@ def _run_monetary_snapshot(
     lookback_years: int = 5,
     refresh: bool = False,
     llm: bool = False,
+    ticker: str = "",
     features: bool = False,
     json_out: bool = False,
     delta: str = "",
@@ -188,6 +189,7 @@ def _run_monetary_snapshot(
             snapshot=snapshot_data,
             regime_label=regime.label or regime.name,
             regime_description=regime.description,
+            ticker=ticker,
         )
 
 
@@ -196,7 +198,8 @@ def register(monetary_app: typer.Typer) -> None:
     @monetary_app.callback(invoke_without_command=True)
     def monetary_default(
         ctx: typer.Context,
-        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
         delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
@@ -206,13 +209,14 @@ def register(monetary_app: typer.Typer) -> None:
     ):
         """Fed aggregate liquidity (reserves, balance sheet, RRP) — quantity of money in system"""
         if ctx.invoked_subcommand is None:
-            _run_monetary_snapshot(llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
+            _run_monetary_snapshot(llm=llm, ticker=ticker, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
 
     @monetary_app.command("snapshot")
     def monetary_snapshot(
         lookback_years: int = typer.Option(5, "--lookback-years", help="How many years of history to load."),
         refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
-        llm: bool = typer.Option(False, "--llm", help="Get PhD-level LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
         delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
@@ -221,4 +225,4 @@ def register(monetary_app: typer.Typer) -> None:
         trades: bool = typer.Option(False, "--trades", help="Show quick trade expressions for current regime"),
     ):
         """Monetary regime snapshot (Fed balance sheet, reserves, RRP)."""
-        _run_monetary_snapshot(lookback_years=lookback_years, refresh=refresh, llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
+        _run_monetary_snapshot(lookback_years=lookback_years, refresh=refresh, llm=llm, ticker=ticker, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)

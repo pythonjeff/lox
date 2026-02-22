@@ -16,6 +16,7 @@ def run_housing_snapshot(
     json_out: bool = False,
     delta: str = "",
     llm: bool = False,
+    ticker: str = "",
     alert: bool = False,
     calendar: bool = False,
     trades: bool = False,
@@ -133,6 +134,7 @@ def run_housing_snapshot(
             snapshot=snapshot_data,
             regime_label=regime.label,
             regime_description=regime.description,
+            ticker=ticker,
         )
 
 
@@ -141,7 +143,8 @@ def register(housing_app: typer.Typer) -> None:
     @housing_app.callback(invoke_without_command=True)
     def housing_default(
         ctx: typer.Context,
-        llm: bool = typer.Option(False, "--llm", help="Get LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
         delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
@@ -151,7 +154,7 @@ def register(housing_app: typer.Typer) -> None:
     ):
         """Housing / MBS regime (mortgage spreads + housing proxies)"""
         if ctx.invoked_subcommand is None:
-            run_housing_snapshot(llm=llm, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
+            run_housing_snapshot(llm=llm, ticker=ticker, features=features, json_out=json_out, delta=delta, alert=alert, calendar=calendar, trades=trades)
 
     @housing_app.command("snapshot")
     def snapshot(
@@ -160,7 +163,8 @@ def register(housing_app: typer.Typer) -> None:
         features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
         json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
         delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
-        llm: bool = typer.Option(False, "--llm", help="Get LLM analysis with real-time data"),
+        llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+        ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
         alert: bool = typer.Option(False, "--alert", help="Only output if regime is extreme (for cron/monitoring)"),
         calendar: bool = typer.Option(False, "--calendar", help="Show upcoming events that could shift this regime"),
         trades: bool = typer.Option(False, "--trades", help="Show quick trade expressions for current regime"),
@@ -168,6 +172,6 @@ def register(housing_app: typer.Typer) -> None:
         """Housing / MBS snapshot: mortgage spread stress + market proxies."""
         run_housing_snapshot(
             start=start, refresh=refresh, features=features, json_out=json_out,
-            delta=delta, llm=llm, alert=alert, calendar=calendar, trades=trades,
+            delta=delta, llm=llm, ticker=ticker, alert=alert, calendar=calendar, trades=trades,
         )
 

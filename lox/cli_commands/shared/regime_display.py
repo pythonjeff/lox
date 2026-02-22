@@ -126,27 +126,25 @@ def print_llm_regime_analysis(
     regime_description: str | None = None,
     panel_title: str = "Analysis",
     console: Any = None,
+    ticker: str = "",
     **llm_kwargs: Any,
 ) -> None:
     """
-    Uniform LLM analysis block for all regime commands.
-    Uses the compact, metrics-focused prompt (300–400 words, tables, minimal prose).
+    Interactive LLM chat for regime commands.
+
+    Launches a conversation pre-loaded with the regime snapshot (and optional
+    ticker context) so the user can ask follow-up questions.
     """
-    from rich import print as rprint
-    from rich.markdown import Markdown
+    from rich.console import Console as _Console
 
-    from lox.llm.core.analyst import llm_analyze_regime
+    from lox.cli_commands.shared.regime_chat import start_regime_chat
 
-    _print = console.print if console is not None else rprint
-    _print("\n[bold cyan]Generating LLM analysis...[/bold cyan]\n")
-
-    analysis = llm_analyze_regime(
+    start_regime_chat(
         settings=settings,
         domain=domain,
         snapshot=snapshot,
         regime_label=regime_label,
         regime_description=regime_description,
-        **llm_kwargs,
+        ticker=ticker,
+        console=console if isinstance(console, _Console) else None,
     )
-
-    _print(Panel(Markdown(analysis), title=panel_title, expand=False))

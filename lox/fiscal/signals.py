@@ -70,6 +70,11 @@ _AUCT_PD_ACCEPTED_AMT_COLS = (
     "primary_dealer_amount",
     "primary_dealer_accepted",
 )
+_AUCT_BTC_COLS = (
+    "bid_to_cover_ratio",
+    "bid_to_cover",
+    "btc_ratio",
+)
 
 # Candidate column names vary across FiscalData surfaces; handle defensively.
 _MSPD_DATE_COLS = ("record_date", "as_of_date", "report_date", "data_date")
@@ -245,6 +250,240 @@ def _compute_auction_tail_and_dealer_take(auctions: pd.DataFrame) -> pd.DataFram
     )
 
     return out[["date", "AUCTION_TAIL_BPS", "DEALER_TAKE_PCT"]]
+
+
+def _classify_auction_tenor(term_str: str | None) -> str:
+    """Classify auction security_term into 'front' (2Y-5Y) or 'back' (7Y-30Y)."""
+    t = (term_str or "").lower().replace("-", "").replace(" ", "")
+    for prefix in ("2y", "3y", "5y", "2year", "3year", "5year"):
+        if prefix in t:
+            return "front"
+    for prefix in ("7y", "10y", "20y", "30y", "7year", "10year", "20year", "30year"):
+        if prefix in t:
+            return "back"
+    try:
+        import re
+        m = re.search(r"(\d+)", t)
+        if m:
+            yrs = int(m.group(1))
+            return "front" if yrs <= 5 else "back"
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _compute_auction_detail_by_tenor(
+    auctions: pd.DataFrame,
+) -> dict[str, dict[str, float | None]]:
+    """
+    Split the most recent month's coupon auctions into front-end (2Y-5Y)
+    and back-end (7Y-30Y) buckets, returning tail, dealer take, and
+    bid-to-cover for each.
+
+    Returns {"front": {...}, "back": {...}, "worst": {...}} where "worst"
+    picks whichever bucket shows more stress.
+    """
+    empty: dict[str, dict[str, float | None]] = {
+        "front": {"tail_bps": None, "dealer_take_pct": None, "btc": None, "n": 0},
+        "back": {"tail_bps": None, "dealer_take_pct": None, "btc": None, "n": 0},
+        "worst": {"tail_bps": None, "dealer_take_pct": None, "btc": None, "bucket": None},
+    }
+    if auctions is None or auctions.empty:
+        return empty
+
+    df = auctions.copy()
+    date_col = _first_existing_col(df, _AUCT_DATE_COLS)
+    typ_col = _first_existing_col(df, _AUCT_TYPE_COLS)
+    term_col = _first_existing_col(df, _AUCT_TERM_COLS)
+    if date_col is None:
+        return empty
+
+    df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+    df = df.dropna(subset=[date_col])
+    if df.empty:
+        return empty
+
+    if typ_col is not None:
+        df[typ_col] = df[typ_col].astype(str)
+    if term_col is not None:
+        df[term_col] = df[term_col].astype(str)
+
+    # Coupon-only filter
+    def _is_coupon(r: pd.Series) -> bool:
+        return _looks_like_coupon_auction(
+            security_type=str(r.get(typ_col)) if typ_col is not None else None,
+            security_term=str(r.get(term_col)) if term_col is not None else None,
+        )
+
+    df = df[df.apply(_is_coupon, axis=1)]
+    if df.empty:
+        return empty
+
+    # Classify tenor bucket
+    df["_tenor"] = df[term_col].apply(_classify_auction_tenor) if term_col else "unknown"
+    df = df[df["_tenor"].isin({"front", "back"})]
+    if df.empty:
+        return empty
+
+    # Keep last 3 months for robustness
+    df = df.sort_values(date_col, ascending=False)
+    cutoff = df[date_col].max() - pd.DateOffset(months=3)
+    df = df[df[date_col] >= cutoff]
+
+    # Compute per-row metrics
+    high_col = _first_existing_col(df, _AUCT_HIGH_YIELD_COLS)
+    med_col = _first_existing_col(df, _AUCT_MEDIAN_YIELD_COLS)
+    avg_col = _first_existing_col(df, _AUCT_AVG_YIELD_COLS)
+    btc_col = _first_existing_col(df, _AUCT_BTC_COLS)
+
+    for c in [high_col, med_col, avg_col, btc_col]:
+        if c is not None:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    if high_col and med_col:
+        df["_tail"] = (df[high_col] - df[med_col]) * 100.0
+    elif high_col and avg_col:
+        df["_tail"] = (df[high_col] - df[avg_col]) * 100.0
+    else:
+        df["_tail"] = pd.NA
+
+    pd_pct_col = _first_existing_col(df, _AUCT_PD_ACCEPTED_PCT_COLS)
+    if pd_pct_col is not None:
+        df[pd_pct_col] = pd.to_numeric(df[pd_pct_col], errors="coerce")
+        v = df[pd_pct_col]
+        df["_dealer"] = v.where(v.abs() > 1.0, v * 100.0)
+    else:
+        pd_amt_col = _first_existing_col(df, _AUCT_PD_ACCEPTED_AMT_COLS)
+        tot_col = _first_existing_col(df, _AUCT_TOTAL_ACCEPTED_COLS)
+        if pd_amt_col and tot_col:
+            df[pd_amt_col] = pd.to_numeric(df[pd_amt_col], errors="coerce")
+            df[tot_col] = pd.to_numeric(df[tot_col], errors="coerce")
+            df["_dealer"] = 100.0 * df[pd_amt_col] / df[tot_col].replace({0.0: pd.NA})
+        else:
+            df["_dealer"] = pd.NA
+
+    df["_btc"] = df[btc_col] if btc_col else pd.NA
+
+    result: dict[str, dict[str, float | None]] = {}
+    for bucket in ("front", "back"):
+        sub = df[df["_tenor"] == bucket]
+        n = len(sub)
+        tail_vals = sub["_tail"].dropna()
+        dealer_vals = sub["_dealer"].dropna()
+        btc_vals = pd.to_numeric(sub["_btc"], errors="coerce").dropna() if "_btc" in sub else pd.Series(dtype=float)
+        result[bucket] = {
+            "tail_bps": float(tail_vals.mean()) if not tail_vals.empty else None,
+            "dealer_take_pct": float(dealer_vals.mean()) if not dealer_vals.empty else None,
+            "btc": float(btc_vals.mean()) if not btc_vals.empty else None,
+            "n": n,
+        }
+
+    # "worst" = whichever bucket shows more stress (higher tail or higher dealer take)
+    def _stress_score(b: dict) -> float:
+        s = 0.0
+        if isinstance(b.get("tail_bps"), (int, float)):
+            s += float(b["tail_bps"])
+        if isinstance(b.get("dealer_take_pct"), (int, float)):
+            s += float(b["dealer_take_pct"]) * 0.2  # scale dealer take to comparable range
+        return s
+
+    worst_bucket = "back" if _stress_score(result.get("back", {})) >= _stress_score(result.get("front", {})) else "front"
+    result["worst"] = {**result.get(worst_bucket, {}), "bucket": worst_bucket}
+
+    return result
+
+
+def _compute_recent_auctions_list(
+    auctions: pd.DataFrame, n: int = 8,
+) -> list[dict[str, object]]:
+    """
+    Return the N most recent individual coupon auctions with per-auction
+    metrics for display (security term, date, tail, dealer take, BTC).
+    """
+    if auctions is None or auctions.empty:
+        return []
+
+    df = auctions.copy()
+    date_col = _first_existing_col(df, _AUCT_DATE_COLS)
+    typ_col = _first_existing_col(df, _AUCT_TYPE_COLS)
+    term_col = _first_existing_col(df, _AUCT_TERM_COLS)
+    if date_col is None:
+        return []
+
+    df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+    df = df.dropna(subset=[date_col])
+    if df.empty:
+        return []
+
+    if typ_col is not None:
+        df[typ_col] = df[typ_col].astype(str)
+    if term_col is not None:
+        df[term_col] = df[term_col].astype(str)
+
+    def _is_coupon(r: pd.Series) -> bool:
+        return _looks_like_coupon_auction(
+            security_type=str(r.get(typ_col)) if typ_col is not None else None,
+            security_term=str(r.get(term_col)) if term_col is not None else None,
+        )
+
+    df = df[df.apply(_is_coupon, axis=1)]
+    if df.empty:
+        return []
+
+    # Compute tail, dealer, BTC per row
+    high_col = _first_existing_col(df, _AUCT_HIGH_YIELD_COLS)
+    med_col = _first_existing_col(df, _AUCT_MEDIAN_YIELD_COLS)
+    avg_col = _first_existing_col(df, _AUCT_AVG_YIELD_COLS)
+    btc_col = _first_existing_col(df, _AUCT_BTC_COLS)
+
+    for c in [high_col, med_col, avg_col, btc_col]:
+        if c is not None:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    if high_col and med_col:
+        df["_tail"] = (df[high_col] - df[med_col]) * 100.0
+    elif high_col and avg_col:
+        df["_tail"] = (df[high_col] - df[avg_col]) * 100.0
+    else:
+        df["_tail"] = pd.NA
+
+    pd_pct_col = _first_existing_col(df, _AUCT_PD_ACCEPTED_PCT_COLS)
+    if pd_pct_col is not None:
+        df[pd_pct_col] = pd.to_numeric(df[pd_pct_col], errors="coerce")
+        v = df[pd_pct_col]
+        df["_dealer"] = v.where(v.abs() > 1.0, v * 100.0)
+    else:
+        pd_amt_col = _first_existing_col(df, _AUCT_PD_ACCEPTED_AMT_COLS)
+        tot_col = _first_existing_col(df, _AUCT_TOTAL_ACCEPTED_COLS)
+        if pd_amt_col and tot_col:
+            df[pd_amt_col] = pd.to_numeric(df[pd_amt_col], errors="coerce")
+            df[tot_col] = pd.to_numeric(df[tot_col], errors="coerce")
+            df["_dealer"] = 100.0 * df[pd_amt_col] / df[tot_col].replace({0.0: pd.NA})
+        else:
+            df["_dealer"] = pd.NA
+
+    df["_btc"] = df[btc_col] if btc_col else pd.NA
+
+    # Only keep rows that have at least one computed metric
+    has_data = df["_tail"].notna() | df["_dealer"].notna()
+    if "_btc" in df.columns:
+        has_data = has_data | pd.to_numeric(df["_btc"], errors="coerce").notna()
+    df = df[has_data]
+
+    df = df.sort_values(date_col, ascending=False).head(n)
+
+    rows: list[dict[str, object]] = []
+    for _, r in df.iterrows():
+        term_label = str(r.get(term_col, "")) if term_col else ""
+        rows.append({
+            "date": str(pd.to_datetime(r[date_col]).date()),
+            "term": term_label,
+            "tenor": _classify_auction_tenor(term_label),
+            "tail_bps": round(float(r["_tail"]), 1) if pd.notna(r["_tail"]) else None,
+            "dealer_take_pct": round(float(r["_dealer"]), 1) if pd.notna(r["_dealer"]) else None,
+            "btc": round(float(r["_btc"]), 2) if pd.notna(r.get("_btc")) else None,
+        })
+    return rows
 
 
 def _fetch_treasury_auction_results(*, start_date: str, refresh: bool) -> pd.DataFrame:
@@ -941,18 +1180,26 @@ def build_fiscal_deficit_page_data(
         net_iss_2y = None
         net_iss_10y = None
 
-    # Auctions (best-effort): monthly aggregated tail proxy + dealer take
+    # Auctions (best-effort): monthly aggregated + per-tenor + recent individual
     auctions = None
     try:
         a = _fetch_treasury_auction_results(start_date=start_date, refresh=refresh)
         a_monthly = _compute_auction_tail_and_dealer_take(a)
+        by_tenor = _compute_auction_detail_by_tenor(a)
+        recent_list = _compute_recent_auctions_list(a, n=8)
         if not a_monthly.empty:
             last_a = a_monthly.dropna(how="all", subset=["AUCTION_TAIL_BPS", "DEALER_TAKE_PCT"]).iloc[-1]
             auctions = {
                 "asof": str(pd.to_datetime(last_a["date"]).date()),
                 "tail_bps": float(last_a["AUCTION_TAIL_BPS"]) if pd.notna(last_a["AUCTION_TAIL_BPS"]) else None,
                 "dealer_take_pct": float(last_a["DEALER_TAKE_PCT"]) if pd.notna(last_a["DEALER_TAKE_PCT"]) else None,
-                "notes": "Tail is proxied as (high_yield - median_yield) in bps; dealer take is primary dealer takedown as % of total accepted.",
+                "by_tenor": by_tenor,
+                "recent": recent_list,
+                "notes": (
+                    "Tail is proxied as (high_yield - median_yield) in bps — NOT true tail vs when-issued. "
+                    "Dealer take is primary dealer takedown as % of total accepted. "
+                    "by_tenor splits front-end (2Y-5Y) vs back-end (7Y-30Y) over last 3 months."
+                ),
             }
     except Exception:
         auctions = None
