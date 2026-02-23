@@ -1186,7 +1186,7 @@ def build_fiscal_deficit_page_data(
         a = _fetch_treasury_auction_results(start_date=start_date, refresh=refresh)
         a_monthly = _compute_auction_tail_and_dealer_take(a)
         by_tenor = _compute_auction_detail_by_tenor(a)
-        recent_list = _compute_recent_auctions_list(a, n=8)
+        recent_list = _compute_recent_auctions_list(a, n=20)
         if not a_monthly.empty:
             last_a = a_monthly.dropna(how="all", subset=["AUCTION_TAIL_BPS", "DEALER_TAKE_PCT"]).iloc[-1]
             auctions = {

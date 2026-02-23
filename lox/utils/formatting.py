@@ -207,6 +207,22 @@ def pad_left(s: str, width: int) -> str:
     """Left-pad string to specified width."""
     return s.rjust(width)
 
+def safe_float(val: Any, default: Optional[float] = None) -> Optional[float]:
+    """
+    Safely convert a value to float.
+
+    Returns *default* when conversion fails or val is None/NaN.
+    Eliminates scattered try/except float() blocks.
+    """
+    if val is None:
+        return default
+    try:
+        f = float(val)
+        return f if f == f else default  # NaN check
+    except (TypeError, ValueError):
+        return default
+
+
 def fmt_usd_from_millions(x) -> str:
     """Format USD from millions input (e.g., 100 -> $100M)."""
     if x is None or not isinstance(x, (int, float)):

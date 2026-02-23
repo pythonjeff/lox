@@ -150,6 +150,60 @@ def _btc_ctx(btc: float | None) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Auction trend sparklines
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SPARK_CHARS = "▁▂▃▄▅▆▇█"
+
+
+def _sparkline(values: list[float]) -> str:
+    """Render a list of floats as a Unicode sparkline."""
+    if not values:
+        return ""
+    lo, hi = min(values), max(values)
+    span = hi - lo if hi != lo else 1.0
+    return "".join(_SPARK_CHARS[min(len(_SPARK_CHARS) - 1, int((v - lo) / span * (len(_SPARK_CHARS) - 1)))] for v in values)
+
+
+def _trend_label(values: list[float], higher_is_worse: bool = True) -> str:
+    """Compare the average of the recent half vs the older half."""
+    if len(values) < 4:
+        return ""
+    mid = len(values) // 2
+    old_avg = sum(values[:mid]) / mid
+    new_avg = sum(values[mid:]) / (len(values) - mid)
+    delta = new_avg - old_avg
+    threshold = (max(values) - min(values)) * 0.1 if max(values) != min(values) else 0.01
+    if abs(delta) < threshold:
+        return "[dim]stable[/dim]"
+    if higher_is_worse:
+        return "[red]worsening[/red]" if delta > 0 else "[green]improving[/green]"
+    return "[green]improving[/green]" if delta > 0 else "[red]weakening[/red]"
+
+
+def _show_auction_trend(console, long_auctions: list[dict]) -> None:
+    """Print a sparkline trend summary for long-end auctions."""
+    # Reverse so oldest is first (sparkline reads left-to-right = old-to-new)
+    ordered = list(reversed(long_auctions))
+
+    tails = [float(a["tail_bps"]) for a in ordered if isinstance(a.get("tail_bps"), (int, float))]
+    btcs = [float(a["btc"]) for a in ordered if isinstance(a.get("btc"), (int, float))]
+    dealers = [float(a["dealer_take_pct"]) for a in ordered if isinstance(a.get("dealer_take_pct"), (int, float))]
+
+    parts: list[str] = []
+    if len(tails) >= 4:
+        parts.append(f"Tail {_sparkline(tails)} ({_trend_label(tails, higher_is_worse=True)})")
+    if len(btcs) >= 4:
+        parts.append(f"BTC {_sparkline(btcs)} ({_trend_label(btcs, higher_is_worse=False)})")
+    if len(dealers) >= 4:
+        parts.append(f"Dealer {_sparkline(dealers)} ({_trend_label(dealers, higher_is_worse=True)})")
+
+    if parts:
+        n = len(tails) or len(btcs) or len(dealers)
+        console.print(f"\n[dim]Long-end trend (last {n}):[/dim]  {'  │  '.join(parts)}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Core implementation (callable directly)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -471,11 +525,14 @@ def _run_fiscal_snapshot(
         sub_scores=sub_scores,
     ))
 
-    # Recent individual auctions detail table
+    # Recent individual auctions detail table (10Y + 30Y only — the tenors
+    # that matter most for duration supply / term-premium stress)
     if recent_auctions:
         from rich.table import Table as RichTable
+        _LONG_TENORS = {"10-Year", "30-Year", "20-Year"}
+        long_auctions = [ra for ra in recent_auctions if ra.get("term") in _LONG_TENORS]
         at = RichTable(
-            title="Recent Coupon Auctions (individual)",
+            title="Recent Long-End Auctions (10Y / 20Y / 30Y)",
             show_header=True,
             header_style="bold yellow",
             box=None,
@@ -487,7 +544,7 @@ def _run_fiscal_snapshot(
         at.add_column("Dealer %", justify="right")
         at.add_column("BTC", justify="right")
         at.add_column("Signal", style="dim")
-        for ra in recent_auctions:
+        for ra in long_auctions:
             t = ra.get("tail_bps")
             d_pct = ra.get("dealer_take_pct")
             btc_v = ra.get("btc")
@@ -515,6 +572,10 @@ def _run_fiscal_snapshot(
             )
         console.print()
         console.print(at)
+
+        # ── Sparkline trend summary ──────────────────────────────────────
+        if len(long_auctions) >= 4:
+            _show_auction_trend(console, long_auctions)
 
     if llm:
         from lox.cli_commands.shared.regime_display import print_llm_regime_analysis

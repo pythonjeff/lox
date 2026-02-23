@@ -18,29 +18,27 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from lox.config import load_settings
 
+# ── Score → color thresholds ─────────────────────────────────────────────
+SCORE_LOW_THRESHOLD = 35   # below = green (benign)
+SCORE_HIGH_THRESHOLD = 65  # above = red (stressed)
+DESC_TRUNCATE_LEN = 34     # max chars before truncation in tables
+
+
+def _get_regime_color(score: float) -> str:
+    """Get color based on regime score."""
+    if score < SCORE_LOW_THRESHOLD:
+        return "green"
+    elif score < SCORE_HIGH_THRESHOLD:
+        return "yellow"
+    return "red"
+
 
 def _regime_bar(score: float, width: int = 10) -> str:
     """Create a visual progress bar for regime score."""
     filled = int((score / 100) * width)
     empty = width - filled
-    
-    if score < 35:
-        color = "green"
-    elif score < 65:
-        color = "yellow"
-    else:
-        color = "red"
-    
+    color = _get_regime_color(score)
     return f"[{color}]{'█' * filled}{'░' * empty}[/{color}]"
-
-
-def _get_regime_color(score: float) -> str:
-    """Get color based on regime score."""
-    if score < 35:
-        return "green"
-    elif score < 65:
-        return "yellow"
-    return "red"
 
 
 def _format_metrics(metrics: dict, max_items: int = 4) -> str:
@@ -62,18 +60,20 @@ def register(app: typer.Typer) -> None:
         llm: bool = typer.Option(False, "--llm", "-l", help="Add LLM commentary"),
         detail: str = typer.Option(None, "--detail", "-d", help="Drill into specific regime (macro, vol, rates, funding, etc.)"),
         refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
+        book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
     ):
         """
         Unified regime dashboard with LLM commentary.
-        
+
         Shows current state of all 12 regime pillars:
         - Core: Growth, Inflation, Volatility, Credit, Rates, Funding
         - Extended: Consumer, Fiscal, Positioning, Monetary, USD, Commodities
-        
+
         Examples:
             lox research regimes              # Quick overview
             lox research regimes --llm        # With AI commentary
             lox research regimes -d vol       # Drill into volatility
+            lox research regimes --book       # Show position exposure
         """
         console = Console()
         settings = load_settings()
@@ -95,13 +95,25 @@ def register(app: typer.Typer) -> None:
                 refresh=refresh,
             )
         
+        # Book impact — fetch positions and correlate with regimes
+        book_impacts = None
+        if book:
+            from lox.cli_commands.shared.book_impact import analyze_book_impact, render_book_impact
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[bold cyan]Analyzing position exposure...[/bold cyan]"),
+                transient=True,
+            ) as progress:
+                progress.add_task("book", total=None)
+                book_impacts = analyze_book_impact(settings, state)
+
         # If drilling into specific regime, show detailed view
         if detail:
-            _show_regime_detail(console, settings, state, detail.lower(), llm)
+            _show_regime_detail(console, settings, state, detail.lower(), llm, book_impacts)
             return
-        
+
         # Show overview
-        _show_regime_overview(console, settings, state, llm)
+        _show_regime_overview(console, settings, state, llm, book_impacts)
     
     @app.callback(invoke_without_command=True)
     def default(ctx: typer.Context):
@@ -111,7 +123,7 @@ def register(app: typer.Typer) -> None:
             ctx.invoke(regimes_cmd)
 
 
-def _show_regime_overview(console: Console, settings, state, include_llm: bool):
+def _show_regime_overview(console: Console, settings, state, include_llm: bool, book_impacts=None):
     """Show unified regime overview."""
     from datetime import datetime
     
@@ -156,7 +168,7 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool):
     for name, regime in core_pillars:
         if regime:
             color = _get_regime_color(regime.score)
-            desc = regime.description[:34] + "..." if len(regime.description) > 34 else regime.description
+            desc = regime.description[:DESC_TRUNCATE_LEN] + "..." if len(regime.description) > DESC_TRUNCATE_LEN else regime.description
             metrics_str = _format_metrics(regime.metrics) if regime.metrics else "[dim]—[/dim]"
             core_table.add_row(
                 name,
@@ -195,7 +207,7 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool):
     for name, regime in extended:
         if regime:
             color = _get_regime_color(regime.score)
-            desc = regime.description[:34] + "..." if len(regime.description) > 34 else regime.description
+            desc = regime.description[:DESC_TRUNCATE_LEN] + "..." if len(regime.description) > DESC_TRUNCATE_LEN else regime.description
             metrics_str = _format_metrics(regime.metrics) if regime.metrics else "[dim]—[/dim]"
             ext_table.add_row(
                 name,
@@ -209,17 +221,23 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool):
     
     console.print(ext_table)
     console.print()
-    
+
+    # Book Impact
+    if book_impacts is not None:
+        from lox.cli_commands.shared.book_impact import render_book_impact
+        render_book_impact(console, book_impacts)
+        console.print()
+
     # LLM Commentary
     if include_llm:
-        _show_llm_commentary(console, settings, state)
+        _show_llm_commentary(console, settings, state, book_impacts)
     else:
-        console.print("[dim]Add --llm for AI commentary  |  --detail <pillar> to drill down[/dim]")
+        console.print("[dim]Add --llm for AI commentary  |  --detail <pillar> to drill down  |  --book for position exposure[/dim]")
     
     console.print()
 
 
-def _show_regime_detail(console: Console, settings, state, pillar: str, include_llm: bool):
+def _show_regime_detail(console: Console, settings, state, pillar: str, include_llm: bool = True, book_impacts=None):
     """Show detailed view of a specific regime."""
     # Map pillar names
     pillar_map = {
@@ -281,32 +299,41 @@ def _show_regime_detail(console: Console, settings, state, pillar: str, include_
     if regime.metrics:
         snapshot["current_metrics"] = {k: v for k, v in regime.metrics.items() if v is not None}
     
-    # LLM Analysis
-    if include_llm or True:  # Always show LLM for detail view
-        with Progress(
-            SpinnerColumn(),
-            TextColumn(f"[bold cyan]Analyzing {domain}...[/bold cyan]"),
-            transient=True,
-        ) as progress:
-            progress.add_task("analyzing", total=None)
-            
-            try:
-                from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
-                print_llm_regime_analysis(
-                    settings=settings,
-                    domain=domain,
-                    snapshot=snapshot,
-                    regime_label=regime.label,
-                    regime_description=regime.description,
-                    console=console,
-                )
-            except Exception as e:
-                console.print(f"[red]LLM analysis failed: {e}[/red]")
+    # Book Impact for this domain
+    if book_impacts is not None:
+        from lox.cli_commands.shared.book_impact import render_book_impact
+        # Filter to impacts relevant to this domain
+        domain_filtered = []
+        for pi in book_impacts:
+            filtered_impacts = [di for di in pi.impacts if di.domain == domain]
+            if filtered_impacts:
+                from copy import copy
+                pi_copy = copy(pi)
+                pi_copy.impacts = filtered_impacts
+                domain_filtered.append(pi_copy)
+        if domain_filtered:
+            render_book_impact(console, domain_filtered)
+            console.print()
+
+    # LLM Analysis — detail view always includes it (streaming, no spinner)
+    try:
+        from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
+        print_llm_regime_analysis(
+            settings=settings,
+            domain=domain,
+            snapshot=snapshot,
+            regime_label=regime.label,
+            regime_description=regime.description,
+            console=console,
+            book_impacts=book_impacts,
+        )
+    except Exception as e:
+        console.print(f"[red]LLM analysis failed: {e}[/red]")
     
     console.print()
 
 
-def _show_llm_commentary(console: Console, settings, state):
+def _show_llm_commentary(console: Console, settings, state, book_impacts=None):
     """Show brief LLM commentary on overall regime state."""
     from rich.progress import Progress, SpinnerColumn, TextColumn
     
