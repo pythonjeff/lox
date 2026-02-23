@@ -7,14 +7,15 @@ Called from print_llm_regime_analysis() when --llm is active.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from typing import Any
 
 from rich.console import Console
-from rich.markdown import Markdown
-from rich.panel import Panel
 
 from lox.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 def _fetch_ticker_context(settings: Settings, ticker: str) -> dict[str, Any]:
@@ -46,7 +47,7 @@ def _fetch_ticker_context(settings: Settings, ticker: str) -> dict[str, Any]:
                     "description": (p.get("description") or "")[:500],
                 }
     except Exception:
-        pass
+        logger.debug("Failed to fetch profile for %s", t, exc_info=True)
 
     try:
         resp = requests.get(
@@ -68,7 +69,7 @@ def _fetch_ticker_context(settings: Settings, ticker: str) -> dict[str, Any]:
                     "volume": q.get("volume"),
                 }
     except Exception:
-        pass
+        logger.debug("Failed to fetch quote for %s", t, exc_info=True)
 
     return data
 
@@ -80,6 +81,7 @@ def _build_system_prompt(
     regime_description: str | None,
     ticker_context: dict[str, Any] | None,
     diff_context: str | None = None,
+    book_impact_context: str | None = None,
 ) -> str:
     snapshot_json = json.dumps(
         snapshot if isinstance(snapshot, dict) else {"data": str(snapshot)},
@@ -87,60 +89,109 @@ def _build_system_prompt(
         default=str,
     )
 
+    today = datetime.now().strftime("%Y-%m-%d")
+
     parts = [
-        "You are a senior macro research analyst at a hedge fund.",
-        f"\n## {domain.title()} Regime Context",
-        f"Regime: {regime_label or 'N/A'}",
+        "You are a PM-level macro strategist at a top-tier hedge fund. "
+        "You write like a Goldman Sachs morning note or a Bridgewater daily observation — "
+        "dense, data-heavy, opinionated, and directly actionable.",
+        f"\nToday: {today}",
+        f"\n## {domain.title()} Regime",
+        f"Classification: **{regime_label or 'N/A'}**",
     ]
     if regime_description:
-        parts.append(f"Description: {regime_description}")
-    parts.append(f"\nData snapshot:\n```json\n{snapshot_json}\n```")
+        parts.append(f"Summary: {regime_description}")
+    parts.append(f"\nLive data:\n```json\n{snapshot_json}\n```")
 
     if diff_context:
         parts.append(f"\n{diff_context}")
-        parts.append("""
-When the user asks a question (or as your opening analysis), you MUST:
-1. Highlight the most significant metric changes since the last review
-2. Explain what news, catalysts, or macro developments likely drove each change
-   (e.g., FOMC decisions, CPI prints, earnings, geopolitical events, fiscal policy)
-3. Assess whether the regime shift (or stability) is consistent with the data moves
-4. Note any divergences or surprises that warrant attention""")
 
     if ticker_context:
         tc_json = json.dumps(ticker_context, indent=2, default=str)
-        parts.append(f"\n## Ticker Focus: {ticker_context.get('ticker', '')}\n```json\n{tc_json}\n```")
+        parts.append(f"\n## Ticker: {ticker_context.get('ticker', '')}\n```json\n{tc_json}\n```")
 
+    # Core instructions that apply to every response
     parts.append(f"""
-Guidelines:
-- Be concise but thorough
-- Reference specific data points from the context
-- Mention specific tickers, levels, and actionable insights
-- Use professional hedge fund language
-- When discussing positions, be specific about risk/reward
+## Your Operating Rules
 
-Current date: {datetime.now().strftime('%Y-%m-%d %H:%M')}""")
+**FORMAT:**
+- Lead with your conclusion / trade idea in the first sentence. No preamble.
+- Use short paragraphs (2-3 sentences max). No walls of text.
+- Bold the key numbers: prices, levels, percentages, dates.
+- When referencing a data point, cite the exact value from the snapshot.
+- End with a concrete risk/reward: entry, target, stop, and what invalidates.
+
+**CONTENT — what you MUST do:**
+- Ground every claim in a specific number from the data provided. If the RSI is 69, say "RSI at **69** — approaching overbought." Don't say "RSI indicates it's near overbought territory."
+- Name specific catalysts with dates when possible: "Feb 12 CPI print", "March FOMC", "Q4 earnings on Jan 28" — not "upcoming economic data."
+- When quant scenarios exist in the data, frame your view around them: "Base case **$87.32** implies X% from here; bull case requires Y."
+- For ETFs/bonds: discuss duration, real yields, curve positioning, and flow data. TLT is not a stock — don't analyze it like one.
+- State your conviction: high/medium/low. Take a side.
+
+**CONTENT — what you must NEVER do:**
+- Never use phrases like "it's important to note", "investors should consider", "could potentially", "it remains to be seen."
+- Never give both sides equally ("could go up or could go down"). Have a view.
+- Never use generic headers like "Actionable Insights" or "Key Takeaways."
+- Never speculate about catalysts you can't tie to specific data or known events.
+- Never pad with filler. If you've made your point, stop.""")
+
+    if diff_context:
+        parts.append("""
+**MEMORY / CHANGES:**
+When prior session data is available, open with what moved and why:
+- Cite the exact metric deltas (e.g., "VIX dropped from **22.1** to **18.5**, a **-16%** move").
+- Attribute each move to a specific catalyst (name the event, date if known).
+- Flag any metric that moved in a direction inconsistent with the regime classification.
+- Keep it to the 3-4 most important changes, not an exhaustive list.""")
+
+    if book_impact_context:
+        parts.append(f"\n{book_impact_context}")
+        parts.append("""
+**BOOK IMPACT RULES:**
+- When positions are provided, ALWAYS discuss which are most exposed to regime shifts.
+- For puts: remember they PROFIT when the underlying drops. A regime that hurts the underlying is a TAILWIND for puts.
+- For calls: they profit when the underlying rises. A regime that benefits the underlying is a TAILWIND for calls.
+- Flag the 2-3 most at-risk positions and explain specifically what would need to change for the thesis to break.
+- If asked about trades, prioritize positions already in the book before suggesting new ones.""")
 
     return "\n".join(parts)
 
 
-def _chat_once(
+def _chat_stream(
     settings: Settings,
     messages: list[dict[str, str]],
     system_prompt: str,
+    console: Console,
 ) -> str:
+    """Stream the LLM response token-by-token so the user sees output immediately."""
     from openai import OpenAI
 
-    client = OpenAI(api_key=settings.openai_api_key, base_url=settings.OPENAI_BASE_URL)
+    client = OpenAI(
+        api_key=settings.openai_api_key,
+        base_url=settings.OPENAI_BASE_URL,
+        timeout=90.0,
+    )
     model = settings.openai_model
 
     full = [{"role": "system", "content": system_prompt}] + messages
-    resp = client.chat.completions.create(
+    stream = client.chat.completions.create(
         model=model,
         messages=full,
-        temperature=0.3,
-        max_tokens=2500,
+        temperature=0.4,
+        max_tokens=3000,
+        stream=True,
     )
-    return (resp.choices[0].message.content or "").strip()
+
+    console.print(f"\n[bold green]Analyst:[/bold green]")
+    chunks: list[str] = []
+    for chunk in stream:
+        delta = chunk.choices[0].delta.content if chunk.choices else None
+        if delta:
+            chunks.append(delta)
+            console.print(delta, end="", highlight=False)
+
+    console.print()
+    return "".join(chunks).strip()
 
 
 def start_regime_chat(
@@ -152,6 +203,7 @@ def start_regime_chat(
     regime_description: str | None = None,
     ticker: str = "",
     console: Console | None = None,
+    book_impacts: list | None = None,
 ) -> None:
     """Launch an interactive chat session with the regime snapshot as context."""
     from lox.cli_commands.shared.regime_memory import (
@@ -201,6 +253,14 @@ def start_regime_chat(
         except Exception as exc:
             c.print(f"[yellow]Warning: Could not load ticker context: {exc}[/yellow]")
 
+    # ── Book impact context ────────────────────────────────────────────
+    book_impact_context: str | None = None
+    if book_impacts:
+        from lox.cli_commands.shared.book_impact import format_book_impact_for_llm
+        book_impact_context = format_book_impact_for_llm(book_impacts)
+        if book_impact_context:
+            c.print(f"[dim]Book impact loaded — the analyst knows your open positions.[/dim]")
+
     system_prompt = _build_system_prompt(
         domain=domain,
         snapshot=snapshot,
@@ -208,6 +268,7 @@ def start_regime_chat(
         regime_description=regime_description,
         ticker_context=ticker_context,
         diff_context=diff_context,
+        book_impact_context=book_impact_context,
     )
 
     c.print("\n[green]Chat started.[/green] Type your questions (or 'quit' to exit):\n")
@@ -234,14 +295,10 @@ def start_regime_chat(
         messages.append({"role": "user", "content": user_input})
 
         try:
-            with c.status("[cyan]Thinking...[/cyan]"):
-                response = _chat_once(settings, messages, system_prompt)
-
+            response = _chat_stream(settings, messages, system_prompt, c)
             messages.append({"role": "assistant", "content": response})
-            c.print(f"\n[bold green]Analyst:[/bold green]")
-            c.print(Markdown(response))
             c.print()
 
         except Exception as exc:
-            c.print(f"[red]Error:[/red] {exc}")
+            c.print(f"\n[red]Error:[/red] {exc}")
             messages.pop()

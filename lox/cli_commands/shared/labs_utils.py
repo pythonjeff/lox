@@ -6,6 +6,7 @@ Provides consistent --features, --json, and --delta functionality across all reg
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
@@ -14,6 +15,8 @@ from typing import Any, Callable, Dict, List, Optional
 from rich import print as rprint
 from rich.panel import Panel
 from rich.table import Table
+
+logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -53,7 +56,7 @@ def save_snapshot(domain: str, snapshot: Dict[str, Any], regime: str) -> None:
         with open(path, "w") as f:
             json.dump(data, f, indent=2, default=str)
     except Exception:
-        pass  # Silent fail - caching is best-effort
+        logger.debug("Failed to save snapshot to %s", path, exc_info=True)
 
 
 def load_historical_snapshot(domain: str, days_ago: int) -> Optional[Dict[str, Any]]:
@@ -70,7 +73,7 @@ def load_historical_snapshot(domain: str, days_ago: int) -> Optional[Dict[str, A
             with open(path, "r") as f:
                 return json.load(f)
         except Exception:
-            pass
+            logger.debug("Failed to load snapshot %s", path, exc_info=True)
     
     # Try nearby dates (±2 days) in case of weekends/holidays
     for offset in range(1, 3):
@@ -83,7 +86,7 @@ def load_historical_snapshot(domain: str, days_ago: int) -> Optional[Dict[str, A
                         data["_actual_date"] = d.isoformat()
                         return data
                 except Exception:
-                    pass
+                    logger.debug("Failed to load snapshot %s", path, exc_info=True)
     
     return None
 
@@ -544,7 +547,7 @@ def fetch_economic_calendar(
     Fetch upcoming economic events relevant to the domain.
     Uses FMP economic calendar API.
     """
-    from ai_options_trader.config import load_settings
+    from lox.config import load_settings
     import requests
     
     settings = load_settings()
@@ -587,7 +590,7 @@ def fetch_economic_calendar(
                 # Add timezone if missing
                 if event_date.tzinfo is None:
                     event_date = event_date.replace(tzinfo=timezone.utc)
-            except:
+            except (ValueError, TypeError):
                 continue
             
             # Check date range (future events only)
@@ -620,7 +623,8 @@ def fetch_economic_calendar(
         relevant.sort(key=lambda x: x["date"])
         return relevant[:max_items]
         
-    except Exception as e:
+    except Exception:
+        logger.debug("Failed to fetch economic calendar for %s", domain, exc_info=True)
         return []
 
 
@@ -684,6 +688,26 @@ TRADE_EXPRESSIONS: Dict[str, Dict[str, List[Dict[str, str]]]] = {
             {"direction": "Long", "ticker": "TLT", "rationale": "Recession hedge, rate cuts coming"},
             {"direction": "Short", "ticker": "XLF", "rationale": "Bank NIM compression"},
             {"direction": "Long", "ticker": "XLU", "rationale": "Defensive yield play"},
+        ],
+        "Bear steepener": [
+            {"direction": "Short", "ticker": "TLT", "rationale": "Long end selling off, term premium rising"},
+            {"direction": "Long", "ticker": "TIP", "rationale": "Real yield / inflation protection"},
+            {"direction": "Long", "ticker": "XLE", "rationale": "Energy benefits from inflation-driven steepener"},
+        ],
+        "Bull flattener": [
+            {"direction": "Long", "ticker": "TLT", "rationale": "Long end rallying, flight to safety"},
+            {"direction": "Long", "ticker": "XLU", "rationale": "Defensive yield play"},
+            {"direction": "Short", "ticker": "HYG", "rationale": "Credit stress likely if risk-off deepens"},
+        ],
+        "Bear flattener": [
+            {"direction": "Short", "ticker": "TLT", "rationale": "Rates rising across the curve"},
+            {"direction": "Short", "ticker": "XLU", "rationale": "Rate-sensitive sectors hurt by tightening"},
+            {"direction": "Long", "ticker": "XLF", "rationale": "Banks benefit from higher short rates"},
+        ],
+        "Bull steepener": [
+            {"direction": "Long", "ticker": "TLT", "rationale": "Rate cuts being priced in"},
+            {"direction": "Long", "ticker": "QQQ", "rationale": "Growth benefits from easing cycle"},
+            {"direction": "Long", "ticker": "XLF", "rationale": "Banks benefit from curve re-steepening"},
         ],
         "Flat curve": [
             {"direction": "Neutral", "ticker": "AGG", "rationale": "Low conviction, stay balanced"},

@@ -348,10 +348,14 @@ def regime_vol(
     llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
     ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
 ):
     """Volatility regime."""
     from lox.cli_commands.regimes.volatility_cmd import volatility_snapshot
     volatility_snapshot(llm=llm, ticker=ticker, refresh=refresh)
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="volatility")
 
 
 @regime_app.command("fiscal")
@@ -362,10 +366,14 @@ def regime_fiscal(
     features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector"),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
     delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
 ):
     """Fiscal regime."""
     from lox.cli_commands.regimes.fiscal_cmd import fiscal_snapshot
     fiscal_snapshot(refresh=refresh, llm=llm, ticker=ticker, features=features, json_out=json_out, delta=delta)
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="fiscal")
 
 
 @regime_app.command("funding")
@@ -376,10 +384,14 @@ def regime_funding(
     features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector"),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
     delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
 ):
     """Funding regime."""
     from lox.cli_commands.regimes.funding_cmd import funding_snapshot
     funding_snapshot(refresh=refresh, llm=llm, ticker=ticker, features=features, json_out=json_out, delta=delta)
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="liquidity")
 
 
 @regime_app.command("rates")
@@ -387,10 +399,14 @@ def regime_rates(
     llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
     ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
 ):
     """Rates regime."""
     from lox.cli_commands.regimes.rates_cmd import rates_snapshot
     rates_snapshot(llm=llm, ticker=ticker, refresh=refresh)
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="rates")
 
 
 @regime_app.command("commodities")
@@ -398,10 +414,14 @@ def regime_commodities(
     llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
     ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
 ):
     """Commodities regime."""
     from lox.cli_commands.regimes.commodities_cmd import _run_commodities_snapshot
     _run_commodities_snapshot(llm=llm, ticker=ticker, refresh=refresh)
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="commodities")
 
 
 @regime_app.command("monetary")
@@ -409,10 +429,14 @@ def regime_monetary(
     llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
     ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
 ):
     """Monetary regime."""
     from lox.cli_commands.regimes.monetary_cmd import _run_monetary_snapshot
     _run_monetary_snapshot(llm=llm, ticker=ticker, refresh=refresh)
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="monetary")
 
 
 @regime_app.command("usd")
@@ -420,10 +444,14 @@ def regime_usd(
     llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
     ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
 ):
     """USD regime."""
     from lox.cli_commands.regimes.usd_cmd import run_usd_snapshot
     run_usd_snapshot(llm=llm, ticker=ticker, refresh=refresh)
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="usd")
 
 
 # ── NEW regimes (Feb 2026 restructure) ───────────────────────────────────
@@ -432,10 +460,14 @@ def regime_growth(
     llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
     ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
 ):
     """Growth regime (split from macro)."""
     from lox.cli_commands.regimes.growth_cmd import growth_snapshot
     growth_snapshot(llm=llm, ticker=ticker, refresh=refresh)
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="growth")
 
 
 @regime_app.command("inflation")
@@ -443,10 +475,14 @@ def regime_inflation(
     llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
     ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
 ):
     """Inflation regime (split from macro)."""
     from lox.cli_commands.regimes.inflation_cmd import inflation_snapshot
     inflation_snapshot(llm=llm, ticker=ticker, refresh=refresh)
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="inflation")
 
 
 @regime_app.command("credit")
@@ -454,10 +490,14 @@ def regime_credit(
     llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
     ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
 ):
     """Credit / spreads regime."""
     from lox.cli_commands.regimes.credit_cmd import credit_snapshot
     credit_snapshot(llm=llm, ticker=ticker, refresh=refresh)
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="credit")
 
 
 @regime_app.command("consumer")
@@ -465,10 +505,14 @@ def regime_consumer(
     llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
     ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
 ):
     """Consumer health regime (replaces housing)."""
     from lox.cli_commands.regimes.consumer_cmd import consumer_snapshot
     consumer_snapshot(llm=llm, ticker=ticker, refresh=refresh)
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="consumer")
 
 
 @regime_app.command("positioning")
@@ -476,10 +520,14 @@ def regime_positioning(
     llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
     ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
 ):
     """Market positioning regime."""
     from lox.cli_commands.regimes.positioning_cmd import positioning_snapshot
     positioning_snapshot(llm=llm, ticker=ticker, refresh=refresh)
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="positioning")
 
 
 @regime_app.command("crypto")
@@ -490,6 +538,7 @@ def regime_crypto(
     long_tf: str = typer.Option("4h", "--long-tf", help="Long timeframe"),
     llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
     ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
 ):
     """Crypto regime — funding, technicals, momentum."""
     from rich.console import Console
@@ -596,6 +645,10 @@ def regime_crypto(
             ticker=ticker,
             console=console,
         )
+
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="crypto")
 
 
 # ── MACRO alias (shows Growth + Inflation + quadrant) ────────────────────

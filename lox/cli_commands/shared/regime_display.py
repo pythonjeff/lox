@@ -127,6 +127,7 @@ def print_llm_regime_analysis(
     panel_title: str = "Analysis",
     console: Any = None,
     ticker: str = "",
+    book_impacts: list | None = None,
     **llm_kwargs: Any,
 ) -> None:
     """
@@ -147,4 +148,5 @@ def print_llm_regime_analysis(
         regime_description=regime_description,
         ticker=ticker,
         console=console if isinstance(console, _Console) else None,
+        book_impacts=book_impacts,
     )
