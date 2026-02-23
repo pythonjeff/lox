@@ -82,6 +82,7 @@ def _build_system_prompt(
     ticker_context: dict[str, Any] | None,
     diff_context: str | None = None,
     book_impact_context: str | None = None,
+    scenario_context: str | None = None,
 ) -> str:
     snapshot_json = json.dumps(
         snapshot if isinstance(snapshot, dict) else {"data": str(snapshot)},
@@ -154,6 +155,16 @@ When prior session data is available, open with what moved and why:
 - Flag the 2-3 most at-risk positions and explain specifically what would need to change for the thesis to break.
 - If asked about trades, prioritize positions already in the book before suggesting new ones.""")
 
+    if scenario_context:
+        parts.append(f"\n{scenario_context}")
+        parts.append("""
+**SCENARIO RULES:**
+- When active scenarios are provided, frame your analysis through them.
+- Reference the specific conditions that triggered each scenario.
+- For each trade expression, give your conviction and adjust sizing based on how many conditions are met.
+- If a scenario contradicts your independent analysis, explain why and which signal you trust more.
+- Flag when a scenario is close to activating or deactivating based on metrics near thresholds.""")
+
     return "\n".join(parts)
 
 
@@ -204,6 +215,7 @@ def start_regime_chat(
     ticker: str = "",
     console: Console | None = None,
     book_impacts: list | None = None,
+    active_scenarios: list | None = None,
 ) -> None:
     """Launch an interactive chat session with the regime snapshot as context."""
     from lox.cli_commands.shared.regime_memory import (
@@ -261,6 +273,14 @@ def start_regime_chat(
         if book_impact_context:
             c.print(f"[dim]Book impact loaded — the analyst knows your open positions.[/dim]")
 
+    # ── Scenario context ────────────────────────────────────────────────
+    scenario_context: str | None = None
+    if active_scenarios:
+        from lox.regimes.scenarios import format_scenarios_for_llm
+        scenario_context = format_scenarios_for_llm(active_scenarios)
+        if scenario_context:
+            c.print(f"[dim]{len(active_scenarios)} active scenario(s) loaded into analyst context.[/dim]")
+
     system_prompt = _build_system_prompt(
         domain=domain,
         snapshot=snapshot,
@@ -269,6 +289,7 @@ def start_regime_chat(
         ticker_context=ticker_context,
         diff_context=diff_context,
         book_impact_context=book_impact_context,
+        scenario_context=scenario_context,
     )
 
     c.print("\n[green]Chat started.[/green] Type your questions (or 'quit' to exit):\n")

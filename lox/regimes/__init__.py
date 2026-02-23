@@ -42,6 +42,16 @@ from lox.regimes.features import (
     ALL_DOMAINS,
 )
 
+from lox.regimes.scenarios import (
+    ScenarioResult,
+    ScenarioTrade,
+    ScenarioDefinition,
+    PillarCondition,
+    evaluate_scenarios,
+    format_scenarios_for_llm,
+    SCENARIOS,
+)
+
 from lox.regimes.transitions import (
     TransitionMatrix,
     get_transition_matrix,
@@ -74,6 +84,14 @@ __all__ = [
     "CORE_DOMAINS",
     "EXTENDED_DOMAINS",
     "ALL_DOMAINS",
+    # Scenarios
+    "ScenarioResult",
+    "ScenarioTrade",
+    "ScenarioDefinition",
+    "PillarCondition",
+    "evaluate_scenarios",
+    "format_scenarios_for_llm",
+    "SCENARIOS",
     # Transitions
     "TransitionMatrix",
     "get_transition_matrix",
