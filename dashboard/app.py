@@ -1040,8 +1040,11 @@ def get_positions_data(force_refresh: bool = False):
         # ============================================
         # TWR is industry standard (GIPS compliant) - removes cash flow distortion.
         # We chain historical TWR with live return since last snapshot.
-        simple_return_pct = (liquidation_pnl / original_capital * 100) if original_capital > 0 else 0.0
-        live_twr_pct = _get_live_twr(liquidation_nav)
+        alpaca_equity = float(getattr(account, 'equity', 0.0) or 0.0) if account else 0.0
+        display_nav = alpaca_equity if alpaca_equity > 0 else liquidation_nav
+        display_pnl = display_nav - original_capital
+        simple_return_pct = (display_pnl / original_capital * 100) if original_capital > 0 else 0.0
+        live_twr_pct = _get_live_twr(display_nav)
         
         # Use live TWR if available, fallback to simple return
         return_pct = live_twr_pct if live_twr_pct is not None else simple_return_pct
@@ -1081,13 +1084,14 @@ def get_positions_data(force_refresh: bool = False):
         
         result = {
             "positions": positions_list,
-            "total_pnl": liquidation_pnl,  # Conservative P&L at bid/ask
+            "total_pnl": display_pnl,
             "total_value": total_liquidation_value,
-            "nav_equity": liquidation_nav,  # Liquidation NAV
+            "nav_equity": display_nav,
+            "liquidation_nav": liquidation_nav,
             "original_capital": original_capital,
-            "aum": aum,  # Total capital under management
-            "investor_count": investor_count,  # Number of unique investors
-            "return_pct": return_pct,  # LIVE from Alpaca
+            "aum": aum,
+            "investor_count": investor_count,
+            "return_pct": return_pct,
             "sp500_return": sp500_return,
             "btc_return": btc_return,
             "macro_hf_return": macro_hf_return,
@@ -1096,7 +1100,7 @@ def get_positions_data(force_refresh: bool = False):
             "alpha_macro_hf": alpha_macro_hf,
             "cash_available": cash_available,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "mark_type": "liquidation",  # Flag that this is bid/ask marked
+            "mark_type": "equity",
             "cached": False,
         }
         

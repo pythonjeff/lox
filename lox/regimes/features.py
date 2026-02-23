@@ -71,6 +71,9 @@ class UnifiedRegimeState:
     # Macro quadrant (derived from Growth + Inflation)
     macro_quadrant: str = "— MIXED"
 
+    # Active cross-regime scenarios
+    active_scenarios: list = field(default_factory=list)
+
     def to_feature_dict(self) -> dict:
         """Convert all regimes to flat ML feature dictionary."""
         features = {
@@ -400,17 +403,17 @@ def build_unified_regime_state(
             if result:
                 if macro_state:
                     inp_m = macro_state.inputs
-                    result.metrics["curve_2s10s"] = inp_m.curve_2s10s
-                    result.metrics["hy_oas"] = inp_m.hy_oas * 100 if inp_m.hy_oas is not None else None
-                    result.metrics["real_yield"] = inp_m.real_yield_proxy_10y
-                    result.metrics["vix"] = inp_m.vix
+                    result.metrics["2s10s"] = f"{inp_m.curve_2s10s * 100:+.0f}bp" if inp_m.curve_2s10s is not None else None
+                    result.metrics["HY OAS"] = f"{inp_m.hy_oas * 100:.0f}bp" if inp_m.hy_oas is not None else None
+                    result.metrics["Real 10Y"] = f"{inp_m.real_yield_proxy_10y:.2f}%" if inp_m.real_yield_proxy_10y is not None else None
+                    result.metrics["VIX"] = f"{inp_m.vix:.1f}" if inp_m.vix is not None else None
                 else:
-                    result.metrics["curve_2s10s"] = None
-                    result.metrics["hy_oas"] = None
-                    result.metrics["real_yield"] = None
-                    result.metrics["vix"] = None
-                result.metrics["retail_sales_mom"] = retail_mom_val
-                result.metrics["consumer_expectations"] = mich_exp_val
+                    result.metrics["2s10s"] = None
+                    result.metrics["HY OAS"] = None
+                    result.metrics["Real 10Y"] = None
+                    result.metrics["VIX"] = None
+                result.metrics["Retail MoM"] = f"{retail_mom_val:+.1f}%" if retail_mom_val is not None else None
+                result.metrics["Mich Expect"] = f"{mich_exp_val:.0f}" if mich_exp_val is not None else None
             return result
         except Exception as e:
             logger.warning(f"Failed to build growth regime: {e}")
@@ -504,15 +507,15 @@ def build_unified_regime_state(
             )
 
             if result:
-                result.metrics["oil_yoy"] = oil_yoy_val
+                result.metrics["Oil YoY"] = f"{oil_yoy_val:+.1f}%" if oil_yoy_val is not None else None
                 if eff_ff_val is not None and cpi_yoy is not None:
-                    result.metrics["real_fed_funds"] = round(eff_ff_val - cpi_yoy, 2)
+                    result.metrics["Real FF"] = f"{eff_ff_val - cpi_yoy:+.2f}%"
                 else:
-                    result.metrics["real_fed_funds"] = None
+                    result.metrics["Real FF"] = None
                 if breakeven_10y_val is not None and breakeven_5y is not None:
-                    result.metrics["be_slope"] = round(breakeven_10y_val - breakeven_5y, 3)
+                    result.metrics["BE Slope"] = f"{breakeven_10y_val - breakeven_5y:+.3f}"
                 else:
-                    result.metrics["be_slope"] = None
+                    result.metrics["BE Slope"] = None
             return result
         except Exception as e:
             logger.warning(f"Failed to build inflation regime: {e}")
@@ -803,32 +806,36 @@ def build_unified_regime_state(
                 mortgage_30y=mtg_30y,
             )
             if result:
-                result.metrics["credit_yoy"] = cc_debt_yoy
+                result.metrics["CC Debt YoY"] = f"{cc_debt_yoy:+.1f}%" if cc_debt_yoy is not None else None
                 if macro_state:
-                    result.metrics["home_prices_yoy"] = macro_state.inputs.home_prices_yoy
+                    hp = macro_state.inputs.home_prices_yoy
+                    result.metrics["Home Px YoY"] = f"{hp:+.1f}%" if hp is not None else None
                 else:
-                    result.metrics["home_prices_yoy"] = None
+                    result.metrics["Home Px YoY"] = None
                 try:
                     from lox.data.fred import FredClient
                     _fred = FredClient(api_key=settings.FRED_API_KEY)
                     _sr = _fred.fetch_series("PSAVERT", start_date=start_date, refresh=refresh)
-                    result.metrics["savings_rate"] = float(_sr.sort_values("date")["value"].iloc[-1]) if _sr is not None and not _sr.empty else None
+                    _sv = float(_sr.sort_values("date")["value"].iloc[-1]) if _sr is not None and not _sr.empty else None
+                    result.metrics["Savings Rate"] = f"{_sv:.1f}%" if _sv is not None else None
                 except Exception:
-                    result.metrics["savings_rate"] = None
+                    result.metrics["Savings Rate"] = None
                 try:
                     from lox.data.fred import FredClient
                     _fred = FredClient(api_key=settings.FRED_API_KEY)
                     _del = _fred.fetch_series("DRALACBN", start_date=start_date, refresh=refresh)
-                    result.metrics["delinquency"] = float(_del.sort_values("date")["value"].iloc[-1]) if _del is not None and not _del.empty else None
+                    _dv = float(_del.sort_values("date")["value"].iloc[-1]) if _del is not None and not _del.empty else None
+                    result.metrics["Delinquency"] = f"{_dv:.1f}%" if _dv is not None else None
                 except Exception:
-                    result.metrics["delinquency"] = None
+                    result.metrics["Delinquency"] = None
                 try:
                     from lox.data.fred import FredClient
                     _fred = FredClient(api_key=settings.FRED_API_KEY)
                     _auto = _fred.fetch_series("SUBLPDCLATRNQ", start_date=start_date, refresh=refresh)
-                    result.metrics["auto_tightening"] = float(_auto.sort_values("date")["value"].iloc[-1]) if _auto is not None and not _auto.empty else None
+                    _av = float(_auto.sort_values("date")["value"].iloc[-1]) if _auto is not None and not _auto.empty else None
+                    result.metrics["Auto Tighten"] = f"{_av:.1f}%" if _av is not None else None
                 except Exception:
-                    result.metrics["auto_tightening"] = None
+                    result.metrics["Auto Tighten"] = None
             return result
         except Exception as e:
             logger.warning(f"Failed to build consumer regime: {e}")
@@ -998,6 +1005,14 @@ def build_unified_regime_state(
         state.overall_category = "RISK-ON"
     else:
         state.overall_category = "STRONG RISK-ON"
+
+    # ── Evaluate cross-regime scenarios ───────────────────────────────────
+    try:
+        from lox.regimes.scenarios import evaluate_scenarios
+        state.active_scenarios = evaluate_scenarios(state)
+    except Exception as e:
+        logger.warning(f"Failed to evaluate scenarios: {e}")
+        state.active_scenarios = []
 
     # ── Save regime history ───────────────────────────────────────────────
     try:

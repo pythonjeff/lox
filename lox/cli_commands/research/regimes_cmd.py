@@ -41,14 +41,21 @@ def _regime_bar(score: float, width: int = 10) -> str:
     return f"[{color}]{'█' * filled}{'░' * empty}[/{color}]"
 
 
-def _format_metrics(metrics: dict, max_items: int = 4) -> str:
-    """Format a metrics dict into a compact display string."""
+def _format_metrics(metrics: dict, max_items: int = 3) -> str:
+    """Format a metrics dict into a compact display string.
+
+    Only shows the first `max_items` non-None values.
+    Keys should already be human-readable (e.g. 'HY OAS', 'CPI YoY').
+    Values should already be formatted strings (e.g. '288bp', '2.8%').
+    """
     if not metrics:
         return "[dim]—[/dim]"
     parts = []
-    for k, v in list(metrics.items())[:max_items]:
+    for k, v in metrics.items():
         if v is not None:
             parts.append(f"[bold]{k}[/bold] {v}")
+            if len(parts) >= max_items:
+                break
     return "  ".join(parts) if parts else "[dim]—[/dim]"
 
 
@@ -142,20 +149,37 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool, 
     
     console.print()
     
-    # Core Pillars
-    core_table = Table(
-        title="[bold]Core Pillars[/bold]",
-        show_header=True,
-        header_style="bold",
-        box=None,
-        padding=(0, 2),
-    )
-    core_table.add_column("Pillar", style="bold", min_width=10, no_wrap=True)
-    core_table.add_column("Score", justify="center", min_width=5, no_wrap=True)
-    core_table.add_column("Regime", min_width=14)
-    core_table.add_column("Key Metrics", ratio=2)
-    core_table.add_column("Signal", ratio=1)
-    
+    # ── Pillar table builder (shared for Core + Extended) ──────────────
+    def _build_pillar_table(title: str, pillars: list) -> Table:
+        tbl = Table(
+            title=f"[bold]{title}[/bold]",
+            show_header=True,
+            header_style="bold",
+            box=None,
+            padding=(0, 2),
+        )
+        tbl.add_column("Pillar", style="bold", min_width=10, no_wrap=True)
+        tbl.add_column("", min_width=12, no_wrap=True)       # score bar
+        tbl.add_column("Score", justify="center", min_width=5, no_wrap=True)
+        tbl.add_column("Regime", min_width=16, no_wrap=True)
+        tbl.add_column("Key Metrics", ratio=1)
+
+        for name, regime in pillars:
+            if regime:
+                color = _get_regime_color(regime.score)
+                bar = _regime_bar(regime.score)
+                metrics_str = _format_metrics(regime.metrics) if regime.metrics else "[dim]—[/dim]"
+                tbl.add_row(
+                    name,
+                    bar,
+                    f"[{color}]{regime.score:.0f}[/{color}]",
+                    f"[{color}]{regime.label}[/{color}]",
+                    metrics_str,
+                )
+            else:
+                tbl.add_row(name, _regime_bar(0), "[dim]—[/dim]", "[dim]No data[/dim]", "")
+        return tbl
+
     core_pillars = [
         ("Growth", state.growth),
         ("Inflation", state.inflation),
@@ -164,63 +188,23 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool, 
         ("Rates", state.rates),
         ("Liquidity", state.liquidity),
     ]
-    
-    for name, regime in core_pillars:
-        if regime:
-            color = _get_regime_color(regime.score)
-            desc = regime.description[:DESC_TRUNCATE_LEN] + "..." if len(regime.description) > DESC_TRUNCATE_LEN else regime.description
-            metrics_str = _format_metrics(regime.metrics) if regime.metrics else "[dim]—[/dim]"
-            core_table.add_row(
-                name,
-                f"[{color}]{regime.score:.0f}[/{color}]",
-                f"[{color}]{regime.label}[/{color}]",
-                metrics_str,
-                f"[dim]{desc}[/dim]",
-            )
-        else:
-            core_table.add_row(name, "[dim]—[/dim]", "[dim]No data[/dim]", "", "")
-    
-    console.print(core_table)
+    console.print(_build_pillar_table("Core Pillars", core_pillars))
     console.print()
-    
-    # Extended Pillars
-    ext_table = Table(
-        title="[bold]Extended Pillars[/bold]",
-        show_header=True,
-        header_style="bold",
-        box=None,
-        padding=(0, 2),
-    )
-    ext_table.add_column("Pillar", style="bold", min_width=10, no_wrap=True)
-    ext_table.add_column("Score", justify="center", min_width=5, no_wrap=True)
-    ext_table.add_column("Regime", min_width=14)
-    ext_table.add_column("Key Metrics", ratio=2)
-    ext_table.add_column("Signal", ratio=1)
-    
+
     extended = [
         ("Consumer", state.consumer),
         ("Fiscal", state.fiscal),
         ("USD", state.usd),
         ("Commodities", state.commodities),
     ]
-    
-    for name, regime in extended:
-        if regime:
-            color = _get_regime_color(regime.score)
-            desc = regime.description[:DESC_TRUNCATE_LEN] + "..." if len(regime.description) > DESC_TRUNCATE_LEN else regime.description
-            metrics_str = _format_metrics(regime.metrics) if regime.metrics else "[dim]—[/dim]"
-            ext_table.add_row(
-                name,
-                f"[{color}]{regime.score:.0f}[/{color}]",
-                f"[{color}]{regime.label}[/{color}]",
-                metrics_str,
-                f"[dim]{desc}[/dim]",
-            )
-        else:
-            ext_table.add_row(name, "[dim]—[/dim]", "[dim]No data[/dim]", "", "")
-    
-    console.print(ext_table)
+    console.print(_build_pillar_table("Extended Pillars", extended))
     console.print()
+
+    # Active Macro Scenarios
+    if state.active_scenarios:
+        from lox.cli_commands.shared.scenario_display import render_scenarios_summary
+        render_scenarios_summary(state.active_scenarios, console)
+        console.print()
 
     # Book Impact
     if book_impacts is not None:
@@ -315,6 +299,18 @@ def _show_regime_detail(console: Console, settings, state, pillar: str, include_
             render_book_impact(console, domain_filtered)
             console.print()
 
+    # Scenarios involving this domain
+    if state.active_scenarios:
+        domain_scenarios = [
+            s for s in state.active_scenarios
+            if domain in s.domains_involved
+        ]
+        if domain_scenarios:
+            from lox.cli_commands.shared.scenario_display import render_scenario_panel
+            for s in domain_scenarios:
+                render_scenario_panel(s, console)
+                console.print()
+
     # LLM Analysis — detail view always includes it (streaming, no spinner)
     try:
         from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
@@ -326,6 +322,7 @@ def _show_regime_detail(console: Console, settings, state, pillar: str, include_
             regime_description=regime.description,
             console=console,
             book_impacts=book_impacts,
+            active_scenarios=state.active_scenarios if state.active_scenarios else None,
         )
     except Exception as e:
         console.print(f"[red]LLM analysis failed: {e}[/red]")
@@ -371,11 +368,21 @@ def _show_llm_commentary(console: Console, settings, state, book_impacts=None):
                         "description": regime.description,
                     }
             
+            # Inject active scenarios into LLM context
+            if state.active_scenarios:
+                from lox.regimes.scenarios import format_scenarios_for_llm
+                summary_data["active_scenarios"] = format_scenarios_for_llm(state.active_scenarios)
+
+            scenario_hint = ""
+            if state.active_scenarios:
+                names = [s.name for s in state.active_scenarios]
+                scenario_hint = f" Active macro scenarios: {', '.join(names)}. Reference these in your analysis."
+
             commentary = quick_llm_summary(
                 settings=settings,
                 title="Regime Overview",
                 data=summary_data,
-                question="Provide a 3-4 sentence summary of the current macro environment and key trading implications. Be direct and actionable.",
+                question=f"Provide a 3-4 sentence summary of the current macro environment and key trading implications. Be direct and actionable.{scenario_hint}",
             )
             
             console.print(Panel(

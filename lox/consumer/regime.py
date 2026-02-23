@@ -109,9 +109,9 @@ def classify_consumer(
         domain="consumer",
         tags=tags,
         metrics={
-            "michigan_sentiment": michigan_sentiment,
-            "michigan_expectations": michigan_expectations,
-            "retail_sales_control_mom": retail_sales_control_mom,
-            "mortgage_30y": mortgage_30y,
+            "Michigan": f"{michigan_sentiment:.0f}" if michigan_sentiment is not None else None,
+            "Mich Expect": f"{michigan_expectations:.0f}" if michigan_expectations is not None else None,
+            "Retail MoM": f"{retail_sales_control_mom:+.1f}%" if retail_sales_control_mom is not None else None,
+            "30Y Mortgage": f"{mortgage_30y:.2f}%" if mortgage_30y is not None else None,
         },
     )
