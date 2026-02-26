@@ -514,6 +514,9 @@ def _run_fiscal_snapshot(
     if mc_impact:
         full_desc = f"{fpi_desc}\n[dim]MC impact: {mc_impact}[/dim]"
 
+    from lox.regimes.trend import get_domain_trend
+    trend = get_domain_trend("fiscal", fpi_score, fpi_label)
+
     print(render_regime_panel(
         domain="Fiscal",
         asof=d.get("asof", ""),
@@ -523,6 +526,7 @@ def _run_fiscal_snapshot(
         description=full_desc,
         metrics=metrics,
         sub_scores=sub_scores,
+        trend=trend,
     ))
 
     # Recent individual auctions detail table (10Y + 30Y only — the tenors

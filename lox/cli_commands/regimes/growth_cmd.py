@@ -98,6 +98,9 @@ def growth_snapshot(*, llm: bool = False, ticker: str = "", refresh: bool = Fals
         {"name": "LEI YoY", "value": _v(lei_yoy, "{:+.1f}%") if lei_yoy is not None else "n/a", "context": "leading indicator"},
     ]
 
+    from lox.regimes.trend import get_domain_trend
+    trend = get_domain_trend("growth", result.score, result.label)
+
     print(render_regime_panel(
         domain="Growth",
         asof=macro_state.asof,
@@ -106,6 +109,7 @@ def growth_snapshot(*, llm: bool = False, ticker: str = "", refresh: bool = Fals
         percentile=None,
         description=result.description,
         metrics=metrics,
+        trend=trend,
     ))
 
     if llm:

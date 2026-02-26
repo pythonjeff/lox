@@ -74,6 +74,12 @@ class UnifiedRegimeState:
     # Active cross-regime scenarios
     active_scenarios: list = field(default_factory=list)
 
+    # Detected cross-pillar dislocations/inconsistencies
+    active_dislocations: list = field(default_factory=list)
+
+    # Per-domain trend/momentum (populated after regime build)
+    trends: dict = field(default_factory=dict)  # {domain: RegimeTrend}
+
     def to_feature_dict(self) -> dict:
         """Convert all regimes to flat ML feature dictionary."""
         features = {
@@ -1025,6 +1031,25 @@ def build_unified_regime_state(
         save_regime_snapshot(results_dict)
     except Exception:
         pass
+
+    # ── Compute trend/momentum for each domain ────────────────────────────
+    try:
+        from lox.data.regime_history import get_all_score_series
+        from lox.regimes.trend import compute_all_trends
+
+        all_series = get_all_score_series()
+        state.trends = compute_all_trends(state, all_series)
+    except Exception as e:
+        logger.warning(f"Failed to compute regime trends: {e}")
+        state.trends = {}
+
+    # ── Detect cross-pillar inconsistencies/dislocations ──────────────────
+    try:
+        from lox.regimes.inconsistencies import detect_inconsistencies
+        state.active_dislocations = detect_inconsistencies(state)
+    except Exception as e:
+        logger.warning(f"Failed to detect inconsistencies: {e}")
+        state.active_dislocations = []
 
     return state
 

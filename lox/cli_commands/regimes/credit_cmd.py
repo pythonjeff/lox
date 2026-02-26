@@ -157,6 +157,9 @@ def credit_snapshot(*, llm: bool = False, ticker: str = "", refresh: bool = Fals
         {"name": "Shadow Signals", "value": str(result.metrics.get("shadow_signals", 0)), "context": "≥2 = warning, ≥3 = stress"},
     ]
 
+    from lox.regimes.trend import get_domain_trend
+    trend = get_domain_trend("credit", result.score, result.label)
+
     print(render_regime_panel(
         domain="Credit",
         asof=asof,
@@ -165,6 +168,7 @@ def credit_snapshot(*, llm: bool = False, ticker: str = "", refresh: bool = Fals
         percentile=None,
         description=result.description,
         metrics=metrics,
+        trend=trend,
     ))
 
     if llm:

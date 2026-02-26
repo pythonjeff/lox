@@ -28,6 +28,8 @@ from lox.cli_commands.research.ticker.display import (
     show_etf_flows,
     show_refinancing_wall,
     show_technicals,
+    show_hy_default_context,
+    _HY_ETF_TICKERS,
 )
 from lox.cli_commands.research.ticker.chart import generate_chart, open_chart
 from lox.cli_commands.research.ticker.llm import show_llm_analysis
@@ -102,13 +104,17 @@ def register(app: typer.Typer) -> None:
         if is_etf and price_data.get("historical"):
             show_etf_flows(console, price_data, fundamentals)
 
-        # Bond ETF: Refinancing wall
+        # Bond ETF: Refinancing wall + HY credit stress
         if is_etf:
             asset_class = (fundamentals.get("etf_info", {}).get("assetClass") or "").lower()
             description = (fundamentals.get("profile", {}).get("description") or "").lower()
             is_bond_etf = "fixed income" in asset_class or "bond" in description or "credit" in description
             if is_bond_etf:
                 show_refinancing_wall(console, settings, symbol)
+            # HY credit stress panel — for HY ETFs or any bond ETF with HY in name/desc
+            is_hy = symbol in _HY_ETF_TICKERS or "high yield" in description or "high-yield" in description
+            if is_hy and settings.FRED_API_KEY:
+                show_hy_default_context(console, settings, symbol)
 
         # Generate chart
         if chart and price_data:

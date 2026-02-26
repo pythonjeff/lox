@@ -189,6 +189,9 @@ def inflation_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
         {"name": "Median CPI YoY", "value": _v(median_cpi_yoy), "context": "Cleveland Fed (breadth)"},
     ]
 
+    from lox.regimes.trend import get_domain_trend
+    trend = get_domain_trend("inflation", result.score, result.label)
+
     print(render_regime_panel(
         domain="Inflation",
         asof=macro_state.asof,
@@ -197,6 +200,7 @@ def inflation_snapshot(*, llm: bool = False, refresh: bool = False) -> None:
         percentile=None,
         description=result.description,
         metrics=metrics,
+        trend=trend,
     ))
 
     if llm:

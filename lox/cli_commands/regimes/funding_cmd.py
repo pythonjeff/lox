@@ -148,6 +148,9 @@ def run_funding_snapshot(
         {"name": "Bank Reserves", "value": _fmt_usd_tn(fi.bank_reserves_usd_bn), "context": "level"},
         {"name": "TGA 4wk Δ", "value": _fmt_usd_bn(fi.tga_chg_4w) if fi.tga_chg_4w is not None else "n/a", "context": "drain"},
     ]
+    from lox.regimes.trend import get_domain_trend
+    trend = get_domain_trend("liquidity", score, regime.label or regime.name)
+
     print(render_regime_panel(
         domain="Funding",
         asof=state.asof,
@@ -156,6 +159,7 @@ def run_funding_snapshot(
         percentile=None,
         description=regime.description,
         metrics=metrics,
+        trend=trend,
     ))
 
     if llm:

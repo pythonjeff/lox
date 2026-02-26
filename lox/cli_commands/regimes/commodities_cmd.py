@@ -22,8 +22,8 @@ def _run_commodities_snapshot(
     import pandas as pd
     from rich.console import Console
 
-from lox.config import load_settings
-from lox.data.market import fetch_equity_daily_closes
+    from lox.config import load_settings
+    from lox.data.market import fetch_equity_daily_closes
     from lox.cli_commands.shared.regime_display import render_regime_panel
     from lox.commodities.signals import build_commodities_state
     from lox.commodities.regime import classify_commodities_regime
@@ -146,6 +146,9 @@ from lox.data.market import fetch_equity_daily_closes
         {"name": "Metals impulse", "value": "Yes" if inp.metals_impulse else "No", "context": "metals strength"},
     ]
     asof = state.asof if hasattr(state, "asof") else "n/a"
+    from lox.regimes.trend import get_domain_trend
+    trend = get_domain_trend("commodities", score, regime.label or regime.name)
+
     print(render_regime_panel(
         domain="Commodities",
         asof=asof,
@@ -154,6 +157,7 @@ from lox.data.market import fetch_equity_daily_closes
         percentile=None,
         description=regime.description,
         metrics=metrics,
+        trend=trend,
     ))
 
     if llm:
