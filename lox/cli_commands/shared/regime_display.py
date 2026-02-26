@@ -13,9 +13,9 @@ from rich.table import Table
 
 def score_color(score: float) -> str:
     """Return Rich color tag for score value. Higher = more stress (red)."""
-    if score < 30:
+    if score < 35:
         return "green"
-    if score < 60:
+    if score < 65:
         return "yellow"
     return "red"
 
@@ -39,6 +39,7 @@ def render_regime_panel(
     description: str = "",
     metrics: list[dict[str, Any]],
     sub_scores: list[dict[str, Any]] | None = None,
+    trend: Any | None = None,
 ) -> Panel:
     """
     Render a standardized regime panel for CLI output.
@@ -52,6 +53,7 @@ def render_regime_panel(
         description: 1-2 sentence regime explanation.
         metrics: List of {"name": str, "value": str, "context": str} for main table.
         sub_scores: Optional list of {"name": str, "score": float, "percentile": float | None} for breakdown table.
+        trend: Optional RegimeTrend object to show trend/momentum inline.
     """
     from rich.console import Group
     from rich.text import Text
@@ -68,6 +70,11 @@ def render_regime_panel(
         ))
     else:
         parts.append(Text.from_markup(f"[bold]{regime_label}[/bold]\n\n"))
+
+    # ── Trend/momentum line (if available) ────────────────────────────────
+    if trend is not None:
+        _render_trend_line(parts, trend)
+
     if description:
         parts.append(Text.from_markup(f"{description}\n\n"))
     if metrics:
@@ -115,6 +122,51 @@ def render_regime_panel(
         title=f"{domain} Regime",
         border_style="cyan",
     )
+
+
+def _render_trend_line(parts: list, trend: Any) -> None:
+    """Inject a compact trend summary line into the panel parts."""
+    from rich.text import Text
+
+    tc = trend.trend_color
+    arrow = trend.trend_arrow
+
+    # Previous state
+    prev_str = ""
+    if trend.prev_label and trend.prev_label != trend.current_label:
+        prev_c = score_color(trend.prev_score) if trend.prev_score is not None else "dim"
+        prev_str = f"  Prev: [{prev_c}]{trend.prev_label}[/{prev_c}]"
+
+    # Deltas
+    deltas = []
+    for label, val in [("1d", trend.score_chg_1d), ("7d", trend.score_chg_7d), ("30d", trend.score_chg_30d)]:
+        if val is not None:
+            sign = "+" if val > 0 else ""
+            if abs(val) < 0.5:
+                deltas.append(f"[dim]{label} {sign}{val:.1f}[/dim]")
+            else:
+                c = "red" if val > 0 else "green"
+                deltas.append(f"[{c}]{label} {sign}{val:.1f}[/{c}]")
+    delta_str = "  ".join(deltas)
+
+    # Momentum
+    momo_str = ""
+    if trend.momentum_z is not None:
+        sign = "+" if trend.momentum_z > 0 else ""
+        if abs(trend.momentum_z) >= 1.5:
+            mc = "bold red" if trend.momentum_z > 0 else "bold green"
+        elif abs(trend.momentum_z) >= 1.0:
+            mc = "red" if trend.momentum_z > 0 else "green"
+        else:
+            mc = "dim"
+        momo_str = f"  Momo: [{mc}]{sign}{trend.momentum_z:.1f}σ[/{mc}]"
+
+    # Days
+    days_str = f"  [{tc}]{trend.days_in_regime}d in regime[/{tc}]"
+
+    parts.append(Text.from_markup(
+        f"[{tc}]{arrow} {trend.trend_direction}[/{tc}]{prev_str}  {delta_str}{momo_str}{days_str}\n\n"
+    ))
 
 
 def print_llm_regime_analysis(

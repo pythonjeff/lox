@@ -85,6 +85,9 @@ def consumer_snapshot(*, llm: bool = False, ticker: str = "", refresh: bool = Fa
         {"name": "30Y Mortgage", "value": _v(mortgage_30y, "{:.2f}%"), "context": "housing drag"},
     ]
 
+    from lox.regimes.trend import get_domain_trend
+    trend = get_domain_trend("consumer", result.score, result.label)
+
     print(render_regime_panel(
         domain="Consumer",
         asof=asof,
@@ -93,6 +96,7 @@ def consumer_snapshot(*, llm: bool = False, ticker: str = "", refresh: bool = Fa
         percentile=None,
         description=result.description,
         metrics=metrics,
+        trend=trend,
     ))
 
     if llm:

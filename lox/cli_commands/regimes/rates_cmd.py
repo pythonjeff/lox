@@ -223,6 +223,9 @@ def _run_rates_snapshot(
         {"name": "Real Δ20d", "value": _fmt_chg(ri.real_yield_10y_chg_20d), "context": "real rate movement"},
     ]
 
+    from lox.regimes.trend import get_domain_trend
+    trend = get_domain_trend("rates", regime.score, regime.display_label)
+
     print(render_regime_panel(
         domain="Rates",
         asof=state.asof,
@@ -231,6 +234,7 @@ def _run_rates_snapshot(
         percentile=None,
         description=regime.description,
         metrics=metrics,
+        trend=trend,
     ))
 
     if llm:

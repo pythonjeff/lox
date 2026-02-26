@@ -61,11 +61,12 @@ def _format_metrics(metrics: dict, max_items: int = 3) -> str:
 
 def register(app: typer.Typer) -> None:
     """Register the regimes command."""
-    
+
     @app.command("regimes")
     def regimes_cmd(
         llm: bool = typer.Option(False, "--llm", "-l", help="Add LLM commentary"),
         detail: str = typer.Option(None, "--detail", "-d", help="Drill into specific regime (macro, vol, rates, funding, etc.)"),
+        trend: bool = typer.Option(False, "--trend", "-t", help="Show trend & momentum dashboard"),
         refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
         book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
     ):
@@ -78,15 +79,16 @@ def register(app: typer.Typer) -> None:
 
         Examples:
             lox research regimes              # Quick overview
+            lox research regimes --trend      # Trend & momentum dashboard
             lox research regimes --llm        # With AI commentary
             lox research regimes -d vol       # Drill into volatility
             lox research regimes --book       # Show position exposure
         """
         console = Console()
         settings = load_settings()
-        
+
         console.print()
-        
+
         # Build unified regime state
         with Progress(
             SpinnerColumn(),
@@ -94,14 +96,14 @@ def register(app: typer.Typer) -> None:
             transient=True,
         ) as progress:
             progress.add_task("loading", total=None)
-            
+
             from lox.regimes import build_unified_regime_state
             state = build_unified_regime_state(
                 settings=settings,
                 start_date="2020-01-01",
                 refresh=refresh,
             )
-        
+
         # Book impact — fetch positions and correlate with regimes
         book_impacts = None
         if book:
@@ -113,6 +115,11 @@ def register(app: typer.Typer) -> None:
             ) as progress:
                 progress.add_task("book", total=None)
                 book_impacts = analyze_book_impact(settings, state)
+
+        # If trend dashboard requested, show it
+        if trend:
+            _show_trend_dashboard(console, state)
+            return
 
         # If drilling into specific regime, show detailed view
         if detail:
@@ -130,25 +137,71 @@ def register(app: typer.Typer) -> None:
             ctx.invoke(regimes_cmd)
 
 
-def _show_regime_overview(console: Console, settings, state, include_llm: bool, book_impacts=None):
-    """Show unified regime overview."""
-    from datetime import datetime
-    
+def _show_trend_dashboard(console: Console, state) -> None:
+    """Show full trend & momentum dashboard."""
+    from lox.data.regime_history import get_all_score_series
+    from lox.cli_commands.shared.trend_display import render_trend_dashboard
+
+    all_series = get_all_score_series()
+
     # Header
     overall_color = _get_regime_color(state.overall_risk_score)
-    
-    header_content = f"""[bold]REGIME STATE[/bold]  {state.overall_category.upper()}
+    header_content = f"""[bold]REGIME TREND & MOMENTUM[/bold]  {state.overall_category.upper()}
 [dim]Risk Score: [{overall_color}]{state.overall_risk_score:.0f}/100[/{overall_color}][/dim]"""
-    
+
     console.print(Panel(
         header_content,
         title=f"[bold cyan]LOX RESEARCH[/bold cyan]  [dim]{state.asof}[/dim]",
         border_style="cyan",
         padding=(0, 2),
     ))
-    
     console.print()
-    
+
+    render_trend_dashboard(state.trends, all_series, console)
+    console.print()
+    console.print("[dim]--detail <pillar> for single-pillar trend detail  |  --llm for AI commentary[/dim]")
+    console.print()
+
+
+def _fmt_trend_arrow(trend) -> str:
+    """Format a compact trend arrow for the overview table."""
+    if trend is None:
+        return "[dim]—[/dim]"
+    return f"[{trend.trend_color}]{trend.trend_arrow}[/{trend.trend_color}]"
+
+
+def _fmt_delta_compact(val) -> str:
+    """Format a 7d delta for the overview table."""
+    if val is None:
+        return "[dim]—[/dim]"
+    sign = "+" if val > 0 else ""
+    if abs(val) < 0.5:
+        return f"[dim]{sign}{val:.0f}[/dim]"
+    c = "red" if val > 0 else "green"
+    return f"[{c}]{sign}{val:.0f}[/{c}]"
+
+
+def _show_regime_overview(console: Console, settings, state, include_llm: bool, book_impacts=None):
+    """Show unified regime overview."""
+    from datetime import datetime
+
+    # Header
+    overall_color = _get_regime_color(state.overall_risk_score)
+
+    header_content = f"""[bold]REGIME STATE[/bold]  {state.overall_category.upper()}  {state.macro_quadrant}
+[dim]Risk Score: [{overall_color}]{state.overall_risk_score:.0f}/100[/{overall_color}][/dim]"""
+
+    console.print(Panel(
+        header_content,
+        title=f"[bold cyan]LOX RESEARCH[/bold cyan]  [dim]{state.asof}[/dim]",
+        border_style="cyan",
+        padding=(0, 2),
+    ))
+
+    console.print()
+
+    trends = state.trends or {}
+
     # ── Pillar table builder (shared for Core + Extended) ──────────────
     def _build_pillar_table(title: str, pillars: list) -> Table:
         tbl = Table(
@@ -161,6 +214,8 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool, 
         tbl.add_column("Pillar", style="bold", min_width=10, no_wrap=True)
         tbl.add_column("", min_width=12, no_wrap=True)       # score bar
         tbl.add_column("Score", justify="center", min_width=5, no_wrap=True)
+        tbl.add_column("", justify="center", min_width=3, no_wrap=True)  # trend arrow
+        tbl.add_column("Δ7d", justify="right", min_width=4, no_wrap=True)
         tbl.add_column("Regime", min_width=16, no_wrap=True)
         tbl.add_column("Key Metrics", ratio=1)
 
@@ -169,15 +224,21 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool, 
                 color = _get_regime_color(regime.score)
                 bar = _regime_bar(regime.score)
                 metrics_str = _format_metrics(regime.metrics) if regime.metrics else "[dim]—[/dim]"
+                domain_key = name.lower()
+                t = trends.get(domain_key)
+                arrow = _fmt_trend_arrow(t)
+                delta7 = _fmt_delta_compact(t.score_chg_7d if t else None)
                 tbl.add_row(
                     name,
                     bar,
                     f"[{color}]{regime.score:.0f}[/{color}]",
+                    arrow,
+                    delta7,
                     f"[{color}]{regime.label}[/{color}]",
                     metrics_str,
                 )
             else:
-                tbl.add_row(name, _regime_bar(0), "[dim]—[/dim]", "[dim]No data[/dim]", "")
+                tbl.add_row(name, _regime_bar(0), "[dim]—[/dim]", "[dim]—[/dim]", "[dim]—[/dim]", "[dim]No data[/dim]", "")
         return tbl
 
     core_pillars = [
@@ -206,6 +267,13 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool, 
         render_scenarios_summary(state.active_scenarios, console)
         console.print()
 
+    # Market Dislocations
+    dislocations = getattr(state, "active_dislocations", [])
+    if dislocations:
+        from lox.cli_commands.shared.inconsistency_display import render_dislocations_panel
+        render_dislocations_panel(dislocations, console)
+        console.print()
+
     # Book Impact
     if book_impacts is not None:
         from lox.cli_commands.shared.book_impact import render_book_impact
@@ -216,118 +284,71 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool, 
     if include_llm:
         _show_llm_commentary(console, settings, state, book_impacts)
     else:
-        console.print("[dim]Add --llm for AI commentary  |  --detail <pillar> to drill down  |  --book for position exposure[/dim]")
+        console.print("[dim]--trend for momentum dashboard  |  --llm for AI commentary  |  --detail <pillar> to drill down  |  --book for position exposure[/dim]")
     
     console.print()
 
 
 def _show_regime_detail(console: Console, settings, state, pillar: str, include_llm: bool = True, book_impacts=None):
-    """Show detailed view of a specific regime."""
-    # Map pillar names
-    pillar_map = {
-        "growth": ("growth", state.growth),
-        "inflation": ("inflation", state.inflation),
-        "macro": ("growth", state.growth),  # alias for backwards compat
-        "vol": ("volatility", state.volatility),
-        "volatility": ("volatility", state.volatility),
-        "credit": ("credit", state.credit),
-        "rates": ("rates", state.rates),
-        "liquidity": ("liquidity", state.liquidity),
-        "consumer": ("consumer", state.consumer),
-        "fiscal": ("fiscal", state.fiscal),
-        "usd": ("usd", state.usd),
-        "commodities": ("commodities", state.commodities),
+    """Dispatch to the canonical `lox regime <domain>` snapshot function."""
+    # Map aliases → canonical domain name
+    pillar_aliases = {
+        "growth": "growth",
+        "inflation": "inflation",
+        "macro": "growth",
+        "vol": "volatility",
+        "volatility": "volatility",
+        "credit": "credit",
+        "rates": "rates",
+        "liquidity": "liquidity",
+        "funding": "liquidity",
+        "consumer": "consumer",
+        "fiscal": "fiscal",
+        "usd": "usd",
+        "commodities": "commodities",
     }
-    
-    if pillar not in pillar_map:
+
+    if pillar not in pillar_aliases:
         console.print(f"[red]Unknown pillar: {pillar}[/red]")
-        console.print(f"[dim]Available: {', '.join(pillar_map.keys())}[/dim]")
+        console.print(f"[dim]Available: {', '.join(sorted(set(pillar_aliases.values())))}[/dim]")
         return
-    
-    domain, regime = pillar_map[pillar]
-    
-    if not regime:
-        console.print(f"[yellow]No data available for {domain}[/yellow]")
-        return
-    
-    # Header with key metrics
-    color = _get_regime_color(regime.score)
-    header_parts = [
-        f"[bold]{domain.upper()} REGIME[/bold]\n",
-        f"Status: [{color}]{regime.label}[/{color}]",
-        f"Score: [{color}]{regime.score:.0f}/100[/{color}]\n",
-        f"{regime.description}",
-    ]
-    
-    # Show metrics in the header panel
-    if regime.metrics:
-        header_parts.append("")
-        metrics_line = "  ".join(
-            f"[bold]{k}[/bold]: {v}" for k, v in regime.metrics.items() if v is not None
-        )
-        header_parts.append(metrics_line)
-    
-    console.print(Panel(
-        "\n".join(header_parts),
-        title=f"[bold cyan]LOX RESEARCH[/bold cyan]  [dim]{state.asof}[/dim]",
-        border_style=color,
-    ))
-    console.print()
-    
-    # Build snapshot from regime metrics (real data for LLM)
-    snapshot = {
-        "regime": regime.label,
-        "score": regime.score,
-        "description": regime.description,
-    }
-    if regime.metrics:
-        snapshot["current_metrics"] = {k: v for k, v in regime.metrics.items() if v is not None}
-    
-    # Book Impact for this domain
-    if book_impacts is not None:
-        from lox.cli_commands.shared.book_impact import render_book_impact
-        # Filter to impacts relevant to this domain
-        domain_filtered = []
-        for pi in book_impacts:
-            filtered_impacts = [di for di in pi.impacts if di.domain == domain]
-            if filtered_impacts:
-                from copy import copy
-                pi_copy = copy(pi)
-                pi_copy.impacts = filtered_impacts
-                domain_filtered.append(pi_copy)
-        if domain_filtered:
-            render_book_impact(console, domain_filtered)
-            console.print()
 
-    # Scenarios involving this domain
-    if state.active_scenarios:
-        domain_scenarios = [
-            s for s in state.active_scenarios
-            if domain in s.domains_involved
-        ]
-        if domain_scenarios:
-            from lox.cli_commands.shared.scenario_display import render_scenario_panel
-            for s in domain_scenarios:
-                render_scenario_panel(s, console)
-                console.print()
+    domain = pillar_aliases[pillar]
 
-    # LLM Analysis — detail view always includes it (streaming, no spinner)
-    try:
-        from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
-        print_llm_regime_analysis(
-            settings=settings,
-            domain=domain,
-            snapshot=snapshot,
-            regime_label=regime.label,
-            regime_description=regime.description,
-            console=console,
-            book_impacts=book_impacts,
-            active_scenarios=state.active_scenarios if state.active_scenarios else None,
-        )
-    except Exception as e:
-        console.print(f"[red]LLM analysis failed: {e}[/red]")
-    
-    console.print()
+    console.print(f"[dim]→ lox regime {domain}[/dim]\n")
+
+    # Dispatch to the canonical snapshot function for each domain.
+    # Each already renders the full panel with trend data + LLM chat.
+    if domain == "growth":
+        from lox.cli_commands.regimes.growth_cmd import growth_snapshot
+        growth_snapshot(llm=include_llm, refresh=False)
+    elif domain == "inflation":
+        from lox.cli_commands.regimes.inflation_cmd import inflation_snapshot
+        inflation_snapshot(llm=include_llm, refresh=False)
+    elif domain == "volatility":
+        from lox.cli_commands.regimes.volatility_cmd import volatility_snapshot
+        volatility_snapshot(llm=include_llm, refresh=False)
+    elif domain == "credit":
+        from lox.cli_commands.regimes.credit_cmd import credit_snapshot
+        credit_snapshot(llm=include_llm, refresh=False)
+    elif domain == "rates":
+        from lox.cli_commands.regimes.rates_cmd import rates_snapshot
+        rates_snapshot(llm=include_llm, refresh=False)
+    elif domain == "liquidity":
+        from lox.cli_commands.regimes.funding_cmd import funding_snapshot
+        funding_snapshot(llm=include_llm, refresh=False)
+    elif domain == "consumer":
+        from lox.cli_commands.regimes.consumer_cmd import consumer_snapshot
+        consumer_snapshot(llm=include_llm, refresh=False)
+    elif domain == "fiscal":
+        from lox.cli_commands.regimes.fiscal_cmd import fiscal_snapshot
+        fiscal_snapshot(llm=include_llm, refresh=False)
+    elif domain == "usd":
+        from lox.cli_commands.regimes.usd_cmd import run_usd_snapshot
+        run_usd_snapshot(llm=include_llm, refresh=False)
+    elif domain == "commodities":
+        from lox.cli_commands.regimes.commodities_cmd import _run_commodities_snapshot
+        _run_commodities_snapshot(llm=include_llm, refresh=False)
 
 
 def _show_llm_commentary(console: Console, settings, state, book_impacts=None):
@@ -353,6 +374,7 @@ def _show_llm_commentary(console: Console, settings, state, book_impacts=None):
                 "pillars": {},
             }
             
+            trends = state.trends or {}
             for name, regime in [
                 ("growth", state.growth),
                 ("inflation", state.inflation),
@@ -362,27 +384,42 @@ def _show_llm_commentary(console: Console, settings, state, book_impacts=None):
                 ("liquidity", state.liquidity),
             ]:
                 if regime:
-                    summary_data["pillars"][name] = {
+                    pillar_data = {
                         "label": regime.label,
                         "score": regime.score,
                         "description": regime.description,
                     }
+                    t = trends.get(name)
+                    if t:
+                        pillar_data["trend"] = t.to_dict()
+                    summary_data["pillars"][name] = pillar_data
             
             # Inject active scenarios into LLM context
             if state.active_scenarios:
                 from lox.regimes.scenarios import format_scenarios_for_llm
                 summary_data["active_scenarios"] = format_scenarios_for_llm(state.active_scenarios)
 
+            # Inject dislocations into LLM context
+            dislocations = getattr(state, "active_dislocations", [])
+            if dislocations:
+                from lox.regimes.inconsistencies import format_dislocations_for_llm
+                summary_data["dislocations"] = format_dislocations_for_llm(dislocations)
+
             scenario_hint = ""
             if state.active_scenarios:
                 names = [s.name for s in state.active_scenarios]
                 scenario_hint = f" Active macro scenarios: {', '.join(names)}. Reference these in your analysis."
 
+            dislocation_hint = ""
+            if dislocations:
+                dnames = [d.name for d in dislocations]
+                dislocation_hint = f" Market dislocations detected: {', '.join(dnames)}. Explain which are most actionable and how to capitalize."
+
             commentary = quick_llm_summary(
                 settings=settings,
                 title="Regime Overview",
                 data=summary_data,
-                question=f"Provide a 3-4 sentence summary of the current macro environment and key trading implications. Be direct and actionable.{scenario_hint}",
+                question=f"Provide a 3-4 sentence summary of the current macro environment and key trading implications. Be direct and actionable.{scenario_hint}{dislocation_hint}",
             )
             
             console.print(Panel(

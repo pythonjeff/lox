@@ -101,6 +101,9 @@ def run_usd_snapshot(
         {"name": "Z level", "value": _v(inp.z_usd_level, "{:+.2f}"), "context": "vs history"},
         {"name": "Strength score", "value": _v(inp.usd_strength_score, "{:+.2f}"), "context": "composite"},
     ]
+    from lox.regimes.trend import get_domain_trend
+    trend = get_domain_trend("usd", regime.score, regime.label)
+
     print(render_regime_panel(
         domain="USD",
         asof=state.asof,
@@ -109,6 +112,7 @@ def run_usd_snapshot(
         percentile=None,
         description=regime.description,
         metrics=metrics,
+        trend=trend,
     ))
 
     if llm:

@@ -349,50 +349,50 @@ def _show_etf_fundamentals(console: Console, profile: dict, etf_info: dict, pric
         console.print(f"[dim]{desc[:200]}[/dim]")
 
 
+def _calc_mfi(highs, lows, closes, volumes, period=14):
+    """Return MFI for the last `period` bars, or None."""
+    if len(closes) < period + 1:
+        return None
+    tp = [(h + l + c) / 3 for h, l, c in zip(highs, lows, closes)]
+    pos = sum(tp[i] * volumes[i] for i in range(-period, 0) if tp[i] > tp[i - 1])
+    neg = sum(tp[i] * volumes[i] for i in range(-period, 0) if tp[i] <= tp[i - 1])
+    if neg > 0:
+        return 100 - (100 / (1 + pos / neg))
+    return 100.0 if pos > 0 else None
+
+
+def _ud_ratio(closes, volumes, n):
+    """Up/Down volume ratio over the last n bars."""
+    if len(closes) < n + 1:
+        return None
+    up = sum(v for c1, c0, v in zip(closes[-n:], closes[-(n + 1):-1], volumes[-n:]) if c1 > c0)
+    dn = sum(v for c1, c0, v in zip(closes[-n:], closes[-(n + 1):-1], volumes[-n:]) if c1 <= c0)
+    return up / dn if dn > 0 else 10.0
+
+
+def _arrow(current, prior, invert=False):
+    """Return a coloured Rich arrow based on direction."""
+    if current is None or prior is None:
+        return ""
+    better = current > prior
+    if invert:
+        better = not better
+    return "[green]↑[/green]" if better else "[red]↓[/red]"
+
+
 def show_etf_flows(console: Console, price_data: dict, fundamentals: dict):
-    """Compute and display ETF flow signals from volume data."""
+    """Compute and display ETF flow signals from volume data — with trend context."""
     historical = price_data.get("historical", [])
     if len(historical) < 21:
         return
 
-    # Sort oldest first
-    hist = list(reversed(historical[:60]))
-
-    closes = [h["close"] for h in hist]
+    hist = list(reversed(historical[:65]))
+    closes  = [h["close"]  for h in hist]
     volumes = [h["volume"] for h in hist]
-    highs = [h["high"] for h in hist]
-    lows = [h["low"] for h in hist]
+    highs   = [h["high"]   for h in hist]
+    lows    = [h["low"]    for h in hist]
 
-    # Money Flow Index (14-day)
-    mfi = None
-    if len(hist) >= 15:
-        typical_prices = [(h + l + c) / 3 for h, l, c in zip(highs, lows, closes)]
-        pos_mf = sum(
-            typical_prices[i] * volumes[i]
-            for i in range(-14, 0)
-            if typical_prices[i] > typical_prices[i - 1]
-        )
-        neg_mf = sum(
-            typical_prices[i] * volumes[i]
-            for i in range(-14, 0)
-            if typical_prices[i] <= typical_prices[i - 1]
-        )
-        if neg_mf > 0:
-            mfi = 100 - (100 / (1 + pos_mf / neg_mf))
-        elif pos_mf > 0:
-            mfi = 100.0
-
-    # Dollar volume averages
-    dv = [c * v for c, v in zip(closes, volumes)]
-    dv_5d = np.mean(dv[-5:]) if len(dv) >= 5 else None
-    dv_20d = np.mean(dv[-20:]) if len(dv) >= 20 else None
-
-    # Volume vs 20d average
-    vol_20d = np.mean(volumes[-20:])
-    vol_today = volumes[-1]
-    vol_ratio = vol_today / vol_20d if vol_20d > 0 else 1.0
-
-    # OBV trend
+    # ── OBV ────────────────────────────────────────────────────────────────
     obv = [0]
     for i in range(1, len(closes)):
         if closes[i] > closes[i - 1]:
@@ -402,55 +402,123 @@ def show_etf_flows(console: Console, price_data: dict, fundamentals: dict):
         else:
             obv.append(obv[-1])
 
-    obv_5d = "Inflows" if len(obv) >= 6 and obv[-1] > obv[-6] else "Outflows"
-    obv_20d = "Inflows" if len(obv) >= 21 and obv[-1] > obv[-21] else "Outflows"
+    obv_5d_up  = len(obv) >= 6  and obv[-1] > obv[-6]
+    obv_10d_up = len(obv) >= 11 and obv[-1] > obv[-11]
+    obv_20d_up = len(obv) >= 21 and obv[-1] > obv[-21]
 
-    # Up/Down volume ratio (20d)
-    if len(closes) >= 21:
-        up_vol = sum(v for c1, c0, v in zip(closes[-20:], closes[-21:-1], volumes[-20:]) if c1 > c0)
-        dn_vol = sum(v for c1, c0, v in zip(closes[-20:], closes[-21:-1], volumes[-20:]) if c1 <= c0)
-        flow_ratio = up_vol / dn_vol if dn_vol > 0 else 999.0
+    # Is the 5d OBV direction better than it was 5 bars ago?
+    obv_5d_prior_up = len(obv) >= 11 and obv[-6] > obv[-11]
+    obv_improving   = obv_5d_up and not obv_5d_prior_up   # was down, now up
+    obv_worsening   = not obv_5d_up and obv_5d_prior_up   # was up, now down
+
+    # ── Up/Down ratios: 5d, 10d, 20d ───────────────────────────────────────
+    ud_5d  = _ud_ratio(closes, volumes, 5)
+    ud_10d = _ud_ratio(closes, volumes, 10)
+    ud_20d = _ud_ratio(closes, volumes, 20)
+
+    # ── MFI now vs 5 bars ago ──────────────────────────────────────────────
+    mfi_now  = _calc_mfi(highs, lows, closes, volumes, 14)
+    # Shift arrays back 5 bars for a lagged MFI
+    mfi_lag5 = _calc_mfi(highs[:-5], lows[:-5], closes[:-5], volumes[:-5], 14) if len(closes) >= 20 else None
+
+    # ── Dollar volume ──────────────────────────────────────────────────────
+    dv     = [c * v for c, v in zip(closes, volumes)]
+    dv_5d  = float(np.mean(dv[-5:]))  if len(dv) >= 5  else None
+    dv_20d = float(np.mean(dv[-20:])) if len(dv) >= 20 else None
+    vol_ratio = (float(np.mean(volumes[-5:])) / float(np.mean(volumes[-20:]))) if len(volumes) >= 20 else 1.0
+
+    # ── Net flow signal (20d Up/Down) ──────────────────────────────────────
+    fr20 = ud_20d or 1.0
+    if fr20 > 1.3:
+        net_signal_text = "STRONG INFLOWS"
+        net_color = "green"
+    elif fr20 > 1.1:
+        net_signal_text = "INFLOWS"
+        net_color = "green"
+    elif fr20 < 0.7:
+        net_signal_text = "STRONG OUTFLOWS"
+        net_color = "red"
+    elif fr20 < 0.9:
+        net_signal_text = "OUTFLOWS"
+        net_color = "red"
     else:
-        flow_ratio = 1.0
+        net_signal_text = "BALANCED"
+        net_color = "yellow"
 
-    # Net flow signal
-    if flow_ratio > 1.3:
-        net_signal = "[green]STRONG INFLOWS[/green]"
-    elif flow_ratio > 1.1:
-        net_signal = "[green]INFLOWS[/green]"
-    elif flow_ratio < 0.7:
-        net_signal = "[red]STRONG OUTFLOWS[/red]"
-    elif flow_ratio < 0.9:
-        net_signal = "[red]OUTFLOWS[/red]"
-    else:
-        net_signal = "[yellow]BALANCED[/yellow]"
+    # Arrow: is 10d U/D better or worse than 20d? (signals acceleration)
+    net_trend = _arrow(ud_10d, ud_20d)  # up = improving recently
 
-    # Premium/Discount to NAV
+    # ── MFI label ──────────────────────────────────────────────────────────
+    def _mfi_label(v):
+        if v is None:
+            return "N/A"
+        if v > 80:
+            return f"[red]{v:.0f} Overbought[/red]"
+        if v < 20:
+            return f"[green]{v:.0f} Oversold[/green]"
+        if v < 40:
+            return f"[yellow]{v:.0f} Weak[/yellow]"
+        if v > 60:
+            return f"[green]{v:.0f} Strong[/green]"
+        return f"{v:.0f} Neutral"
+
+    mfi_trend = _arrow(mfi_now, mfi_lag5)  # up = MFI rising (more inflow pressure)
+
+    # ── OBV labels ─────────────────────────────────────────────────────────
+    def _obv_label(is_up, trend_arrow=""):
+        color = "green" if is_up else "red"
+        word  = "Inflows" if is_up else "Outflows"
+        return f"[{color}]{word}[/{color}] {trend_arrow}"
+
+    # OBV 5d trend arrow: is it better now than 5 bars ago?
+    obv_5d_arrow = "[green]↑[/green]" if obv_improving else ("[red]↓[/red]" if obv_worsening else "→")
+    obv_20d_arrow = "[green]↑[/green]" if (obv_20d_up and obv_10d_up and obv_5d_up) else ("[red]↓[/red]" if (not obv_20d_up) else "→")
+
+    # ── Up/Down ratio labels ────────────────────────────────────────────────
+    def _ud_label(ratio, arrow=""):
+        if ratio is None:
+            return "N/A"
+        color = "green" if ratio > 1.1 else "red" if ratio < 0.9 else "yellow"
+        return f"[{color}]{ratio:.2f}x[/{color}] {arrow}"
+
+    # Arrow for 5d: is it better or worse than 10d?
+    ud_5d_arrow  = _arrow(ud_5d, ud_10d)
+    ud_20d_arrow = _arrow(ud_20d, 1.0)      # vs neutral baseline
+
+    # ── NAV premium ────────────────────────────────────────────────────────
     etf_info = fundamentals.get("etf_info", {})
     nav = etf_info.get("nav")
-    current_price = closes[-1] if closes else None
     prem_disc = None
-    if nav and current_price:
+    if nav and closes:
         try:
-            prem_disc = ((current_price - float(nav)) / float(nav)) * 100
+            prem_disc = ((closes[-1] - float(nav)) / float(nav)) * 100
         except Exception:
             pass
 
-    # MFI signal
-    mfi_signal = ""
-    if mfi is not None:
-        if mfi > 80:
-            mfi_signal = "[red]Overbought[/red]"
-        elif mfi < 20:
-            mfi_signal = "[green]Oversold[/green]"
-        elif mfi < 40:
-            mfi_signal = "[yellow]Weak[/yellow]"
-        elif mfi > 60:
-            mfi_signal = "[green]Strong[/green]"
+    # ── Pressure verdict ───────────────────────────────────────────────────
+    # Compare short-term (5d/10d) vs long-term (20d) to say if selling is
+    # accelerating, decelerating, or stable.
+    if ud_5d is not None and ud_20d is not None:
+        if net_color == "green":
+            if ud_5d > ud_20d * 1.1:
+                verdict_text = "[green]Inflows ACCELERATING — buying pressure building[/green]"
+            elif ud_5d < ud_20d * 0.9:
+                verdict_text = "[yellow]Inflows FADING — short-term momentum weakening[/yellow]"
+            else:
+                verdict_text = "[green]Inflows STEADY — consistent buying[/green]"
+        elif net_color == "red":
+            if ud_5d < ud_20d * 0.9:
+                verdict_text = "[red]Outflows DEEPENING — selling pressure increasing[/red]"
+            elif ud_5d > ud_20d * 1.1:
+                verdict_text = "[yellow]Outflows EASING — short-term pressure lifting[/yellow]"
+            else:
+                verdict_text = "[red]Outflows STEADY — persistent selling[/red]"
         else:
-            mfi_signal = "Neutral"
+            verdict_text = "[yellow]Flow NEUTRAL — balanced buying and selling[/yellow]"
+    else:
+        verdict_text = ""
 
-    # Build table
+    # ── Build table ────────────────────────────────────────────────────────
     table = Table(title="[bold]Fund Flows (Volume-Based)[/bold]", box=None, padding=(0, 2))
     table.add_column("Metric", style="bold")
     table.add_column("Value", justify="right")
@@ -459,33 +527,30 @@ def show_etf_flows(console: Console, price_data: dict, fundamentals: dict):
 
     table.add_row(
         "20d Net Flow",
-        net_signal,
+        f"[{net_color}]{net_signal_text}[/{net_color}] {net_trend}",
         "MFI (14d)",
-        f"{mfi:.0f} {mfi_signal}" if mfi is not None else "N/A",
+        f"{_mfi_label(mfi_now)} {mfi_trend}",
     )
-
-    obv_5d_color = "green" if obv_5d == "Inflows" else "red"
-    obv_20d_color = "green" if obv_20d == "Inflows" else "red"
     table.add_row(
         "OBV 5d",
-        f"[{obv_5d_color}]{obv_5d}[/{obv_5d_color}]",
+        _obv_label(obv_5d_up, obv_5d_arrow),
         "OBV 20d",
-        f"[{obv_20d_color}]{obv_20d}[/{obv_20d_color}]",
+        _obv_label(obv_20d_up, obv_20d_arrow),
     )
-
     table.add_row(
-        "$ Vol 5d Avg",
-        f"${dv_5d / 1e6:.0f}M" if dv_5d else "N/A",
-        "$ Vol 20d Avg",
-        f"${dv_20d / 1e6:.0f}M" if dv_20d else "N/A",
+        "Up/Down 5d",
+        _ud_label(ud_5d, ud_5d_arrow),
+        "Up/Down 20d",
+        _ud_label(ud_20d, ud_20d_arrow),
     )
 
+    dv_rel = f" ({dv_5d / dv_20d:.2f}x 20d avg)" if dv_5d and dv_20d else ""
     vol_color = "green" if vol_ratio > 1.2 else "red" if vol_ratio < 0.8 else "yellow"
     table.add_row(
+        "$ Vol 5d Avg",
+        f"${dv_5d / 1e6:.0f}M[dim]{dv_rel}[/dim]" if dv_5d else "N/A",
         "Vol vs 20d Avg",
         f"[{vol_color}]{vol_ratio:.2f}x[/{vol_color}]",
-        "Up/Down Ratio",
-        f"{'[green]' if flow_ratio > 1.1 else '[red]' if flow_ratio < 0.9 else ''}{flow_ratio:.2f}x{'[/green]' if flow_ratio > 1.1 else '[/red]' if flow_ratio < 0.9 else ''}",
     )
 
     if prem_disc is not None:
@@ -499,6 +564,169 @@ def show_etf_flows(console: Console, price_data: dict, fundamentals: dict):
 
     console.print()
     console.print(table)
+
+    if verdict_text:
+        console.print(f"  {verdict_text}")
+
+
+_HY_ETF_TICKERS = {"HYG", "JNK", "FALN", "SJNK", "HYS", "HYXE", "USHY", "SHYG"}
+
+# ICE BofA HY OAS healthy/stressed historical context
+_OAS_BAR_MIN   = 200   # bp — record tight end (bar left anchor)
+_OAS_HEALTHY   = 300   # bp — pre-COVID typical tight
+_OAS_STRESSED  = 650   # bp — mild recession territory
+_OAS_EXTREME   = 1100  # bp — COVID Mar 2020 peak (bar right anchor)
+_OAS_HIST_AVG  = 420   # bp — long-run average
+
+
+def show_hy_default_context(console: Console, settings, symbol: str) -> None:
+    """Fetch ICE BofA HY OAS from FRED and display a credit stress + implied default panel."""
+    try:
+        import pandas as pd
+        from lox.data.fred import FredClient
+
+        fred = FredClient(api_key=settings.FRED_API_KEY)
+        df = fred.fetch_series("BAMLH0A0HYM2", start_date="2018-01-01")
+        if df is None or df.empty:
+            return
+
+        df = df.dropna(subset=["value"]).sort_values("date").reset_index(drop=True)
+        if len(df) < 2:
+            return
+
+        # Current OAS (basis points — FRED series is already in %)
+        # FRED stores it as percent (e.g. 3.12 = 312bp) — convert
+        latest_row = df.iloc[-1]
+        oas_pct = float(latest_row["value"])   # e.g. 3.12
+        oas_bp  = oas_pct * 100                 # e.g. 312 bp
+        as_of   = str(latest_row["date"])[:10]
+
+        # Historical lookbacks
+        def _bp_ago(days):
+            cutoff = latest_row["date"] - pd.Timedelta(days=days)
+            past = df[df["date"] <= cutoff]
+            if past.empty:
+                return None
+            return float(past.iloc[-1]["value"]) * 100
+
+        oas_1mo  = _bp_ago(30)
+        oas_3mo  = _bp_ago(90)
+        oas_1yr  = _bp_ago(365)
+        oas_52wh = float(df.tail(252)["value"].max()) * 100 if len(df) >= 252 else None
+        oas_52wl = float(df.tail(252)["value"].min()) * 100 if len(df) >= 252 else None
+
+        def _chg(prior):
+            if prior is None:
+                return "N/A", ""
+            d = oas_bp - prior
+            color = "red" if d > 0 else "green"
+            return f"[{color}]{d:+.0f}bp[/{color}]", f"[dim]({prior:.0f}bp)[/dim]"
+
+        # Implied 1-year default rate (simplified Merton/spread decomp)
+        # Default implied ≈ OAS / (1 − recovery);  HY recovery ≈ 40 %
+        # This is a rough market-implied figure, not a reported default rate.
+        recovery = 0.40
+        implied_dr = (oas_pct / 100) / (1 - recovery) * 100  # percent
+
+        # Where in the stress spectrum?
+        if oas_bp <= _OAS_HEALTHY:
+            stress_label = "[green]CALM[/green]"
+            stress_note  = "Spreads tight — credit risk low"
+        elif oas_bp <= _OAS_STRESSED:
+            stress_label = "[yellow]MODERATE[/yellow]"
+            stress_note  = "Normal cycle range — watch for widening"
+        elif oas_bp <= _OAS_EXTREME * 0.7:
+            stress_label = "[red]ELEVATED[/red]"
+            stress_note  = "Approaching distress levels — risk-off signal"
+        else:
+            stress_label = "[bold red]DISTRESS[/bold red]"
+            stress_note  = "Near cycle extremes — systemic risk pricing"
+
+        # Momentum: is the spread tightening or widening recently?
+        if oas_1mo is not None:
+            mo_diff = oas_bp - oas_1mo
+            if mo_diff > 30:
+                momentum = "[red]Widening (risk-off)[/red]"
+            elif mo_diff < -30:
+                momentum = "[green]Tightening (risk-on)[/green]"
+            elif mo_diff > 10:
+                momentum = "[yellow]Drifting wider[/yellow]"
+            elif mo_diff < -10:
+                momentum = "[yellow]Drifting tighter[/yellow]"
+            else:
+                momentum = "[dim]Stable[/dim]"
+        else:
+            momentum = "N/A"
+
+        # Visual bar: 200bp (record tight) → 1100bp (COVID crisis)
+        # Uses a ▲ position marker so low readings remain visible
+        bar_len   = 28
+        bar_range = _OAS_EXTREME - _OAS_BAR_MIN          # 900bp span
+        marker_pos = int(max(0, min(1, (oas_bp - _OAS_BAR_MIN) / bar_range)) * (bar_len - 1))
+        bar_color = "green" if oas_bp <= _OAS_HEALTHY else "yellow" if oas_bp <= _OAS_STRESSED else "red"
+        bar_chars = list("░" * bar_len)
+        bar_chars[marker_pos] = "█"
+        bar_str = (
+            f"[{bar_color}]{''.join(bar_chars[:marker_pos + 1])}[/{bar_color}]"
+            f"[dim]{''.join(bar_chars[marker_pos + 1:])}[/dim]"
+        )
+        bar_labels = f"[green]{_OAS_BAR_MIN}bp (tight)[/green]  {bar_str}  [red]{_OAS_EXTREME}bp (crisis)[/red]"
+
+        # Build table
+        table = Table(
+            title=f"[bold]HY Credit Stress & Implied Default  [dim](ICE BofA OAS · FRED BAMLH0A0HYM2)[/dim][/bold]",
+            box=None,
+            padding=(0, 2),
+        )
+        table.add_column("Metric", style="bold", min_width=22)
+        table.add_column("Value", justify="right", min_width=12)
+        table.add_column("Metric", style="bold", min_width=22)
+        table.add_column("Value", justify="right", min_width=12)
+
+        chg_1mo_str,  prior_1mo  = _chg(oas_1mo)
+        chg_3mo_str,  prior_3mo  = _chg(oas_3mo)
+        chg_1yr_str,  prior_1yr  = _chg(oas_1yr)
+
+        oas_color = bar_color
+        table.add_row(
+            "HY OAS (current)",
+            f"[{oas_color}][bold]{oas_bp:.0f}bp[/bold][/{oas_color}]  [dim]as of {as_of}[/dim]",
+            "Stress Level",
+            stress_label,
+        )
+        table.add_row(
+            "Implied Default Rate",
+            f"[{oas_color}]{implied_dr:.1f}%[/{oas_color}]  [dim](OAS ÷ 0.60)[/dim]",
+            "1mo Momentum",
+            momentum,
+        )
+        table.add_row(
+            "vs 1 Month Ago",
+            f"{chg_1mo_str} {prior_1mo}",
+            "vs 1 Year Ago",
+            f"{chg_1yr_str} {prior_1yr}",
+        )
+        table.add_row(
+            "vs 3 Months Ago",
+            f"{chg_3mo_str} {prior_3mo}",
+            "52W Range",
+            f"{oas_52wl:.0f}–{oas_52wh:.0f}bp" if oas_52wh and oas_52wl else "N/A",
+        )
+        table.add_row(
+            "Long-Run Avg",
+            f"[dim]~{_OAS_HIST_AVG}bp[/dim]",
+            "vs LR Avg",
+            f"[{'green' if oas_bp < _OAS_HIST_AVG else 'red'}]{oas_bp - _OAS_HIST_AVG:+.0f}bp[/{'green' if oas_bp < _OAS_HIST_AVG else 'red'}]",
+        )
+
+        console.print()
+        console.print(table)
+        console.print(f"  {bar_labels}")
+        console.print(f"  [dim]{stress_note}[/dim]")
+        console.print(f"  [dim]Implied default = market-implied 1yr rate; historical HY avg ≈ 3–4%[/dim]")
+
+    except Exception as e:
+        logger.debug("show_hy_default_context failed: %s", e)
 
 
 def show_refinancing_wall(console: Console, settings, symbol: str):

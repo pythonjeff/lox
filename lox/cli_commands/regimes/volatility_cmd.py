@@ -35,6 +35,9 @@ def _run_volatility_snapshot(start: str = "2011-01-01", refresh: bool = False, l
         {"name": "Pressure score", "value": _v(inp.vol_pressure_score), "context": "composite z"},
     ]
 
+    from lox.regimes.trend import get_domain_trend
+    trend = get_domain_trend("volatility", score, regime.label or regime.name)
+
     panel = render_regime_panel(
         domain="Volatility",
         asof=state.asof,
@@ -43,6 +46,7 @@ def _run_volatility_snapshot(start: str = "2011-01-01", refresh: bool = False, l
         percentile=None,
         description=regime.description,
         metrics=metrics,
+        trend=trend,
     )
     print(panel)
 
