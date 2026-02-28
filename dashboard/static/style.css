@@ -122,6 +122,15 @@ body {
     50% { opacity: 0.4; }
 }
 
+.live-dot--stale {
+    background: #f59e0b;
+    animation: none;
+}
+
+.stale-label {
+    color: #f59e0b !important;
+}
+
 .btn-my-account {
     font-family: inherit;
     font-size: 11px;

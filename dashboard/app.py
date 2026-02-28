@@ -130,7 +130,7 @@ POSITIONS_CACHE = {
     "timestamp": None,
 }
 POSITIONS_CACHE_LOCK = threading.Lock()
-POSITIONS_CACHE_TTL = 60  # 60 seconds - macro fund doesn't need sub-minute quotes
+POSITIONS_CACHE_TTL = 30  # 30 seconds - matches frontend polling interval
 
 # ============ OTHER DATA CACHES ============
 # Short-lived caches for other frequently requested data
@@ -591,26 +591,28 @@ def _simple_position_theory(position):
 # ============ POSITION DATA HELPERS ============
 
 def _get_nav_equity(account):
-    """Get NAV equity from NAV sheet or fallback to account equity."""
-    nav_equity = 0.0
+    """Get NAV equity - prefer live Alpaca equity, fallback to NAV sheet."""
+    # Prefer live account equity (always current)
+    if account:
+        try:
+            account_equity = float(getattr(account, 'equity', 0.0) or 0.0)
+            if account_equity > 0:
+                return account_equity
+        except Exception:
+            pass
+
+    # Fallback: NAV sheet CSV (may be stale)
     try:
         nav_rows = read_nav_sheet()
         if nav_rows:
             nav = nav_rows[-1]
             nav_equity = float(nav.equity) if hasattr(nav, 'equity') and nav.equity is not None else 0.0
+            if nav_equity > 0:
+                return nav_equity
     except Exception as nav_error:
         print(f"Warning: Could not read NAV sheet: {nav_error}")
-    
-    # Fallback: calculate from account if NAV sheet is empty
-    if nav_equity == 0.0 and account:
-        try:
-            account_equity = float(getattr(account, 'equity', 0.0) or 0.0)
-            if account_equity > 0:
-                nav_equity = account_equity
-        except Exception:
-            pass
-    
-    return nav_equity
+
+    return 0.0
 
 
 def _get_original_capital():
@@ -1115,8 +1117,15 @@ def get_positions_data(force_refresh: bool = False):
         error_msg = str(e)
         print(f"Error in get_positions_data: {error_msg}")
         traceback.print_exc()
-        
-        # Try to at least get account info for NAV fallback
+
+        # Serve stale cache if available (stale data >> empty data)
+        with POSITIONS_CACHE_LOCK:
+            if POSITIONS_CACHE["data"]:
+                stale = {**POSITIONS_CACHE["data"], "cached": True, "stale": True}
+                print("[Positions] Serving stale cache as fallback after error")
+                return stale
+
+        # Last resort: try to build minimal response
         nav_equity = 0.0
         original_capital = 950.0
         try:
@@ -1127,7 +1136,7 @@ def get_positions_data(force_refresh: bool = False):
                 nav_equity = float(getattr(account, 'equity', 0.0) or 0.0)
         except Exception:
             pass
-        
+
         try:
             flows = read_investor_flows(path=default_investor_flows_path())
             capital_sum = sum(float(f.amount) for f in flows if float(f.amount) > 0)
@@ -1135,7 +1144,7 @@ def get_positions_data(force_refresh: bool = False):
                 original_capital = capital_sum
         except Exception:
             pass
-        
+
         return {
             "error": error_msg,
             "positions": [],
@@ -1603,7 +1612,7 @@ def api_positions():
     data = get_positions_data()
     response = jsonify(data)
     # Short cache for live updates
-    response.headers['Cache-Control'] = 'public, max-age=10'
+    response.headers['Cache-Control'] = 'no-cache'
     return response
 
 
@@ -1785,7 +1794,7 @@ def api_investors():
             cache_age = (datetime.now(timezone.utc) - INVESTORS_CACHE["timestamp"]).total_seconds()
             if cache_age < INVESTORS_CACHE_TTL:
                 response = jsonify(INVESTORS_CACHE["data"])
-                response.headers['Cache-Control'] = 'public, max-age=10'
+                response.headers['Cache-Control'] = 'no-cache'
                 return response
     
     try:
@@ -1795,7 +1804,7 @@ def api_investors():
             INVESTORS_CACHE["data"] = data
             INVESTORS_CACHE["timestamp"] = datetime.now(timezone.utc)
         response = jsonify(data)
-        response.headers['Cache-Control'] = 'public, max-age=10'
+        response.headers['Cache-Control'] = 'no-cache'
         return response
     except Exception as e:
         import traceback
@@ -1833,8 +1842,12 @@ def get_investor_data():
         )
         rows = rep.get("rows") or []
         total_capital = float(rep.get("total_capital") or 0)
-        fund_return_decimal = float(rep.get("fund_return") or 0)
         equity = float(rep.get("equity") or 0)
+
+        # Prefer TWR from NAV sheet (strips out cash-flow timing bias)
+        from lox.nav.store import read_nav_sheet
+        nav_rows = read_nav_sheet()
+        fund_return_decimal = float(nav_rows[-1].twr_cum) if nav_rows else float(rep.get("fund_return") or 0)
 
         # Map to dashboard shape: return_pct in percent, ownership in percent (0–100)
         investors = []
