@@ -24,7 +24,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=5">
     <!-- Chart.js (kept for potential future use) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
@@ -88,7 +88,7 @@
                 </div>
             </div>
             <div class="header-right">
-                <span class="live-indicator"><span class="live-dot"></span>LIVE</span>
+                <span class="live-indicator"><span class="live-dot" id="live-dot"></span><span id="live-label">LIVE</span></span>
                 <span class="header-timestamp" id="header-timestamp">—</span>
                 {% if current_user.is_authenticated %}
                 <a href="{{ url_for('my_account') }}" class="btn-my-account" title="My Account">My Account</a>
@@ -100,7 +100,7 @@
 
         <!-- HERO ZONE: Fund Return -->
         <section class="hero-zone">
-            <div class="hero-label">FUND RETURN</div>
+            <div class="hero-label">FUND TWR</div>
             <div class="hero-value" id="hero-return">—</div>
             <div class="hero-benchmark" id="hero-benchmark">—</div>
             <div class="hero-aum" id="hero-aum">—</div>
@@ -288,7 +288,7 @@
         </footer>
     </div>
 
-    <script src="{{ url_for('static', filename='dashboard.js') }}?v=4"></script>
+    <script src="{{ url_for('static', filename='dashboard.js') }}?v=5"></script>
     <script>
     // Hamburger menu toggle
     (function() {
