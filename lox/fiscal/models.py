@@ -33,6 +33,11 @@ class FiscalInputs(BaseModel):
     wam_chg_12m: Optional[float] = None  # 12m change in WAM
     deficit_trend_slope: Optional[float] = None  # 12m OLS slope of deficit trajectory
 
+    # MMT Sectoral Balance (Government deficit = Private surplus + Current account deficit)
+    private_balance_pct_gdp: Optional[float] = None  # approx private sector financial balance as % GDP
+    private_balance_impulse: Optional[float] = None  # YoY change in private balance (% GDP); negative = drag
+    trade_balance_12m: Optional[float] = None  # rolling 12m trade balance (BOPGSTB), $ millions
+
     # Bond market stress
     move_index: Optional[float] = None  # MOVE index level
     move_index_z: Optional[float] = None  # MOVE z-score (3yr window)

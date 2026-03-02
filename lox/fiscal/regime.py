@@ -14,28 +14,25 @@ class FiscalRegime:
 
 
 FISCAL_REGIME_CHOICES = (
-    "benign_funding",
-    "heavy_funding",
-    "stress_building",
+    "fiscal_contraction",
+    "moderate_fiscal_support",
+    "strong_fiscal_stimulus",
     "fiscal_dominance_risk",
 )
 
 
 def classify_fiscal_regime(inputs: FiscalInputs) -> FiscalRegime:
     """
-    Rule-based fiscal regime classifier (explainable / low noise).
+    Rule-based fiscal regime classifier (MMT sectoral balance framework).
 
-    Mapping (user spec):
-    - benign_funding: low deficits, bill-heavy issuance, strong auctions
-    - heavy_funding: large deficits, mixed issuance, stable auctions
-    - stress_building: large deficits, long issuance, rising dealer take
+    In MMT, government deficit = private sector surplus (net of foreign sector).
+    Smaller deficits are contractionary; larger deficits support private balance sheets.
+
+    Mapping:
+    - fiscal_contraction: low deficits → private sector starved of NFA
+    - moderate_fiscal_support: moderate deficits, mixed signals
+    - strong_fiscal_stimulus: large deficits → strong NFA injection
     - fiscal_dominance_risk: accelerating interest expense + weak auctions
-
-    Implementation detail:
-    - Prefer standardized z-scores when available.
-    - Fall back to raw values when z-scores aren't present.
-    - Missing optional issuance/auction series should *not* break classification;
-      we classify using the available core signals.
     """
     z_def = inputs.z_deficit_12m
     z_long = inputs.z_long_duration_issuance_share
@@ -43,21 +40,18 @@ def classify_fiscal_regime(inputs: FiscalInputs) -> FiscalRegime:
     z_dealer = inputs.z_dealer_take_pct
     z_ie = inputs.z_interest_expense_yoy
 
-    # Weak auctions: tails and/or high dealer take
     weak_auctions = False
     if z_tail is not None and z_tail > 0.75:
         weak_auctions = True
     if z_dealer is not None and z_dealer > 0.75:
         weak_auctions = True
 
-    # Long-duration tilt (issuance mix)
     long_tilt = z_long is not None and z_long > 0.50
 
-    # "Large deficits" as relative positioning
+    # MMT inversion: lower z_def = smaller deficit = less private sector support
+    small_deficits = z_def is not None and z_def < -0.50
     large_deficits = z_def is not None and z_def > 0.50
-    very_large_deficits = z_def is not None and z_def > 1.25
 
-    # Interest expense growth pressure
     accelerating_interest = (
         (inputs.interest_expense_yoy_accel is not None and inputs.interest_expense_yoy_accel > 0.0)
         or (z_ie is not None and z_ie > 1.0)
@@ -67,28 +61,30 @@ def classify_fiscal_regime(inputs: FiscalInputs) -> FiscalRegime:
     if accelerating_interest and weak_auctions:
         return FiscalRegime(
             name="fiscal_dominance_risk",
-            description="Interest expense accelerating and auctions weakening (tails and/or dealer take elevated).",
+            description="Interest expense accelerating and auctions weakening — debt dynamics risk.",
         )
 
-    # 2) Stress building: large deficits + long issuance tilt + rising dealer take/auction weakness
-    if (large_deficits or very_large_deficits) and long_tilt and (weak_auctions or (z_dealer is not None and z_dealer > 0.25)):
+    # 2) Fiscal contraction: small deficits = private sector squeeze
+    if small_deficits:
+        desc = "Deficit below historical norm — private sector NFA accumulation insufficient."
+        if weak_auctions:
+            desc += " Auction stress compounds the contractionary signal."
+        return FiscalRegime(name="fiscal_contraction", description=desc)
+
+    # 3) Strong fiscal stimulus: large deficits = strong NFA injection
+    if large_deficits and not weak_auctions:
         return FiscalRegime(
-            name="stress_building",
-            description="Large deficits alongside longer-duration issuance tilt and rising intermediation burden (dealer take / auction quality).",
+            name="strong_fiscal_stimulus",
+            description="Large deficit injecting significant NFA into private sector. Supportive for risk assets.",
         )
 
-    # 3) Heavy funding: large deficits, but auctions stable / not clearly long-tilted
-    if large_deficits or very_large_deficits:
-        return FiscalRegime(
-            name="heavy_funding",
-            description="Large deficits imply heavy funding needs; issuance/auctions appear broadly stable (no clear stress signal yet).",
-        )
-
-    # 4) Benign: default when funding pressure is low
-    return FiscalRegime(
-        name="benign_funding",
-        description="Funding environment appears benign: deficits not elevated; no clear auction stress or long-issuance tilt.",
-    )
+    # 4) Moderate support: default
+    desc = "Deficit provides moderate private sector NFA flow."
+    if weak_auctions:
+        desc += " Auction absorption showing strain (tails/dealer take elevated)."
+    if long_tilt:
+        desc += " Long-duration issuance tilt adds duration absorption risk."
+    return FiscalRegime(name="moderate_fiscal_support", description=desc)
 
 
 def classify_fiscal_regime_snapshot(
@@ -101,101 +97,105 @@ def classify_fiscal_regime_snapshot(
     dealer_take_pct: float | None = None,
 ) -> FiscalRegime:
     """
-    Snapshot-focused fiscal regime labeler.
+    MMT-oriented fiscal regime labeler (sectoral balance framework).
 
-    Goal:
-    - Always return a concrete, human-friendly regime label even when many optional series are missing.
-    - Use only the signals available in the `lox fiscal snapshot` panel today.
+    In MMT: government deficit = private sector surplus (net of foreign sector).
+    A shrinking deficit is contractionary — private sector NFA accumulation declines.
 
     Inputs are best-effort:
-    - deficit_pct_gdp: rolling-12m deficit as % of GDP (positive = deficit)
-    - deficit_impulse_pct_gdp: YoY change in rolling-12m deficit as % of GDP (negative = improving)
-    - long_duration_issuance_share: share of net issuance in >=10y bucket (0..1, best-effort)
-    - tga_z_d_4w: z-score of 4-week change in TGA (positive = tightening/drain, negative = easing/injection)
+    - deficit_pct_gdp: rolling-12m deficit as % of GDP (positive = deficit = private NFA injection)
+    - deficit_impulse_pct_gdp: YoY change in deficit as % of GDP
+      (negative = fiscal drag / private surplus shrinking)
+    - long_duration_issuance_share: share of net issuance in >=10y bucket (0..1)
+    - tga_z_d_4w: z-score of 4-week TGA change (positive = NFA drain from private sector)
     - auction_tail_bps: tail proxy (higher = weaker demand / worse clearing)
-    - dealer_take_pct: primary dealer takedown as % of accepted (higher = weaker non-dealer demand)
+    - dealer_take_pct: primary dealer takedown as % of accepted
     """
 
-    # Directional context for the label.
+    # Directional context: MMT polarity — negative impulse = fiscal drag (bearish).
     direction = "stable"
     if isinstance(deficit_impulse_pct_gdp, (int, float)):
         if float(deficit_impulse_pct_gdp) <= -0.75:
-            direction = "improving"
+            direction = "contracting"
         elif float(deficit_impulse_pct_gdp) >= 0.75:
-            direction = "deteriorating"
+            direction = "expanding"
 
-    # Funding pressure level: coarse buckets by deficit size (as % GDP).
-    # These are intentionally simple and should be tuned as you gather intuition.
-    pressure = "unknown"
+    # NFA injection level: larger deficit = more private sector support.
+    nfa_level = "unknown"
     if isinstance(deficit_pct_gdp, (int, float)):
         d = float(deficit_pct_gdp)
         if d < 3.0:
-            pressure = "low"
+            nfa_level = "low"
         elif d < 6.0:
-            pressure = "moderate"
+            nfa_level = "moderate"
         else:
-            pressure = "high"
+            nfa_level = "high"
 
-    # Duration tilt: are we leaning long in net issuance?
+    # Duration tilt: long-tilted issuance = more duration absorption risk.
     long_tilt = False
     if isinstance(long_duration_issuance_share, (int, float)):
-        # If most net issuance is coming from the long bucket, duration absorption risk rises.
         long_tilt = float(long_duration_issuance_share) >= 0.40
 
-    # Auction absorption: tighter thresholds to catch stress earlier.
-    # Tails >= 3bp consistently signal weaker-than-expected demand;
-    # dealer take >= 25% means dealers are absorbing meaningful supply.
+    # Auction absorption stress (framework-agnostic market mechanics).
     weak_auctions = False
     if isinstance(auction_tail_bps, (int, float)) and float(auction_tail_bps) >= 3.0:
         weak_auctions = True
     if isinstance(dealer_take_pct, (int, float)) and float(dealer_take_pct) >= 25.0:
         weak_auctions = True
 
-    # Liquidity pulse from TGA: bias the stress label one notch.
-    # (TGA down sharply = easing; TGA up sharply = tightening)
-    liq_bias = 0
+    # TGA reserve drain: positive z = TGA rising = draining private sector reserves.
+    drain_bias = 0
     if isinstance(tga_z_d_4w, (int, float)):
         z = float(tga_z_d_4w)
         if z <= -0.75:
-            liq_bias = -1
+            drain_bias = -1  # TGA drawdown = reserve injection (supportive)
         elif z >= 0.75:
-            liq_bias = +1
+            drain_bias = +1  # TGA build = reserve drain (contractionary)
 
-    # Base regime selection.
-    if pressure == "low":
-        base = "benign_funding"
-        desc = "Deficit level is low relative to GDP, with no obvious duration/auction stress in the snapshot signals."
-    elif pressure == "moderate":
-        base = "heavy_funding"
-        desc = "Deficits imply meaningful funding needs, but snapshot signals don’t show clear market-absorption stress."
+    # ── Base regime: determined by NFA injection level ──────────────────
+    # MMT inversion: low deficit = private sector squeeze (bearish for risk assets).
+    if nfa_level == "low":
+        base = "fiscal_contraction"
+        desc = "Deficit too small to sustain private sector NFA accumulation. Contractionary for risk assets."
+    elif nfa_level == "moderate":
+        base = "moderate_fiscal_support"
+        desc = "Moderate deficit provides some private sector NFA flow, but impulse direction matters."
     else:
-        # high or unknown -> assume heavy funding at minimum
-        base = "heavy_funding"
-        desc = "Deficits imply heavy funding needs; watch issuance mix (duration) and liquidity conditions for stress escalation."
+        base = "strong_fiscal_stimulus"
+        desc = "Large deficit injects significant NFA into the private sector. Supportive for risk assets."
 
-    # Escalate to stress_building if duration tilt is high under moderate/high pressure.
-    if long_tilt and pressure in {"moderate", "high", "unknown"}:
-        base = "stress_building"
-        desc = "Funding needs look heavy and issuance mix appears long-tilted, increasing duration absorption stress risk."
+    # ── Impulse override: shrinking deficit = drag even if level is still high ──
+    if isinstance(deficit_impulse_pct_gdp, (int, float)):
+        imp = float(deficit_impulse_pct_gdp)
+        if imp <= -1.0 and nfa_level != "high":
+            base = "fiscal_contraction"
+            desc = "Fiscal impulse sharply negative — private sector surplus shrinking fast. Bearish for risk assets."
+        elif imp <= -1.0 and nfa_level == "high":
+            base = "moderate_fiscal_support"
+            desc = "Deficit level still high, but impulse sharply negative — NFA injection decelerating."
 
-    # Escalate to stress_building if auctions look weak (even if issuance mix isn't long-tilted).
-    if weak_auctions and pressure in {"moderate", "high", "unknown"}:
-        base = "stress_building"
-        desc = "Auction absorption looks weak (tails and/or dealer take elevated), raising funding/financial-conditions stress risk."
+    # ── TGA drain amplifier ─────────────────────────────────────────────
+    if drain_bias == +1 and base != "fiscal_contraction":
+        if base == "strong_fiscal_stimulus":
+            base = "moderate_fiscal_support"
+            desc = "Deficit is large but TGA build-up is draining reserves from private sector, offsetting NFA injection."
+        elif base == "moderate_fiscal_support":
+            base = "fiscal_contraction"
+            desc = "Moderate deficit combined with TGA reserve drain — net effect is contractionary for private sector."
+    elif drain_bias == -1 and base == "fiscal_contraction":
+        base = "moderate_fiscal_support"
+        desc = "Deficit is small, but TGA drawdown is injecting reserves back into private sector (near-term relief)."
 
-    # Liquidity bias adjustment (don’t jump straight to dominance risk in snapshot mode).
-    if base == "stress_building" and liq_bias == -1:
-        base = "heavy_funding"
-        desc = "Funding needs are heavy, but near-term liquidity looks supportive (TGA down sharply), reducing immediate stress risk."
-    elif base == "heavy_funding" and liq_bias == +1 and pressure in {"high", "unknown"}:
-        base = "stress_building"
-        desc = "Funding needs are heavy and near-term liquidity looks restrictive (TGA up sharply), increasing stress risk."
+    # ── Auction stress overlay (market mechanics, framework-agnostic) ───
+    if weak_auctions:
+        desc += " Auction absorption weak (tails/dealer take elevated)."
+    if long_tilt:
+        desc += " Long-duration issuance tilt adds duration absorption risk."
 
     label = base.replace("_", " ").title()
     if direction != "stable":
         label = f"{label} ({direction})"
 
-    # Add a compact “why” line with the core numbers when available.
     bits: list[str] = []
     if isinstance(deficit_pct_gdp, (int, float)):
         bits.append(f"deficit≈{float(deficit_pct_gdp):.1f}% GDP")
@@ -245,5 +245,3 @@ def classify_fiscal_regime_skeleton(
         auction_tail_bps=auction_tail_bps,
         dealer_take_pct=dealer_take_pct,
     )
-
-

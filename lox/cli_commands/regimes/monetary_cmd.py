@@ -163,11 +163,55 @@ def _run_monetary_snapshot(
 
     # Uniform regime panel
     score = 70 if "qt_biting" in regime.name or "scarcity" in regime.name else (30 if "abundant" in regime.name else 50)
+
+    def _effr_ctx():
+        if not isinstance(effr, (int, float)):
+            return "policy rate"
+        v = float(effr)
+        if v > 5.5:
+            return "very restrictive — peak-cycle territory"
+        if v > 5.0:
+            return "restrictive — above neutral"
+        if v > 4.0:
+            return "elevated — tightening bias"
+        if v > 2.5:
+            return "moderate — approaching neutral"
+        if v > 1.0:
+            return "accommodative"
+        return "near zero — emergency easing"
+
+    def _res_gdp_ctx():
+        if not isinstance(res_pct_gdp, (int, float)):
+            return "reserves/GDP anchor"
+        v = float(res_pct_gdp)
+        if v > 15:
+            return "abundant — well above scarcity zone"
+        if v > 12:
+            return "comfortable — adequate buffer"
+        if v > 9:
+            return "approaching scarcity threshold"
+        if v > 7:
+            return "scarce — stress risk rising"
+        return "critical — reserve scarcity"
+
+    def _res_chg_ctx():
+        chg = res.get("chg_13w")
+        if not isinstance(chg, (int, float)):
+            return "13-week change"
+        v = float(chg)
+        if v > 100_000:
+            return "surging — large reserve injection"
+        if v > 0:
+            return "growing — reserves being added"
+        if v > -100_000:
+            return "modest drain"
+        return "fast drain — watch for scarcity"
+
     metrics = [
-        {"name": "EFFR", "value": effr_disp, "context": "policy rate"},
+        {"name": "EFFR", "value": effr_disp, "context": _effr_ctx()},
         {"name": "Reserves level", "value": res_level, "context": _ctx_z(float(res_z)) if isinstance(res_z, (int, float)) else "n/a"},
-        {"name": "Reserves % GDP", "value": res_pct_gdp_disp, "context": "anchor"},
-        {"name": "Reserves Δ13w", "value": res_chg_13w, "context": "change"},
+        {"name": "Reserves % GDP", "value": res_pct_gdp_disp, "context": _res_gdp_ctx()},
+        {"name": "Reserves Δ13w", "value": res_chg_13w, "context": _res_chg_ctx()},
         {"name": "Fed assets Δ13w", "value": fa_chg_13w, "context": _ctx_qt(float(fa_z)) if isinstance(fa_z, (int, float)) else "n/a"},
         {"name": "ON RRP level", "value": rrp_level, "context": _ctx_z(float(rrp_z)) if isinstance(rrp_z, (int, float)) else "n/a"},
     ]

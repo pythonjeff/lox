@@ -25,14 +25,105 @@ def _run_volatility_snapshot(start: str = "2011-01-01", refresh: bool = False, l
     def _v_pct(x):
         return f"{x:+.1f}%" if x is not None and isinstance(x, (int, float)) else "n/a"
 
+    def _vix_ctx():
+        if inp.vix is None:
+            return "VIX level"
+        v = inp.vix
+        if v > 35:
+            return "panic — systemic fear"
+        if v > 25:
+            return "fear — hedging demand surging"
+        if v > 20:
+            return "elevated — uncertainty rising"
+        if v > 15:
+            return "calm — normal risk appetite"
+        return "complacent — low vol, risk-on"
+
+    def _vix_chg_ctx():
+        if inp.vix_chg_5d_pct is None:
+            return "5-day momentum"
+        v = inp.vix_chg_5d_pct
+        if v > 30:
+            return "vol spike — rapid fear buildup"
+        if v > 15:
+            return "rising fast — caution"
+        if v > 0:
+            return "drifting higher"
+        if v > -15:
+            return "fading — vol normalizing"
+        return "collapsing — vol crush"
+
+    def _term_ctx():
+        if inp.vix_term_spread is None:
+            return inp.vix_term_source or "term structure"
+        v = inp.vix_term_spread
+        src = f" ({inp.vix_term_source})" if inp.vix_term_source else ""
+        if v > 3:
+            return f"backwardation — near-term panic{src}"
+        if v > 0:
+            return f"mild backwardation — stress{src}"
+        if v > -3:
+            return f"normal contango{src}"
+        return f"steep contango — complacent{src}"
+
+    def _z_vix_ctx():
+        if inp.z_vix is None:
+            return "vs history"
+        v = inp.z_vix
+        if v > 2.0:
+            return f"z={v:+.2f} — extreme vs history"
+        if v > 1.0:
+            return f"z={v:+.2f} — elevated vs history"
+        if v < -1.0:
+            return f"z={v:+.2f} — suppressed vs history"
+        return f"z={v:+.2f} — normal range"
+
+    def _z_chg_ctx():
+        if inp.z_vix_chg_5d is None:
+            return "vs history"
+        v = inp.z_vix_chg_5d
+        if v > 2.0:
+            return f"z={v:+.2f} — unusually large spike"
+        if v > 1.0:
+            return f"z={v:+.2f} — notable spike"
+        if v < -1.5:
+            return f"z={v:+.2f} — unusually large vol crush"
+        return f"z={v:+.2f} — normal range"
+
+    def _persist_ctx():
+        if inp.persist_20d is None:
+            return "spike persistence"
+        v = inp.persist_20d
+        if v > 0.6:
+            return "sustained stress — vol not normalizing"
+        if v > 0.3:
+            return "elevated persistence — sticky vol"
+        if v > 0.1:
+            return "brief spikes — vol fading"
+        return "calm — no stress persistence"
+
+    def _pressure_ctx():
+        if inp.vol_pressure_score is None:
+            return "composite z-score"
+        v = inp.vol_pressure_score
+        if v > 2.0:
+            return "extreme vol pressure — multi-signal"
+        if v > 1.0:
+            return "elevated pressure — stress building"
+        if v > 0:
+            return "mild upward pressure"
+        if v > -1.0:
+            return "calm — below average pressure"
+        return "suppressed — vol very low"
+
     metrics = [
-        {"name": "VIX", "value": _v(inp.vix), "context": "level"},
-        {"name": "5d chg %", "value": _v_pct(inp.vix_chg_5d_pct), "context": "momentum"},
-        {"name": "Term (VIX-3m)", "value": _v(inp.vix_term_spread), "context": inp.vix_term_source or "—"},
-        {"name": "Z VIX", "value": _v(inp.z_vix), "context": "vs history"},
-        {"name": "Z 5d chg", "value": _v(inp.z_vix_chg_5d), "context": "vs history"},
-        {"name": "Persist 20d", "value": _v(inp.persist_20d), "context": "spike persistence"},
-        {"name": "Pressure score", "value": _v(inp.vol_pressure_score), "context": "composite z"},
+        {"name": "VIX", "value": _v(inp.vix), "context": _vix_ctx()},
+        {"name": "5d chg %", "value": _v_pct(inp.vix_chg_5d_pct), "context": _vix_chg_ctx()},
+        {"name": "Term (VIX-3m)", "value": _v(inp.vix_term_spread), "context": _term_ctx()},
+        {"name": "Z VIX", "value": _v(inp.z_vix), "context": _z_vix_ctx()},
+        {"name": "Z 5d chg", "value": _v(inp.z_vix_chg_5d), "context": _z_chg_ctx()},
+        {"name": "Persist 20d", "value": _v(inp.persist_20d), "context": _persist_ctx()},
+        {"name": "Pressure score", "value": _v(inp.vol_pressure_score), "context": _pressure_ctx()},
     ]
 
     from lox.regimes.trend import get_domain_trend

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import typer
 from rich import print
 from rich.panel import Panel
@@ -44,9 +46,9 @@ def _deficit_level_ctx(deficit_pct_gdp: float | None) -> str:
         deficit_pct_gdp,
         low=3.0,
         high=6.0,
-        low_label="Low funding pressure",
-        mid_label="Moderate funding pressure",
-        high_label="High funding pressure (stress watch)",
+        low_label="Contractionary: private sector starved of NFA",
+        mid_label="Moderate private sector NFA injection",
+        high_label="Strong NFA injection to private sector",
         fmt="{:.1f}",
         units="% GDP",
     )
@@ -57,9 +59,9 @@ def _deficit_impulse_ctx(impulse_pct_gdp: float | None) -> str:
         impulse_pct_gdp,
         low=-0.75,
         high=0.75,
-        low_label="Improving (less thrust)",
-        mid_label="Neutral-ish",
-        high_label="Deteriorating (more thrust) → stress watch",
+        low_label="Fiscal drag: private surplus shrinking (bearish)",
+        mid_label="Neutral fiscal impulse",
+        high_label="Fiscal thrust: private surplus growing (supportive)",
         fmt="{:+.2f}",
         units="% GDP",
     )
@@ -84,9 +86,9 @@ def _tga_z_ctx(z: float | None) -> str:
     if abs(v) < 0.75:
         label = "Neutral / normal"
     elif v < 0:
-        label = "Liquidity easing (TGA down fast)"
+        label = "NFA injection (reserves up, supportive)"
     else:
-        label = "Liquidity tightening (TGA up fast) → stress watch"
+        label = "Private sector NFA drain (reserves down)"
     return f"{v:+.2f} → {label}"
 
 
@@ -95,12 +97,44 @@ def _tga_level_ctx(z_level: float | None) -> str:
         return "n/a"
     v = float(z_level)
     if v <= -0.75:
-        label = "Low vs recent history"
+        label = "Low → reserves elevated (supportive)"
     elif v >= 0.75:
-        label = "High vs recent history"
+        label = "High → draining private sector reserves"
     else:
         label = "Normal vs recent history"
     return f"{v:+.2f} → {label}"
+
+
+def _private_balance_ctx(pct_gdp: float | None) -> str:
+    if not isinstance(pct_gdp, (int, float)):
+        return "n/a"
+    v = float(pct_gdp)
+    if v <= -2.0:
+        label = "Deep private deficit → unsustainable, bearish"
+    elif v <= 0.0:
+        label = "Private sector deficit → fragile"
+    elif v <= 3.0:
+        label = "Modest private surplus"
+    else:
+        label = "Strong private surplus → supportive"
+    return f"{v:+.1f}% GDP → {label}"
+
+
+def _private_impulse_ctx(impulse: float | None) -> str:
+    if not isinstance(impulse, (int, float)):
+        return "n/a"
+    v = float(impulse)
+    if v <= -1.0:
+        label = "Sharp drag on private sector (bearish)"
+    elif v <= -0.25:
+        label = "Private surplus shrinking (watch)"
+    elif v <= 0.25:
+        label = "Stable"
+    elif v <= 1.0:
+        label = "Private surplus growing (supportive)"
+    else:
+        label = "Strong fiscal thrust to private sector"
+    return f"{v:+.2f}% GDP → {label}"
 
 
 def _auction_tail_ctx(tail_bps: float | None, *, is_proxy: bool = True) -> str:
@@ -147,6 +181,127 @@ def _btc_ctx(btc: float | None) -> str:
     else:
         label = "Weak → stress"
     return f"{v:.2f}x → {label}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Upcoming long-end auction schedule
+# ─────────────────────────────────────────────────────────────────────────────
+
+_LONG_TENOR_PATTERNS = {
+    "10-Year": ("Note", "10-Year"),
+    "20-Year": ("Bond", "20-Year"),
+    "30-Year": ("Bond", "30-Year"),
+}
+
+
+def _fetch_upcoming_from_treasurydirect() -> list[dict]:
+    """Best-effort fetch of announced-but-not-yet-auctioned securities from TreasuryDirect."""
+    import json
+    import urllib.request
+
+    url = "https://www.treasurydirect.gov/TA_WS/securities/upcoming?format=json"
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read())
+    except Exception:
+        return []
+
+    today = date.today()
+    results: list[dict] = []
+    for item in data:
+        auction_str = (item.get("auctionDate") or "")[:10]
+        sec_type = item.get("securityType") or item.get("type") or ""
+        sec_term = item.get("securityTerm") or item.get("term") or ""
+        if not auction_str:
+            continue
+        try:
+            auction_dt = date.fromisoformat(auction_str)
+        except Exception:
+            continue
+        if auction_dt < today:
+            continue
+        for tenor, (type_match, term_match) in _LONG_TENOR_PATTERNS.items():
+            if term_match.lower() in sec_term.lower() and type_match.lower() in sec_type.lower():
+                offering_raw = item.get("offeringAmount") or ""
+                offering_b = None
+                try:
+                    offering_b = float(offering_raw) / 1_000_000_000
+                except (ValueError, TypeError):
+                    pass
+                results.append({
+                    "tenor": tenor,
+                    "date": auction_dt,
+                    "offering_b": offering_b,
+                    "source": "announced",
+                    "reopening": (item.get("reopening") or "").strip().lower() == "yes",
+                })
+    return results
+
+
+_DEFAULT_CADENCE_DAYS = {"10-Year": 28, "20-Year": 91, "30-Year": 28}
+
+
+def _estimate_from_cadence(long_auctions: list[dict]) -> list[dict]:
+    """
+    For each long-end tenor not yet announced, estimate the next auction date
+    from the observed cadence in recent auctions (or a known default cadence).
+    """
+    from collections import defaultdict
+
+    by_tenor: dict[str, list[date]] = defaultdict(list)
+    for ra in long_auctions:
+        term = ra.get("term", "")
+        d = ra.get("date", "")
+        if term not in _LONG_TENOR_PATTERNS or not d:
+            continue
+        try:
+            by_tenor[term].append(date.fromisoformat(str(d)))
+        except Exception:
+            continue
+
+    today = date.today()
+    estimates: list[dict] = []
+    for tenor in _LONG_TENOR_PATTERNS:
+        dates = sorted(by_tenor.get(tenor, []))
+        if not dates:
+            continue
+        if len(dates) >= 2:
+            gaps = [(dates[i + 1] - dates[i]).days for i in range(len(dates) - 1)]
+            meaningful_gaps = [g for g in gaps if g >= 10] or gaps
+            cadence = sorted(meaningful_gaps)[len(meaningful_gaps) // 2]
+        else:
+            cadence = _DEFAULT_CADENCE_DAYS.get(tenor, 28)
+        last = dates[-1]
+        est = last + timedelta(days=cadence)
+        while est <= today:
+            est += timedelta(days=cadence)
+        estimates.append({
+            "tenor": tenor,
+            "date": est,
+            "offering_b": None,
+            "source": "estimated",
+            "reopening": False,
+        })
+    return estimates
+
+
+def _get_upcoming_long_end(long_auctions: list[dict]) -> list[dict]:
+    """
+    Return upcoming long-end auctions: announced ones from TreasuryDirect,
+    plus cadence-estimated ones for tenors not yet announced.
+    """
+    announced = _fetch_upcoming_from_treasurydirect()
+    announced_tenors = {a["tenor"] for a in announced}
+
+    estimated = _estimate_from_cadence(long_auctions)
+    # Only include estimates for tenors that haven't been announced
+    for est in estimated:
+        if est["tenor"] not in announced_tenors:
+            announced.append(est)
+
+    announced.sort(key=lambda x: x["date"])
+    return announced
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -314,17 +469,21 @@ def _run_fiscal_snapshot(
         if isinstance(worst.get("dealer_take_pct"), (int, float)):
             worst_dealer = max(float(worst["dealer_take_pct"]), float(dealer_take or 0))
 
-    # TGA interpretation
+    # TGA interpretation (MMT: TGA changes directly alter private sector reserves)
     tga_interp = "n/a"
     if isinstance(tga_z, (int, float)) and isinstance(tga.get("tga_d_4w") if tga else None, (int, float)):
         d4 = float(tga.get("tga_d_4w"))  # type: ignore[arg-type]
         z4 = float(tga_z)
         if abs(z4) < 0.75:
-            tga_interp = "Neutral / normal range (TGA changes not extreme)."
+            tga_interp = "Neutral: TGA changes not draining or adding to private reserves."
         elif d4 < 0:
-            tga_interp = "Stealth liquidity injection (TGA down sharply)."
+            tga_interp = "NFA injection: TGA drawdown adds reserves to private sector."
         else:
-            tga_interp = "Stealth tightening / liquidity drain (TGA up sharply)."
+            tga_interp = "NFA drain: TGA build-up removes reserves from private sector."
+
+    # MMT sectoral balance
+    private_balance_pct_gdp = d.get("private_balance_pct_gdp")
+    private_balance_impulse = d.get("private_balance_impulse")
 
     regime = classify_fiscal_regime_skeleton(
         deficit_12m=deficit_12m,
@@ -355,6 +514,8 @@ def _run_fiscal_snapshot(
         "deficit_12m": d.get("deficit_12m"),
         "deficit_pct_gdp": deficit_pct_gdp,
         "deficit_impulse_pct_gdp": impulse,
+        "private_balance_pct_gdp": private_balance_pct_gdp,
+        "private_balance_impulse": private_balance_impulse,
         "net_issuance_bills": net.get("bills") if net else None,
         "net_issuance_coupons": net.get("coupons") if net else None,
         "net_issuance_long": net.get("long") if net else None,
@@ -374,6 +535,8 @@ def _run_fiscal_snapshot(
         "deficit_12m_millions": d.get("deficit_12m"),
         "deficit_pct_gdp": deficit_pct_gdp,
         "deficit_impulse_pct_gdp": impulse,
+        "private_balance_pct_gdp": private_balance_pct_gdp,
+        "private_balance_impulse": private_balance_impulse,
         "long_duration_share": long_share,
         "tga_z_d_4w": tga_z,
         "auction_tail_bps": worst_tail,
@@ -462,18 +625,27 @@ def _run_fiscal_snapshot(
         mc_impact = mc_params.description
     except Exception:
         # Graceful fallback to skeleton regime if scorer fails
-        fpi_score = 80 if "dominance" in regime.name else (60 if "stress" in regime.name else 40)
+        fpi_score = 80 if "dominance" in regime.name else (60 if "contraction" in regime.name else 40)
         fpi_label = regime.label or regime.name
         fpi_desc = regime.description
         sub_scores = None
         mc_impact = None
 
+    # Sectoral balance display values
+    pb_disp = f"{float(private_balance_pct_gdp):+.1f}%" if isinstance(private_balance_pct_gdp, (int, float)) else "n/a"
+    pb_imp_disp = f"{float(private_balance_impulse):+.2f}%" if isinstance(private_balance_impulse, (int, float)) else "n/a"
+
     metrics = [
-        {"name": "Deficit 12m", "value": disp, "context": "rolling 12m"},
+        {"name": "─── Sectoral Balance ───", "value": "", "context": ""},
+        {"name": "Private balance", "value": pb_disp, "context": _private_balance_ctx(private_balance_pct_gdp)},
+        {"name": "Private impulse", "value": pb_imp_disp, "context": _private_impulse_ctx(private_balance_impulse)},
+        {"name": "─── Gov't Spending ───", "value": "", "context": ""},
+        {"name": "Deficit 12m", "value": disp, "context": "= private sector NFA flow"},
         {"name": "Deficit (% GDP)", "value": deficit_pct_gdp_disp, "context": _deficit_level_ctx(float(deficit_pct_gdp)) if isinstance(deficit_pct_gdp, (int, float)) else "n/a"},
         {"name": "Deficit impulse", "value": impulse_disp, "context": _deficit_impulse_ctx(float(impulse)) if isinstance(impulse, (int, float)) else "n/a"},
         {"name": "Long issuance share", "value": long_share_disp, "context": _duration_share_ctx(float(long_share)) if isinstance(long_share, (int, float)) else "n/a"},
-        {"name": "TGA level", "value": tga_level, "context": f"z={tga_z_level_disp}" if isinstance(tga_z_level, (int, float)) else "n/a"},
+        {"name": "─── Reserve Drain ───", "value": "", "context": ""},
+        {"name": "TGA level", "value": tga_level, "context": _tga_level_ctx(tga_z_level)},
         {"name": "TGA (4w z-score)", "value": tga_z_disp, "context": _tga_z_ctx(float(tga_z)) if isinstance(tga_z, (int, float)) else "n/a"},
     ]
 
@@ -581,6 +753,33 @@ def _run_fiscal_snapshot(
         if len(long_auctions) >= 4:
             _show_auction_trend(console, long_auctions)
 
+        # ── Upcoming long-end auctions ────────────────────────────────────
+        upcoming = _get_upcoming_long_end(long_auctions)
+        if upcoming:
+            from rich.table import Table as RichTable
+            ut = RichTable(
+                title="Upcoming Long-End Auctions",
+                show_header=True,
+                header_style="bold cyan",
+                box=None,
+                padding=(0, 1),
+            )
+            ut.add_column("Date", style="dim")
+            ut.add_column("Term")
+            ut.add_column("Offering")
+            ut.add_column("Type", style="dim")
+            ut.add_column("Source", style="dim")
+            for ua in upcoming:
+                dt = ua["date"]
+                days_away = (dt - date.today()).days
+                date_str = f"{dt.isoformat()}  ({days_away}d)"
+                offering = f"${ua['offering_b']:.0f}B" if ua.get("offering_b") else "—"
+                reopen = "Reopen" if ua.get("reopening") else "New"
+                src = "[green]announced[/green]" if ua["source"] == "announced" else "[dim]est. from cadence[/dim]"
+                ut.add_row(date_str, ua["tenor"], offering, reopen, src)
+            console.print()
+            console.print(ut)
+
     if llm:
         from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
 
@@ -588,6 +787,8 @@ def _run_fiscal_snapshot(
             "deficit_12m": d.get("deficit_12m"),
             "deficit_pct_gdp": deficit_pct_gdp,
             "deficit_impulse_pct_gdp": impulse,
+            "private_balance_pct_gdp": private_balance_pct_gdp,
+            "private_balance_impulse": private_balance_impulse,
             "net_issuance_bills": net.get("bills") if net else None,
             "net_issuance_coupons": net.get("coupons") if net else None,
             "net_issuance_long": net.get("long") if net else None,

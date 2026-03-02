@@ -89,13 +89,95 @@ def growth_snapshot(*, llm: bool = False, ticker: str = "", refresh: bool = Fals
     def _v(x, fmt="{:.1f}"):
         return fmt.format(x) if x is not None else "n/a"
 
+    def _payrolls_ctx():
+        if payrolls_3m_level is None:
+            return "3-month annualized"
+        v = payrolls_3m_level
+        if v > 300:
+            return "booming — very strong job creation"
+        if v > 150:
+            return "solid — above breakeven"
+        if v > 75:
+            return "moderate — slowing but positive"
+        if v > 0:
+            return "soft — barely above breakeven"
+        return "contracting — recessionary signal"
+
+    def _unemp_ctx():
+        if unemployment_rate is None:
+            return "unemployment rate"
+        v = unemployment_rate
+        if v > 6.0:
+            return "recessionary — labor market weak"
+        if v > 5.0:
+            return "elevated — slack building"
+        if v > 4.5:
+            return "above NAIRU — softening"
+        if v > 3.8:
+            return "near NAIRU — balanced"
+        return "very tight — wage pressure risk"
+
+    def _ism_ctx():
+        if ism_val is None:
+            return "ISM Manufacturing"
+        v = ism_val
+        if v > 55:
+            return "strong expansion"
+        if v > 50:
+            return "expanding"
+        if v > 47:
+            return "contracting — mild"
+        if v > 43:
+            return "contracting — recession signal"
+        return "deep contraction"
+
+    def _claims_ctx():
+        if claims_4wk is None:
+            return "initial claims"
+        v = claims_4wk
+        if v > 350_000:
+            return "recessionary — layoffs surging"
+        if v > 275_000:
+            return "elevated — labor softening"
+        if v > 225_000:
+            return "normal range"
+        return "very low — tight labor market"
+
+    def _indpro_ctx():
+        if indpro_yoy is None:
+            return "industrial production"
+        v = indpro_yoy
+        if v > 4:
+            return "strong output growth"
+        if v > 1:
+            return "moderate growth"
+        if v > -1:
+            return "flat — stagnation"
+        if v > -4:
+            return "contracting — industrial weakness"
+        return "deep contraction"
+
+    def _lei_ctx():
+        if lei_yoy is None:
+            return "leading indicator"
+        v = lei_yoy
+        if v > 2:
+            return "expansion ahead"
+        if v > 0:
+            return "modest growth signaled"
+        if v > -4:
+            return "slowing — watch for recession"
+        return "deep decline — recession likely"
+
     metrics = [
-        {"name": "Payrolls 3m ann", "value": f"{payrolls_3m_level:+,.0f}K" if payrolls_3m_level else "n/a", "context": "jobs/mo"},
-        {"name": "Unemployment", "value": _v(unemployment_rate, "{:.1f}%"), "context": "UNRATE"},
-        {"name": "ISM Mfg PMI", "value": _v(ism_val), "context": ">50 = expansion"},
-        {"name": "Initial Claims 4wk", "value": f"{claims_4wk:,.0f}" if claims_4wk else "n/a", "context": "weekly avg"},
-        {"name": "Industrial Prod YoY", "value": _v(indpro_yoy, "{:+.1f}%"), "context": "INDPRO"},
-        {"name": "LEI YoY", "value": _v(lei_yoy, "{:+.1f}%") if lei_yoy is not None else "n/a", "context": "leading indicator"},
+        {"name": "─── Labor ───", "value": "", "context": ""},
+        {"name": "Payrolls 3m ann", "value": f"{payrolls_3m_level:+,.0f}K" if payrolls_3m_level else "n/a", "context": _payrolls_ctx()},
+        {"name": "Unemployment", "value": _v(unemployment_rate, "{:.1f}%"), "context": _unemp_ctx()},
+        {"name": "Initial Claims 4wk", "value": f"{claims_4wk:,.0f}" if claims_4wk else "n/a", "context": _claims_ctx()},
+        {"name": "─── Production ───", "value": "", "context": ""},
+        {"name": "ISM Mfg PMI", "value": _v(ism_val), "context": _ism_ctx()},
+        {"name": "Industrial Prod YoY", "value": _v(indpro_yoy, "{:+.1f}%"), "context": _indpro_ctx()},
+        {"name": "LEI YoY", "value": _v(lei_yoy, "{:+.1f}%") if lei_yoy is not None else "n/a", "context": _lei_ctx()},
     ]
 
     from lox.regimes.trend import get_domain_trend

@@ -136,17 +136,112 @@ def run_funding_snapshot(
         """Format millions to $N.NT display."""
         return f"${float(x) / div:.1f}T" if isinstance(x, (int, float)) else "n/a"
 
+    def _corridor_ctx():
+        if not isinstance(fi.spread_corridor_bps, (int, float)):
+            return "corridor spread"
+        v = float(fi.spread_corridor_bps)
+        if abs(v) > 10:
+            return "wide — funding stress"
+        if abs(v) > 5:
+            return "slightly wide — watch closely"
+        return "normal — within corridor"
+
+    def _sofr_effr_ctx():
+        if not isinstance(fi.spread_sofr_effr_bps, (int, float)):
+            return "secured vs unsecured"
+        v = float(fi.spread_sofr_effr_bps)
+        if v < -5:
+            return "repo richening — collateral scarce"
+        if v < -2:
+            return "secured slightly below unsecured"
+        if v > 5:
+            return "repo cheapening — reserves ample"
+        return "normal basis"
+
+    def _spike_ctx():
+        if not isinstance(fi.spike_5d_bps, (int, float)):
+            return "5-day max spike"
+        v = float(fi.spike_5d_bps)
+        if v > 20:
+            return "severe spike — funding stress event"
+        if v > 10:
+            return "notable spike — quarter-end?"
+        if v > 5:
+            return "mild spike"
+        return "calm — no funding disruption"
+
+    def _vol_ctx():
+        if not isinstance(fi.vol_20d_bps, (int, float)):
+            return "funding volatility"
+        v = float(fi.vol_20d_bps)
+        if v > 10:
+            return "high vol — unstable funding"
+        if v > 5:
+            return "elevated vol"
+        return "low vol — stable funding"
+
+    def _persist_ctx():
+        if not isinstance(fi.persistence_20d, (int, float)):
+            return "stress persistence"
+        v = float(fi.persistence_20d)
+        if v > 0.5:
+            return "sustained stress — not resolving"
+        if v > 0.2:
+            return "intermittent stress"
+        return "no persistent stress"
+
+    def _rrp_ctx():
+        if not isinstance(fi.on_rrp_usd_bn, (int, float)):
+            return "overnight RRP buffer"
+        v = float(fi.on_rrp_usd_bn) / 1000  # to trillions
+        if v > 1.5:
+            return "large buffer — ample excess liquidity"
+        if v > 0.5:
+            return "moderate buffer"
+        if v > 0.1:
+            return "shrinking — buffer nearly depleted"
+        return "near zero — no excess liquidity"
+
+    def _reserves_ctx():
+        if not isinstance(fi.bank_reserves_usd_bn, (int, float)):
+            return "bank reserves"
+        v = float(fi.bank_reserves_usd_bn) / 1000  # to trillions
+        if v > 3.5:
+            return "abundant — well above scarcity"
+        if v > 3.0:
+            return "comfortable"
+        if v > 2.5:
+            return "adequate — approaching scarcity zone"
+        return "scarce — stress risk elevated"
+
+    def _tga_ctx():
+        if fi.tga_chg_4w is None:
+            return "Treasury cash flow"
+        v = float(fi.tga_chg_4w) / 1000  # millions to billions
+        if v > 50:
+            return "large buildup — draining reserves"
+        if v > 10:
+            return "building — mild drain"
+        if v > -10:
+            return "stable"
+        if v > -50:
+            return "drawing down — adding reserves"
+        return "large drawdown — reserve injection"
+
     metrics = [
-        {"name": "SOFR", "value": _fmt_pct(fi.sofr), "context": "secured"},
-        {"name": "EFFR", "value": _fmt_pct(fi.effr), "context": "unsecured"},
-        {"name": f"Corridor ({corridor_name})", "value": _fmt_bps(fi.spread_corridor_bps), "context": "spread"},
-        {"name": "SOFR–EFFR", "value": _fmt_bps(fi.spread_sofr_effr_bps), "context": "basis"},
-        {"name": "Spike 5d", "value": _fmt_bps(fi.spike_5d_bps), "context": "max 5d"},
-        {"name": "Vol 20d", "value": _fmt_bps(fi.vol_20d_bps), "context": "std"},
-        {"name": "Persistence 20d", "value": _fmt_ratio(fi.persistence_20d), "context": ">stress"},
-        {"name": "ON RRP", "value": _fmt_usd_bn(fi.on_rrp_usd_bn), "context": "buffer"},
-        {"name": "Bank Reserves", "value": _fmt_usd_tn(fi.bank_reserves_usd_bn), "context": "level"},
-        {"name": "TGA 4wk Δ", "value": _fmt_usd_bn(fi.tga_chg_4w) if fi.tga_chg_4w is not None else "n/a", "context": "drain"},
+        {"name": "─── Rates ───", "value": "", "context": ""},
+        {"name": "SOFR", "value": _fmt_pct(fi.sofr), "context": "secured overnight"},
+        {"name": "EFFR", "value": _fmt_pct(fi.effr), "context": "unsecured overnight"},
+        {"name": f"Corridor ({corridor_name})", "value": _fmt_bps(fi.spread_corridor_bps), "context": _corridor_ctx()},
+        {"name": "SOFR–EFFR", "value": _fmt_bps(fi.spread_sofr_effr_bps), "context": _sofr_effr_ctx()},
+        {"name": "─── Stress ───", "value": "", "context": ""},
+        {"name": "Spike 5d", "value": _fmt_bps(fi.spike_5d_bps), "context": _spike_ctx()},
+        {"name": "Vol 20d", "value": _fmt_bps(fi.vol_20d_bps), "context": _vol_ctx()},
+        {"name": "Persistence 20d", "value": _fmt_ratio(fi.persistence_20d), "context": _persist_ctx()},
+        {"name": "─── Structural ───", "value": "", "context": ""},
+        {"name": "ON RRP", "value": _fmt_usd_bn(fi.on_rrp_usd_bn), "context": _rrp_ctx()},
+        {"name": "Bank Reserves", "value": _fmt_usd_tn(fi.bank_reserves_usd_bn), "context": _reserves_ctx()},
+        {"name": "TGA 4wk Δ", "value": _fmt_usd_bn(fi.tga_chg_4w) if fi.tga_chg_4w is not None else "n/a", "context": _tga_ctx()},
     ]
     from lox.regimes.trend import get_domain_trend
     trend = get_domain_trend("liquidity", score, regime.label or regime.name)

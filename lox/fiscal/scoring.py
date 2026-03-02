@@ -1,8 +1,12 @@
 """
 Fiscal Pressure Index (FPI): continuous 0-100 scoring engine.
 
-CFA-aligned approach: six sub-score pillars, each scored via historical
-percentile rank (10-year window), then combined into a weighted composite.
+MMT sectoral balance orientation: higher score = more contractionary for
+the private sector (less NFA support). A *smaller* deficit scores higher
+because the private sector receives fewer net financial assets.
+
+Six sub-score pillars, each scored via historical percentile rank
+(10-year window), then combined into a weighted composite.
 
 Regime labels are derived from FPI thresholds + pattern overrides.
 """
@@ -36,8 +40,8 @@ class FiscalScorecard:
     """Full fiscal regime scorecard: composite + breakdown."""
     fpi: float                                  # Fiscal Pressure Index 0-100
     sub_scores: list[FiscalSubScore]            # 6 pillars
-    regime_label: str                           # e.g. "Stress Building"
-    regime_name: str                            # e.g. "stress_building"
+    regime_label: str                           # e.g. "Fiscal Contraction"
+    regime_name: str                            # e.g. "fiscal_contraction"
     regime_description: str
     percentile_overall: float | None = None     # where FPI sits in history
 
@@ -65,19 +69,25 @@ def _pctile_score(*vals: float | None) -> float:
 
 
 def _deficit_intensity_score(inputs: FiscalInputs) -> FiscalSubScore:
-    """How large is the deficit relative to GDP and tax receipts."""
-    # Use z_deficit_12m as primary signal; deficit_pct_receipts as augmentation
-    vals = [inputs.z_deficit_12m]
-    # deficit_pct_receipts: higher ratio = more stress, but no z-score yet.
-    # Use a simple heuristic: 0.3 = neutral, above → positive z-like signal.
+    """MMT: how much NFA support does the private sector receive from the deficit?
+
+    Inverted from conventional framing: a *smaller* deficit scores higher
+    (more contractionary for private sector = more stress for risk assets).
+    """
+    vals = []
+    # Negate z_deficit_12m: positive z (large deficit) → low score (supportive);
+    # negative z (small deficit) → high score (contractionary).
+    if inputs.z_deficit_12m is not None:
+        vals.append(-inputs.z_deficit_12m)
+    # deficit_pct_receipts: higher ratio = more govt spending relative to taxes = more NFA.
+    # Invert: low ratio → high score (private sector squeeze).
     if inputs.deficit_pct_receipts is not None:
-        # Typical range ~0.05 (5%) to 0.50 (50%). Map to z-like scale.
-        dpr_z = (inputs.deficit_pct_receipts - 0.20) / 0.10  # center at 20%, 10% = 1 sigma
+        dpr_z = -(inputs.deficit_pct_receipts - 0.20) / 0.10
         vals.append(dpr_z)
 
     score = _pctile_score(*vals)
     return FiscalSubScore(
-        name="Deficit Intensity",
+        name="NFA Squeeze",
         score=score,
         percentile=score,
         components={
@@ -89,22 +99,24 @@ def _deficit_intensity_score(inputs: FiscalInputs) -> FiscalSubScore:
 
 
 def _deficit_momentum_score(inputs: FiscalInputs) -> FiscalSubScore:
-    """Is the deficit getting worse or better."""
+    """MMT: is the fiscal impulse contracting or expanding?
+
+    Inverted: a *declining* deficit trajectory (negative slope) scores higher
+    because the private sector's NFA inflow is shrinking.
+    """
     vals = []
-    # z_deficit_12m captures level; for momentum, we want the trend slope
     if inputs.deficit_trend_slope is not None:
-        # Slope is in deficit-units per month; positive = deteriorating.
-        # Normalize: assume std ~ 5000 (millions), so divide by 5000 for z-like scale.
-        slope_z = inputs.deficit_trend_slope / 5000.0
+        # Negate: negative slope (shrinking deficit) → positive z-like → high score (drag).
+        slope_z = -inputs.deficit_trend_slope / 5000.0
         vals.append(slope_z)
 
-    # interest_expense_yoy_accel: positive = accelerating cost of debt
+    # Interest expense acceleration remains same direction: higher = more stress.
     if inputs.interest_expense_yoy_accel is not None:
-        vals.append(inputs.interest_expense_yoy_accel / 5.0)  # 5pp as ~1 sigma
+        vals.append(inputs.interest_expense_yoy_accel / 5.0)
 
     score = _pctile_score(*vals)
     return FiscalSubScore(
-        name="Deficit Momentum",
+        name="Fiscal Impulse Drag",
         score=score,
         percentile=score,
         components={
@@ -225,10 +237,10 @@ def _bond_market_stress_score(inputs: FiscalInputs) -> FiscalSubScore:
 # FPI thresholds → labels. Auction absorption override escalates by one notch.
 
 _FPI_LABELS = [
-    (0, 25, "benign_funding", "Benign"),
-    (25, 45, "elevated_funding", "Elevated Funding"),
-    (45, 65, "stress_building", "Stress Building"),
-    (65, 80, "fiscal_stress", "Fiscal Stress"),
+    (0, 25, "strong_fiscal_stimulus", "Strong Fiscal Stimulus"),
+    (25, 45, "moderate_fiscal_support", "Moderate Fiscal Support"),
+    (45, 65, "fiscal_drag", "Fiscal Drag"),
+    (65, 80, "fiscal_contraction", "Fiscal Contraction"),
     (80, 101, "fiscal_dominance_risk", "Fiscal Dominance Risk"),
 ]
 
@@ -260,8 +272,11 @@ def score_fiscal_regime(inputs: FiscalInputs) -> FiscalScorecard:
     """
     Compute the Fiscal Pressure Index (FPI) and full scorecard.
 
+    MMT orientation: higher FPI = more contractionary for the private sector
+    (less NFA support, fiscal drag, or market absorption stress).
+
     Returns a FiscalScorecard with:
-    - fpi: 0-100 composite score (higher = more fiscal stress)
+    - fpi: 0-100 composite score (higher = more private sector squeeze)
     - sub_scores: 6 pillar breakdowns
     - regime_label / regime_name: derived from FPI + overrides
     - regime_description: contextual explanation

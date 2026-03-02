@@ -199,7 +199,7 @@ SCENARIOS: list[ScenarioDefinition] = [
             ),
             PillarCondition(
                 domain="fiscal", score_min=45,
-                name_contains=("stress_building", "fiscal_stress", "fiscal_dominance"),
+                name_contains=("fiscal_contraction", "fiscal_drag", "fiscal_dominance"),
                 required=False,
             ),
         ],
@@ -265,7 +265,7 @@ SCENARIOS: list[ScenarioDefinition] = [
             ),
             PillarCondition(
                 domain="fiscal", score_min=45,
-                name_contains=("stress_building", "fiscal_stress", "fiscal_dominance"),
+                name_contains=("fiscal_contraction", "fiscal_drag", "fiscal_dominance"),
                 required=True,
             ),
             PillarCondition(

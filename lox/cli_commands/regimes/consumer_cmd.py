@@ -77,12 +77,82 @@ def consumer_snapshot(*, llm: bool = False, ticker: str = "", refresh: bool = Fa
     def _v(x, fmt="{:.1f}"):
         return fmt.format(x) if x is not None else "n/a"
 
+    def _michigan_ctx():
+        if michigan_sent is None:
+            return "long-run avg ~85"
+        v = michigan_sent
+        if v > 95:
+            return "optimistic — above long-run average"
+        if v > 80:
+            return "healthy — near historical norm"
+        if v > 65:
+            return "below average — consumers cautious"
+        if v > 55:
+            return "pessimistic — confidence eroding"
+        return "deeply depressed — recessionary mood"
+
+    def _michigan_exp_ctx():
+        if michigan_exp is None:
+            return "forward-looking expectations"
+        v = michigan_exp
+        if v > 85:
+            return "optimistic outlook"
+        if v > 70:
+            return "moderate expectations"
+        if v > 55:
+            return "pessimistic — expect deterioration"
+        return "deeply pessimistic — recessionary fear"
+
+    def _retail_ctx():
+        if retail_mom is None:
+            return "control group MoM"
+        v = retail_mom
+        if v > 1.0:
+            return "strong spending — consumers aggressive"
+        if v > 0.3:
+            return "healthy spending growth"
+        if v > -0.3:
+            return "flat — consumers treading water"
+        if v > -1.0:
+            return "pulling back — demand softening"
+        return "sharp decline — demand destruction"
+
+    def _credit_ctx():
+        if cc_debt_yoy is None:
+            return "consumer credit growth"
+        v = cc_debt_yoy
+        if v > 8:
+            return "rapid leverage — unsustainable pace"
+        if v > 5:
+            return "brisk borrowing — watch delinquencies"
+        if v > 2:
+            return "normal credit growth"
+        if v > 0:
+            return "slow growth — consumers cautious"
+        return "deleveraging — credit contraction"
+
+    def _mortgage_ctx():
+        if mortgage_30y is None:
+            return "30Y mortgage rate"
+        v = mortgage_30y
+        if v > 7.5:
+            return "crisis affordability — housing frozen"
+        if v > 7.0:
+            return "severe affordability headwind"
+        if v > 6.5:
+            return "elevated — housing drag"
+        if v > 5.5:
+            return "above normal — moderate drag"
+        if v > 4.5:
+            return "neutral — manageable"
+        return "low — housing tailwind"
+
     metrics = [
-        {"name": "Michigan Sentiment", "value": _v(michigan_sent, "{:.0f}"), "context": "long-run avg ~85"},
-        {"name": "Michigan Expectations", "value": _v(michigan_exp, "{:.0f}"), "context": "leads sentiment"},
-        {"name": "Retail Sales MoM", "value": _v(retail_mom, "{:+.1f}%"), "context": "control group"},
-        {"name": "Consumer Credit YoY", "value": _v(cc_debt_yoy, "{:+.1f}%"), "context": "TOTALSL"},
-        {"name": "30Y Mortgage", "value": _v(mortgage_30y, "{:.2f}%"), "context": "housing drag"},
+        {"name": "Michigan Sentiment", "value": _v(michigan_sent, "{:.0f}"), "context": _michigan_ctx()},
+        {"name": "Michigan Expectations", "value": _v(michigan_exp, "{:.0f}"), "context": _michigan_exp_ctx()},
+        {"name": "Retail Sales MoM", "value": _v(retail_mom, "{:+.1f}%"), "context": _retail_ctx()},
+        {"name": "Consumer Credit YoY", "value": _v(cc_debt_yoy, "{:+.1f}%"), "context": _credit_ctx()},
+        {"name": "30Y Mortgage", "value": _v(mortgage_30y, "{:.2f}%"), "context": _mortgage_ctx()},
     ]
 
     from lox.regimes.trend import get_domain_trend

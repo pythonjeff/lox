@@ -94,13 +94,50 @@ def run_crypto_snapshot(
         return f"{x:.2f}" if x is not None and isinstance(x, (int, float)) else "n/a"
     def _vp(x):
         return f"{x:+.1f}%" if x is not None and isinstance(x, (int, float)) else "n/a"
+    def _ret_ctx(ret, window):
+        if ret is None or not isinstance(ret, (int, float)):
+            return f"{window} trailing"
+        if ret > 50:
+            return "strong rally"
+        if ret > 20:
+            return "solid gains"
+        if ret > 0:
+            return "modest positive"
+        if ret > -20:
+            return "mild pullback"
+        if ret > -40:
+            return "significant correction"
+        return "deep drawdown"
+
+    def _vol_ctx(vol):
+        if vol is None or not isinstance(vol, (int, float)):
+            return "annualized volatility"
+        v = vol * 100 if vol < 5 else vol
+        if v > 100:
+            return "extreme vol — crisis-level swings"
+        if v > 70:
+            return "very high — typical crypto stress"
+        if v > 50:
+            return "elevated"
+        if v > 30:
+            return "moderate — consolidation phase"
+        return "low vol — unusual for crypto"
+
+    def _dma_ctx():
+        above = snap.trend.above_200dma
+        if above is None:
+            return "200-day moving average"
+        if above:
+            return "bullish — above long-term trend"
+        return "bearish — below long-term trend"
+
     metrics = [
-        {"name": "3m return", "value": _vp(r.asset_3m), "context": "trailing"},
-        {"name": "6m return", "value": _vp(r.asset_6m), "context": "trailing"},
-        {"name": "12m return", "value": _vp(r.asset_12m), "context": "trailing"},
-        {"name": "Vol 20d ann", "value": _v(v.realized_vol_20d_ann), "context": "%" if v.realized_vol_20d_ann else "—"},
-        {"name": "Vol 60d ann", "value": _v(v.realized_vol_60d_ann), "context": "%" if v.realized_vol_60d_ann else "—"},
-        {"name": "Above 200 DMA", "value": str(snap.trend.above_200dma) if snap.trend.above_200dma is not None else "n/a", "context": "trend"},
+        {"name": "3m return", "value": _vp(r.asset_3m), "context": _ret_ctx(r.asset_3m, "3m")},
+        {"name": "6m return", "value": _vp(r.asset_6m), "context": _ret_ctx(r.asset_6m, "6m")},
+        {"name": "12m return", "value": _vp(r.asset_12m), "context": _ret_ctx(r.asset_12m, "12m")},
+        {"name": "Vol 20d ann", "value": _v(v.realized_vol_20d_ann), "context": _vol_ctx(v.realized_vol_20d_ann)},
+        {"name": "Vol 60d ann", "value": _v(v.realized_vol_60d_ann), "context": _vol_ctx(v.realized_vol_60d_ann)},
+        {"name": "Above 200 DMA", "value": str(snap.trend.above_200dma) if snap.trend.above_200dma is not None else "n/a", "context": _dma_ctx()},
     ]
     print(render_regime_panel(
         domain="Crypto",

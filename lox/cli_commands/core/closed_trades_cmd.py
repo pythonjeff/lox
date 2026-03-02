@@ -84,6 +84,76 @@ def register(app: typer.Typer) -> None:
             else:
                 trades_by_symbol[sym]['sells'].append(trade)
         
+        # Fetch OPEXP (option expiration) activities and inject synthetic sell-at-$0
+        _opexp_activities = []
+        try:
+            _opexp_raw = trading.get("/v2/account/activities/OPEXP") or []
+            if isinstance(_opexp_raw, dict):
+                _opexp_raw = [_opexp_raw]
+            _opexp_activities = _opexp_raw if isinstance(_opexp_raw, list) else []
+        except Exception:
+            _opexp_activities = []
+
+        for act in _opexp_activities:
+            if isinstance(act, dict):
+                _sym = act.get("symbol", "")
+                _qty_str = act.get("qty", "0")
+                _exp_date = act.get("date", "")
+            else:
+                _sym = str(getattr(act, "symbol", ""))
+                _qty_str = str(getattr(act, "qty", "0"))
+                _exp_date = str(getattr(act, "date", ""))
+
+            _qty = abs(float(_qty_str)) if _qty_str else 0
+            if not _sym or _qty <= 0:
+                continue
+
+            from datetime import timezone as _tz
+            try:
+                _exp_dt = datetime.strptime(_exp_date, "%Y-%m-%d").replace(tzinfo=_tz.utc) if _exp_date else None
+            except Exception:
+                _exp_dt = None
+
+            _is_opt = _is_option_symbol(_sym)
+            _mult = 100 if _is_opt else 1
+
+            trades_by_symbol[_sym]['sells'].append({
+                'qty': _qty,
+                'price': 0.0,
+                'date': _exp_dt,
+                'date_str': _exp_date[:10] if _exp_date else '?',
+                'value': 0.0,
+                'mult': _mult,
+            })
+
+        # Fallback: detect expired options from OCC symbol date with unmatched buys
+        from datetime import date as _date_cls
+        _today = _date_cls.today()
+        for _sym, _data in trades_by_symbol.items():
+            if not _data['buys'] or _data['sells']:
+                continue
+            if not _is_option_symbol(_sym):
+                continue
+            try:
+                _i = 0
+                while _i < len(_sym) and not _sym[_i].isdigit():
+                    _i += 1
+                _rest = _sym[_i:]
+                _exp = datetime.strptime(f"20{_rest[:6]}", "%Y%m%d").date()
+            except Exception:
+                continue
+            if _exp >= _today:
+                continue
+            _qty = sum(b['qty'] for b in _data['buys'])
+            _data['sells'].append({
+                'qty': _qty,
+                'price': 0.0,
+                'date': datetime.combine(_exp, datetime.min.time()).replace(tzinfo=_tz.utc),
+                'date_str': str(_exp),
+                'value': 0.0,
+                'mult': 100,
+            })
+
         # Calculate closed trades using FIFO matching
         closed_trades = []
         

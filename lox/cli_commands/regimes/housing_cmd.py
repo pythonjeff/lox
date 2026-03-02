@@ -107,14 +107,103 @@ def run_housing_snapshot(
     score = 70 if "stress" in regime.name else (30 if "easing" in regime.name else 50)
     def _v(x):
         return f"{x:.2f}" if x is not None and isinstance(x, (int, float)) else "n/a"
+
+    def _mtg_ctx():
+        v = inp.mortgage_30y
+        if not isinstance(v, (int, float)):
+            return "30-year fixed rate"
+        if v > 7.5:
+            return "crisis affordability — housing frozen"
+        if v > 7.0:
+            return "severe headwind"
+        if v > 6.5:
+            return "elevated — affordability strained"
+        if v > 5.5:
+            return "above normal"
+        if v > 4.5:
+            return "neutral — manageable"
+        return "low — housing tailwind"
+
+    def _ust_ctx():
+        v = inp.ust_10y
+        if not isinstance(v, (int, float)):
+            return "10Y benchmark"
+        if v > 5.0:
+            return "very high — driving mortgage costs"
+        if v > 4.5:
+            return "elevated — upward pressure on mortgages"
+        if v > 3.5:
+            return "moderate"
+        return "low — supportive of housing"
+
+    def _spread_ctx():
+        v = inp.mortgage_spread
+        if not isinstance(v, (int, float)):
+            return "mortgage-Treasury spread"
+        if v > 2.5:
+            return "very wide — MBS stress / bank pullback"
+        if v > 2.0:
+            return "wide — credit risk premium"
+        if v > 1.5:
+            return "normal range"
+        return "tight — strong MBS demand"
+
+    def _z_spread_ctx():
+        v = inp.z_mortgage_spread
+        if not isinstance(v, (int, float)):
+            return "vs history"
+        if v > 1.5:
+            return f"z={v:+.2f} — spread extreme vs history"
+        if v > 0.5:
+            return f"z={v:+.2f} — wider than usual"
+        if v < -1.5:
+            return f"z={v:+.2f} — unusually tight"
+        if v < -0.5:
+            return f"z={v:+.2f} — tighter than usual"
+        return f"z={v:+.2f} — normal range"
+
+    def _mbs_ctx():
+        v = inp.z_mbs_rel_ret_60d
+        if not isinstance(v, (int, float)):
+            return "MBS vs Treasuries"
+        if v > 1.0:
+            return f"z={v:+.2f} — MBS outperforming (demand)"
+        if v < -1.0:
+            return f"z={v:+.2f} — MBS underperforming (stress)"
+        return f"z={v:+.2f} — inline with Treasuries"
+
+    def _builder_ctx():
+        v = inp.z_homebuilder_rel_ret_60d
+        if not isinstance(v, (int, float)):
+            return "homebuilders vs market"
+        if v > 1.0:
+            return f"z={v:+.2f} — builders outperforming (optimism)"
+        if v < -1.0:
+            return f"z={v:+.2f} — builders lagging (housing fear)"
+        return f"z={v:+.2f} — inline with market"
+
+    def _pressure_ctx():
+        v = inp.housing_pressure_score
+        if not isinstance(v, (int, float)):
+            return "composite"
+        if v > 1.5:
+            return "high pressure — housing stress"
+        if v > 0.5:
+            return "elevated — headwinds building"
+        if v > -0.5:
+            return "neutral"
+        if v > -1.5:
+            return "easing — conditions improving"
+        return "strong tailwind — housing supportive"
+
     metrics = [
-        {"name": "Mortgage 30y", "value": _v(inp.mortgage_30y), "context": "%" if inp.mortgage_30y is not None else "—"},
-        {"name": "UST 10y", "value": _v(inp.ust_10y), "context": "%" if inp.ust_10y is not None else "—"},
-        {"name": "Mortgage spread", "value": _v(inp.mortgage_spread), "context": "bp" if inp.mortgage_spread is not None else "—"},
-        {"name": "Z mortgage spread", "value": _v(inp.z_mortgage_spread), "context": "vs history"},
-        {"name": "Z MBS rel 60d", "value": _v(inp.z_mbs_rel_ret_60d), "context": "MBB-IEF"},
-        {"name": "Z Homebuilders 60d", "value": _v(inp.z_homebuilder_rel_ret_60d), "context": "ITB-SPY"},
-        {"name": "Pressure score", "value": _v(inp.housing_pressure_score), "context": "composite"},
+        {"name": "Mortgage 30y", "value": _v(inp.mortgage_30y), "context": _mtg_ctx()},
+        {"name": "UST 10y", "value": _v(inp.ust_10y), "context": _ust_ctx()},
+        {"name": "Mortgage spread", "value": _v(inp.mortgage_spread), "context": _spread_ctx()},
+        {"name": "Z mortgage spread", "value": _v(inp.z_mortgage_spread), "context": _z_spread_ctx()},
+        {"name": "Z MBS rel 60d", "value": _v(inp.z_mbs_rel_ret_60d), "context": _mbs_ctx()},
+        {"name": "Z Homebuilders 60d", "value": _v(inp.z_homebuilder_rel_ret_60d), "context": _builder_ctx()},
+        {"name": "Pressure score", "value": _v(inp.housing_pressure_score), "context": _pressure_ctx()},
     ]
     print(render_regime_panel(
         domain="Housing",

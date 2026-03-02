@@ -136,14 +136,91 @@ def _run_commodities_snapshot(
         if v is None or (isinstance(v, float) and not np.isfinite(v)):
             return "n/a"
         return f"{v:+.2f}"
+    def _wti_ctx():
+        z = inp.z_wti_ret_20d
+        ret = inp.wti_ret_20d_pct
+        if z is not None and isinstance(z, (int, float)):
+            if z > 1.5:
+                return f"rallying sharply (z={z:+.1f})"
+            if z > 0.5:
+                return f"rising — inflationary pressure (z={z:+.1f})"
+            if z < -1.5:
+                return f"selling off hard (z={z:+.1f})"
+            if z < -0.5:
+                return f"declining — deflationary (z={z:+.1f})"
+        return f"stable (z={_z(z)})" if z is not None else "oil benchmark"
+
+    def _gold_ctx():
+        z = inp.z_gold_ret_20d
+        if z is not None and isinstance(z, (int, float)):
+            if z > 1.5:
+                return f"surging — safe-haven bid (z={z:+.1f})"
+            if z > 0.5:
+                return f"rising — risk hedging (z={z:+.1f})"
+            if z < -1.5:
+                return f"selling off — risk-on rotation (z={z:+.1f})"
+            if z < -0.5:
+                return f"drifting lower (z={z:+.1f})"
+        return f"stable (z={_z(z)})" if z is not None else "safe haven"
+
+    def _copper_ctx():
+        z = inp.z_copper_ret_60d
+        if z is not None and isinstance(z, (int, float)):
+            if z > 1.5:
+                return f"surging — growth optimism (z={z:+.1f})"
+            if z > 0.5:
+                return f"rising — industrial demand (z={z:+.1f})"
+            if z < -1.5:
+                return f"plunging — growth fears (z={z:+.1f})"
+            if z < -0.5:
+                return f"weakening — demand softening (z={z:+.1f})"
+        return f"stable (z={_z(z)})" if z is not None else "growth proxy"
+
+    def _broad_ctx():
+        z = inp.z_broad_ret_60d
+        if z is not None and isinstance(z, (int, float)):
+            if z > 1.5:
+                return f"broad rally — reflationary (z={z:+.1f})"
+            if z > 0.5:
+                return f"rising — inflationary signal (z={z:+.1f})"
+            if z < -1.5:
+                return f"broad selloff — deflationary (z={z:+.1f})"
+            if z < -0.5:
+                return f"softening (z={z:+.1f})"
+        return f"stable (z={_z(z)})" if z is not None else "broad commodities"
+
+    def _pressure_ctx():
+        v = inp.commodity_pressure_score
+        if v is not None and isinstance(v, (int, float)):
+            if v > 1.5:
+                return "strong inflationary pressure"
+            if v > 0.5:
+                return "mild inflationary signal"
+            if v < -1.5:
+                return "strong deflationary signal"
+            if v < -0.5:
+                return "mild deflationary signal"
+            return "neutral — balanced"
+        return "composite z-score"
+
+    def _energy_shock_ctx():
+        if inp.energy_shock:
+            return "active — WTI spike, cost-push risk"
+        return "none — oil stable"
+
+    def _metals_impulse_ctx():
+        if inp.metals_impulse:
+            return "active — gold/copper both strong"
+        return "none — metals quiet"
+
     metrics = [
-        {"name": "WTI", "value": f"${_fmt(inp.wti)}", "context": f"20d {_fmt(inp.wti_ret_20d_pct, 1, True)} z={_z(inp.z_wti_ret_20d)}"},
-        {"name": "Gold", "value": f"${_fmt(inp.gold)}", "context": f"20d {_fmt(inp.gold_ret_20d_pct, 1, True)} z={_z(inp.z_gold_ret_20d)}"},
-        {"name": "Copper", "value": f"${_fmt(inp.copper)}", "context": f"60d {_fmt(inp.copper_ret_60d_pct, 1, True)} z={_z(inp.z_copper_ret_60d)}"},
-        {"name": "Broad index", "value": f"${_fmt(inp.broad_index)}", "context": f"60d {_fmt(inp.broad_ret_60d_pct, 1, True)} z={_z(inp.z_broad_ret_60d)}"},
-        {"name": "Pressure score", "value": _fmt(inp.commodity_pressure_score, 2), "context": "z-score composite"},
-        {"name": "Energy shock", "value": "Yes" if inp.energy_shock else "No", "context": "WTI spike"},
-        {"name": "Metals impulse", "value": "Yes" if inp.metals_impulse else "No", "context": "metals strength"},
+        {"name": "WTI", "value": f"${_fmt(inp.wti)}", "context": _wti_ctx()},
+        {"name": "Gold", "value": f"${_fmt(inp.gold)}", "context": _gold_ctx()},
+        {"name": "Copper", "value": f"${_fmt(inp.copper)}", "context": _copper_ctx()},
+        {"name": "Broad index", "value": f"${_fmt(inp.broad_index)}", "context": _broad_ctx()},
+        {"name": "Pressure score", "value": _fmt(inp.commodity_pressure_score, 2), "context": _pressure_ctx()},
+        {"name": "Energy shock", "value": "Yes" if inp.energy_shock else "No", "context": _energy_shock_ctx()},
+        {"name": "Metals impulse", "value": "Yes" if inp.metals_impulse else "No", "context": _metals_impulse_ctx()},
     ]
     asof = state.asof if hasattr(state, "asof") else "n/a"
     from lox.regimes.trend import get_domain_trend

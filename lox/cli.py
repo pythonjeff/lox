@@ -491,10 +491,20 @@ def regime_credit(
     ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED downloads"),
     book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
+    features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+    delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
+    alert: bool = typer.Option(False, "--alert", help="Only output if regime is extreme (for cron/monitoring)"),
+    calendar: bool = typer.Option(False, "--calendar", help="Show upcoming events that could shift this regime"),
+    trades: bool = typer.Option(False, "--trades", help="Show quick trade expressions for current regime"),
 ):
     """Credit / spreads regime."""
     from lox.cli_commands.regimes.credit_cmd import credit_snapshot
-    credit_snapshot(llm=llm, ticker=ticker, refresh=refresh)
+    credit_snapshot(
+        llm=llm, ticker=ticker, refresh=refresh,
+        features=features, json_out=json_out, delta=delta,
+        alert=alert, calendar=calendar, trades=trades,
+    )
     if book:
         from lox.cli_commands.shared.book_impact import show_book_impact
         show_book_impact(domain="credit")

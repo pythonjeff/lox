@@ -149,6 +149,43 @@ def _get_closed_trades() -> list[dict]:
         else:
             trades_by_symbol[sym]['sells'].append(trade)
     
+    # Inject synthetic sell-at-$0 for expired options (OPEXP activities + OCC date fallback)
+    try:
+        _opexp_raw = trading.get("/v2/account/activities/OPEXP") or []
+        if isinstance(_opexp_raw, dict):
+            _opexp_raw = [_opexp_raw]
+        for act in (_opexp_raw if isinstance(_opexp_raw, list) else []):
+            _sym = act.get("symbol", "") if isinstance(act, dict) else str(getattr(act, "symbol", ""))
+            _qty_s = act.get("qty", "0") if isinstance(act, dict) else str(getattr(act, "qty", "0"))
+            _exp_d = act.get("date", "") if isinstance(act, dict) else str(getattr(act, "date", ""))
+            _qty = abs(float(_qty_s)) if _qty_s else 0
+            if _sym and _qty > 0:
+                _is_opt = len(_sym) > 10 and any(c.isdigit() for c in _sym[-8:]) and '/' not in _sym
+                trades_by_symbol[_sym]['sells'].append({'qty': _qty, 'price': 0.0, 'mult': 100 if _is_opt else 1, 'filled_at': _exp_d})
+    except Exception:
+        pass
+
+    from datetime import date as _date_cls
+    _today = _date_cls.today()
+    for _sym, _data in trades_by_symbol.items():
+        if not _data['buys'] or _data['sells']:
+            continue
+        _is_opt = len(_sym) > 10 and any(c.isdigit() for c in _sym[-8:]) and '/' not in _sym
+        if not _is_opt:
+            continue
+        try:
+            _i = 0
+            while _i < len(_sym) and not _sym[_i].isdigit():
+                _i += 1
+            _rest = _sym[_i:]
+            _exp = datetime.strptime(f"20{_rest[:6]}", "%Y%m%d").date()
+        except Exception:
+            continue
+        if _exp >= _today:
+            continue
+        _qty = sum(b['qty'] for b in _data['buys'])
+        _data['sells'].append({'qty': _qty, 'price': 0.0, 'mult': 100, 'filled_at': str(_exp)})
+
     # FIFO matching
     closed_trades = []
     

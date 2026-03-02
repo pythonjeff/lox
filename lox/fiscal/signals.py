@@ -28,9 +28,12 @@ FISCAL_FRED_SERIES: Dict[str, str] = {
     "TAX_RECEIPTS": "MTSR133FMS",  # Monthly Treasury Statement receipts (monthly, millions)
     "FOREIGN_HOLDINGS": "FDHBFIN",  # Foreign holdings of US Treasuries (monthly, millions)
     "CUSTODY": "WSHOSHO",  # Fed custody holdings (weekly, millions) — proxy for foreign CB demand
+    # MMT sectoral balance: trade balance on goods & services (monthly, USD millions).
+    # Private Balance ≈ Government Deficit + Current Account (CA ≈ trade balance for US).
+    "TRADE_BALANCE": "BOPGSTB",
 }
 
-_OPTIONAL_SERIES = {"INTEREST_EXPENSE", "TAX_RECEIPTS", "FOREIGN_HOLDINGS", "CUSTODY"}
+_OPTIONAL_SERIES = {"INTEREST_EXPENSE", "TAX_RECEIPTS", "FOREIGN_HOLDINGS", "CUSTODY", "TRADE_BALANCE"}
 
 # ---------------------------------------------------------------------------
 # Treasury net issuance (true) via MSPD: Δ outstanding (monthly)
@@ -929,6 +932,13 @@ def build_fiscal_dataset(settings: Settings, start_date: str = "2011-01-01", ref
         )
         derived_frames["DEFICIT_PCT_RECEIPTS"] = rec[["date", "DEFICIT_PCT_RECEIPTS"]]
 
+    # MMT sectoral balance: rolling 12m trade balance (foreign sector proxy).
+    # BOPGSTB is monthly in USD millions on FRED.
+    if "TRADE_BALANCE" in raw and not raw["TRADE_BALANCE"].empty:
+        tb = raw["TRADE_BALANCE"].copy().rename(columns={"value": "TRADE_BALANCE"})
+        tb["TRADE_BALANCE_12M"] = _rolling_12m_sum_monthly(tb["TRADE_BALANCE"])
+        derived_frames["TRADE_BALANCE_12M"] = tb[["date", "TRADE_BALANCE_12M"]]
+
     # Interest expense YoY (optional, likely quarterly)
     if "INTEREST_EXPENSE" in raw and not raw["INTEREST_EXPENSE"].empty:
         ie = raw["INTEREST_EXPENSE"].copy().rename(columns={"value": "INTEREST_EXPENSE"})
@@ -1015,6 +1025,7 @@ def build_fiscal_dataset(settings: Settings, start_date: str = "2011-01-01", ref
         "DEFICIT_TREND_SLOPE",
         "FOREIGN_HOLDINGS_CHG_6M",
         "CUSTODY_CHG_4W",
+        "TRADE_BALANCE_12M",
     ]:
         if c not in merged.columns:
             merged[c] = float("nan")
@@ -1134,6 +1145,39 @@ def build_fiscal_deficit_page_data(
     if isinstance(gdp_m2, (int, float)) and float(gdp_m2) != 0.0:
         deficit_pct_gdp = 100.0 * float(last["DEFICIT_12M"]) / float(gdp_m2)
 
+    # ── MMT Sectoral Balance ────────────────────────────────────────────
+    # Private Balance ≈ Government Deficit + Current Account (trade balance proxy).
+    # BOPGSTB is monthly in USD millions; negative = trade deficit.
+    trade_balance_12m = None
+    private_balance_pct_gdp = None
+    private_balance_impulse = None
+    try:
+        tb_df = _fetch_optional(fred=fred, series_id=FISCAL_FRED_SERIES["TRADE_BALANCE"], start_date=start_date, refresh=refresh)
+        if tb_df is not None and not tb_df.empty:
+            tb_df = tb_df.sort_values("date").reset_index(drop=True)
+            tb_df["value"] = pd.to_numeric(tb_df["value"], errors="coerce")
+            # BOPGSTB is already in USD millions on FRED, matching MTSDS133FMS units.
+            tb_df["TB_M"] = tb_df["value"]
+            tb_df["TB_12M"] = _rolling_12m_sum_monthly(tb_df["TB_M"])
+            tb_roll = tb_df.dropna(subset=["TB_12M"])
+            if not tb_roll.empty:
+                last_tb = tb_roll.iloc[-1]
+                trade_balance_12m = float(last_tb["TB_12M"])
+                # Private balance = govt deficit + trade balance (trade balance is negative for US)
+                if isinstance(gdp_m2, (int, float)) and float(gdp_m2) != 0.0:
+                    private_balance_pct_gdp = 100.0 * (float(last["DEFICIT_12M"]) + trade_balance_12m) / float(gdp_m2)
+                # Impulse: YoY change in private balance as % GDP
+                if len(tb_roll) >= 13:
+                    tb_12m_1y_ago = float(tb_roll.iloc[-13]["TB_12M"]) if pd.notna(tb_roll.iloc[-13]["TB_12M"]) else None
+                    deficit_12m_1y_ago_val = d_1y.get("deficit_12m") if d_1y else None
+                    if (tb_12m_1y_ago is not None and deficit_12m_1y_ago_val is not None
+                            and isinstance(gdp_m2, (int, float)) and float(gdp_m2) != 0.0):
+                        pb_now = float(last["DEFICIT_12M"]) + trade_balance_12m
+                        pb_1y = float(deficit_12m_1y_ago_val) + tb_12m_1y_ago
+                        private_balance_impulse = 100.0 * (pb_now - pb_1y) / float(gdp_m2)
+    except Exception:
+        pass
+
     # True net issuance (Δ outstanding) from MSPD.
     # We expose both:
     # - maturity buckets (Bills/Coupons/Long + long-duration share)
@@ -1213,6 +1257,10 @@ def build_fiscal_deficit_page_data(
         "deficit_impulse_pct_gdp": impulse_pct_gdp,
         "deficit_pct_gdp": deficit_pct_gdp,
         "gdp": gdp,
+        # MMT sectoral balance
+        "trade_balance_12m": trade_balance_12m,
+        "private_balance_pct_gdp": private_balance_pct_gdp,
+        "private_balance_impulse": private_balance_impulse,
         "units": "FRED units (MTSDS133FMS is typically USD millions; rolling 12m sum; sign-adjusted so positive=deficit)",
         "lookback_years": int(lookback_years),
         "tga": tga,
@@ -1274,6 +1322,7 @@ def build_fiscal_state(settings: Settings, start_date: str = "2011-01-01", refre
         wam_years=None,  # TODO: compute from MSPD maturity buckets
         wam_chg_12m=None,
         deficit_trend_slope=float(last["DEFICIT_TREND_SLOPE"]) if "DEFICIT_TREND_SLOPE" in last and pd.notna(last["DEFICIT_TREND_SLOPE"]) else None,
+        trade_balance_12m=float(last["TRADE_BALANCE_12M"]) if "TRADE_BALANCE_12M" in last and pd.notna(last["TRADE_BALANCE_12M"]) else None,
         move_index=None,  # TODO: FMP ^MOVE
         move_index_z=None,
         z_deficit_12m=float(last["Z_DEFICIT_12M"]) if pd.notna(last["Z_DEFICIT_12M"]) else None,

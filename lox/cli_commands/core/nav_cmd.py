@@ -316,8 +316,12 @@ def register(nav_app: typer.Typer) -> None:
         total_capital = float(rep.get('total_capital') or 0.0)
         nav_per_unit = float(rep.get('nav_per_unit') or 1.0)
         total_units = float(rep.get('total_units') or 0.0)
-        fund_return = float(rep.get('fund_return') or 0.0)
         fund_pnl = equity - total_capital
+
+        # Prefer TWR from NAV sheet (strips out cash-flow timing bias)
+        from lox.nav.store import read_nav_sheet
+        nav_rows = read_nav_sheet(path=path_sheet)
+        fund_return = float(nav_rows[-1].twr_cum) if nav_rows else float(rep.get('fund_return') or 0.0)
 
         ret_color = "green" if fund_return >= 0 else "red"
         pnl_color = "green" if fund_pnl >= 0 else "red"
@@ -334,7 +338,7 @@ def register(nav_app: typer.Typer) -> None:
         hero.add_column(justify="center")
         hero.add_column(justify="center")
         hero.add_row(
-            "[dim]FUND RETURN[/dim]",
+            "[dim]FUND TWR[/dim]",
             "[dim]NET ASSET VALUE[/dim]",
             "[dim]TOTAL P&L[/dim]",
             "[dim]NAV / UNIT[/dim]",

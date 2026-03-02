@@ -94,12 +94,68 @@ def run_usd_snapshot(
     inp = state.inputs
     def _v(x, fmt="{:.2f}"):
         return fmt.format(x) if x is not None and isinstance(x, (int, float)) else "n/a"
+
+    def _usd_level_ctx():
+        v = inp.z_usd_level
+        if not isinstance(v, (int, float)):
+            return "trade-weighted broad dollar"
+        if v > 1.5:
+            return "strong — headwind for EM/commodities"
+        if v > 0.5:
+            return "above average"
+        if v < -1.5:
+            return "weak — tailwind for risk assets"
+        if v < -0.5:
+            return "below average"
+        return "normal range"
+
+    def _usd_chg_ctx(chg, window="20d"):
+        if not isinstance(chg, (int, float)):
+            return f"{window} momentum"
+        if chg > 3:
+            return "strengthening sharply"
+        if chg > 1:
+            return "firming"
+        if chg < -3:
+            return "weakening sharply"
+        if chg < -1:
+            return "softening"
+        return "stable"
+
+    def _z_level_ctx():
+        v = inp.z_usd_level
+        if not isinstance(v, (int, float)):
+            return "vs history"
+        if v > 2.0:
+            return f"z={v:+.2f} — extreme strength vs history"
+        if v > 1.0:
+            return f"z={v:+.2f} — elevated vs history"
+        if v < -2.0:
+            return f"z={v:+.2f} — extreme weakness vs history"
+        if v < -1.0:
+            return f"z={v:+.2f} — weak vs history"
+        return f"z={v:+.2f} — normal range"
+
+    def _strength_ctx():
+        v = inp.usd_strength_score
+        if not isinstance(v, (int, float)):
+            return "composite score"
+        if v > 0.5:
+            return "net strong — tightening FX conditions"
+        if v > 0.2:
+            return "mildly strong"
+        if v < -0.5:
+            return "net weak — easing FX conditions"
+        if v < -0.2:
+            return "mildly weak"
+        return "neutral"
+
     metrics = [
-        {"name": "Broad USD index", "value": _v(inp.usd_index_broad), "context": "level"},
-        {"name": "20d chg", "value": _v(inp.usd_chg_20d_pct, "{:+.1f}%"), "context": "momentum"},
-        {"name": "60d chg", "value": _v(inp.usd_chg_60d_pct, "{:+.1f}%"), "context": "momentum"},
-        {"name": "Z level", "value": _v(inp.z_usd_level, "{:+.2f}"), "context": "vs history"},
-        {"name": "Strength score", "value": _v(inp.usd_strength_score, "{:+.2f}"), "context": "composite"},
+        {"name": "Broad USD index", "value": _v(inp.usd_index_broad), "context": _usd_level_ctx()},
+        {"name": "20d chg", "value": _v(inp.usd_chg_20d_pct, "{:+.1f}%"), "context": _usd_chg_ctx(inp.usd_chg_20d_pct, "20d")},
+        {"name": "60d chg", "value": _v(inp.usd_chg_60d_pct, "{:+.1f}%"), "context": _usd_chg_ctx(inp.usd_chg_60d_pct, "60d")},
+        {"name": "Z level", "value": _v(inp.z_usd_level, "{:+.2f}"), "context": _z_level_ctx()},
+        {"name": "Strength score", "value": _v(inp.usd_strength_score, "{:+.2f}"), "context": _strength_ctx()},
     ]
     from lox.regimes.trend import get_domain_trend
     trend = get_domain_trend("usd", regime.score, regime.label)

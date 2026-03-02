@@ -9,11 +9,15 @@ def test_fiscal_snapshot_regime_always_classifies_even_with_missing_inputs():
         long_duration_issuance_share=None,
         tga_z_d_4w=None,
     )
-    assert r.name in {"benign_funding", "heavy_funding", "stress_building", "fiscal_dominance_risk"}
-    assert r.label  # display label should be present
+    assert r.name in {
+        "fiscal_contraction", "moderate_fiscal_support",
+        "strong_fiscal_stimulus", "fiscal_dominance_risk",
+    }
+    assert r.label
 
 
-def test_fiscal_snapshot_regime_improving_flag_in_label():
+def test_fiscal_snapshot_regime_contracting_flag_in_label():
+    """Negative impulse → 'contracting' direction in MMT framing."""
     r = classify_fiscal_regime_skeleton(
         deficit_12m=1_600_000.0,
         gdp_millions=27_000_000.0,
@@ -21,30 +25,52 @@ def test_fiscal_snapshot_regime_improving_flag_in_label():
         long_duration_issuance_share=0.2,
         tga_z_d_4w=0.0,
     )
-    assert "improving" in (r.label or "").lower()
+    assert "contracting" in (r.label or "").lower()
 
 
-def test_fiscal_snapshot_regime_duration_tilt_escalates_to_stress_building():
+def test_fiscal_snapshot_regime_low_deficit_is_contraction():
+    """Low deficit (< 3% GDP) → fiscal contraction (private sector squeeze)."""
     r = classify_fiscal_regime_skeleton(
-        deficit_12m=1_600_000.0,
-        gdp_millions=27_000_000.0,
-        deficit_impulse_pct_gdp=0.0,
-        long_duration_issuance_share=0.6,
-        tga_z_d_4w=0.0,
-    )
-    assert r.name == "stress_building"
-
-
-def test_fiscal_snapshot_regime_weak_auctions_escalates_to_stress_building():
-    r = classify_fiscal_regime_skeleton(
-        deficit_12m=1_600_000.0,
-        gdp_millions=27_000_000.0,
+        deficit_12m=500_000.0,
+        gdp_millions=27_000_000.0,  # ~1.9% GDP
         deficit_impulse_pct_gdp=0.0,
         long_duration_issuance_share=0.2,
         tga_z_d_4w=0.0,
-        auction_tail_bps=6.0,
-        dealer_take_pct=40.0,
     )
-    assert r.name == "stress_building"
+    assert r.name == "fiscal_contraction"
 
 
+def test_fiscal_snapshot_regime_high_deficit_is_stimulus():
+    """High deficit (> 6% GDP) → strong fiscal stimulus."""
+    r = classify_fiscal_regime_skeleton(
+        deficit_12m=2_000_000.0,
+        gdp_millions=27_000_000.0,  # ~7.4% GDP
+        deficit_impulse_pct_gdp=0.0,
+        long_duration_issuance_share=0.2,
+        tga_z_d_4w=0.0,
+    )
+    assert r.name == "strong_fiscal_stimulus"
+
+
+def test_fiscal_snapshot_regime_tga_drain_escalates():
+    """TGA rising sharply drains reserves → escalates toward contraction."""
+    r = classify_fiscal_regime_skeleton(
+        deficit_12m=1_200_000.0,
+        gdp_millions=27_000_000.0,  # ~4.4% GDP → moderate
+        deficit_impulse_pct_gdp=0.0,
+        long_duration_issuance_share=0.2,
+        tga_z_d_4w=1.5,  # strong TGA drain
+    )
+    assert r.name == "fiscal_contraction"
+
+
+def test_fiscal_snapshot_regime_sharp_negative_impulse_overrides():
+    """Sharp negative impulse overrides even moderate deficit level."""
+    r = classify_fiscal_regime_skeleton(
+        deficit_12m=1_200_000.0,
+        gdp_millions=27_000_000.0,  # ~4.4% GDP → moderate
+        deficit_impulse_pct_gdp=-1.5,  # strong fiscal drag
+        long_duration_issuance_share=0.2,
+        tga_z_d_4w=0.0,
+    )
+    assert r.name == "fiscal_contraction"

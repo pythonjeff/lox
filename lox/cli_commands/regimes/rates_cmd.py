@@ -197,30 +197,85 @@ def _run_rates_snapshot(
             return "near zero — accommodative"
         return "negative — very accommodative"
 
+    def _level_ctx(val, label):
+        if not isinstance(val, (int, float)):
+            return label
+        v = float(val)
+        if v > 5.0:
+            return "very restrictive"
+        if v > 4.5:
+            return "restrictive territory"
+        if v > 4.0:
+            return "elevated"
+        if v > 3.0:
+            return "neutral range"
+        if v > 2.0:
+            return "accommodative"
+        return "very accommodative"
+
+    def _curve_z_ctx(z):
+        if not isinstance(z, (int, float)):
+            return "vs history"
+        v = float(z)
+        if v > 2.0:
+            return f"z={v:+.2f} — extreme steep vs history"
+        if v > 1.0:
+            return f"z={v:+.2f} — steeper than usual"
+        if v < -2.0:
+            return f"z={v:+.2f} — extreme inversion vs history"
+        if v < -1.0:
+            return f"z={v:+.2f} — flatter/inverted vs usual"
+        return f"z={v:+.2f} — normal range"
+
+    def _mom_z_ctx(z, chg):
+        if not isinstance(z, (int, float)):
+            return "vs history"
+        v = float(z)
+        direction = "selling off" if isinstance(chg, (int, float)) and chg > 0 else "rallying"
+        if abs(v) > 2.0:
+            return f"z={v:+.2f} — extreme {direction}"
+        if abs(v) > 1.0:
+            return f"z={v:+.2f} — notable {direction}"
+        return f"z={v:+.2f} — normal range"
+
+    def _real_chg_ctx():
+        chg = ri.real_yield_10y_chg_20d
+        if not isinstance(chg, (int, float)):
+            return "real rate movement"
+        if chg > 0.3:
+            return "tightening — real rates rising fast"
+        if chg > 0.1:
+            return "real rates drifting higher"
+        if chg < -0.3:
+            return "easing — real rates falling fast"
+        if chg < -0.1:
+            return "real rates drifting lower"
+        return "stable real rates"
+
     metrics = [
         # ── Curve Levels ──
         {"name": "─── Curve Levels ───", "value": "", "context": ""},
-        {"name": "3M", "value": _fmt_pct(ri.ust_3m), "context": "T-bill anchor"},
-        {"name": "2Y", "value": _fmt_pct(ri.ust_2y), "context": "Fed expectations"},
-        {"name": "5Y", "value": _fmt_pct(ri.ust_5y), "context": "belly"},
-        {"name": "10Y", "value": _fmt_pct(ri.ust_10y), "context": "benchmark"},
-        {"name": "30Y", "value": _fmt_pct(ri.ust_30y), "context": "long end"},
+        {"name": "3M", "value": _fmt_pct(ri.ust_3m), "context": _level_ctx(ri.ust_3m, "T-bill anchor")},
+        {"name": "2Y", "value": _fmt_pct(ri.ust_2y), "context": _level_ctx(ri.ust_2y, "Fed expectations")},
+        {"name": "5Y", "value": _fmt_pct(ri.ust_5y), "context": _level_ctx(ri.ust_5y, "belly")},
+        {"name": "10Y", "value": _fmt_pct(ri.ust_10y), "context": _level_ctx(ri.ust_10y, "benchmark")},
+        {"name": "30Y", "value": _fmt_pct(ri.ust_30y), "context": _level_ctx(ri.ust_30y, "long end")},
         # ── Curve Shape ──
         {"name": "─── Curve Shape ───", "value": "", "context": ""},
-        {"name": "2s10s", "value": _fmt_bps(ri.curve_2s10s), "context": f"z={_fmt_z(ri.z_curve_2s10s)}"},
-        {"name": "2s30s", "value": _fmt_bps(ri.curve_2s30s), "context": f"z={_fmt_z(ri.z_curve_2s30s)}"},
-        {"name": "5s30s", "value": _fmt_bps(ri.curve_5s30s), "context": "long-end steepness"},
+        {"name": "2s10s", "value": _fmt_bps(ri.curve_2s10s), "context": _curve_z_ctx(ri.z_curve_2s10s)},
+        {"name": "2s30s", "value": _fmt_bps(ri.curve_2s30s), "context": _curve_z_ctx(ri.z_curve_2s30s)},
+        {"name": "5s30s", "value": _fmt_bps(ri.curve_5s30s), "context": _curve_z_ctx(ri.z_curve_5s30s) if hasattr(ri, 'z_curve_5s30s') else "long-end steepness"},
         # ── Momentum ──
         {"name": "─── Momentum (20d) ───", "value": "", "context": ""},
-        {"name": "2Y Δ20d", "value": _fmt_chg(ri.ust_2y_chg_20d), "context": f"z={_fmt_z(ri.z_ust_2y_chg_20d)}"},
-        {"name": "10Y Δ20d", "value": _fmt_chg(ri.ust_10y_chg_20d), "context": f"z={_fmt_z(ri.z_ust_10y_chg_20d)}"},
-        {"name": "30Y Δ20d", "value": _fmt_chg(ri.ust_30y_chg_20d), "context": f"z={_fmt_z(ri.z_ust_30y_chg_20d)}"},
+        {"name": "2Y Δ20d", "value": _fmt_chg(ri.ust_2y_chg_20d), "context": _mom_z_ctx(ri.z_ust_2y_chg_20d, ri.ust_2y_chg_20d)},
+        {"name": "10Y Δ20d", "value": _fmt_chg(ri.ust_10y_chg_20d), "context": _mom_z_ctx(ri.z_ust_10y_chg_20d, ri.ust_10y_chg_20d)},
+        {"name": "30Y Δ20d", "value": _fmt_chg(ri.ust_30y_chg_20d), "context": _mom_z_ctx(ri.z_ust_30y_chg_20d, ri.ust_30y_chg_20d)},
         {"name": "Curve move", "value": curve_move or "—", "context": "front vs back end"},
         # ── Real Yields ──
         {"name": "─── Real Yields ───", "value": "", "context": ""},
         {"name": "10Y Real", "value": _fmt_pct(ri.real_yield_10y), "context": _real_ctx()},
         {"name": "10Y Breakeven", "value": _fmt_pct(ri.breakeven_10y), "context": _be_ctx()},
-        {"name": "Real Δ20d", "value": _fmt_chg(ri.real_yield_10y_chg_20d), "context": "real rate movement"},
+        {"name": "Real Δ20d", "value": _fmt_chg(ri.real_yield_10y_chg_20d), "context": _real_chg_ctx()},
     ]
 
     from lox.regimes.trend import get_domain_trend

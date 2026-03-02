@@ -438,6 +438,11 @@ EXTREME_REGIMES: Dict[str, Dict[str, Any]] = {
         "extreme_metrics": {"spread_corridor_bps": {"high": 5.0, "critical": 15.0}},
         "alert_color": "red",
     },
+    "credit": {
+        "extreme_regimes": ["Credit Stress", "Credit Crisis"],
+        "extreme_metrics": {"hy_oas": {"high": 500, "critical": 700}},
+        "alert_color": "red",
+    },
 }
 
 
@@ -743,16 +748,20 @@ TRADE_EXPRESSIONS: Dict[str, Dict[str, List[Dict[str, str]]]] = {
         ],
     },
     "fiscal": {
-        "benign_funding": [
-            {"direction": "Neutral", "ticker": "TLT", "rationale": "No supply pressure"},
+        "Strong Fiscal Stimulus": [
+            {"direction": "Long", "ticker": "SPY", "rationale": "NFA injection supports risk assets"},
+            {"direction": "Short", "ticker": "TLT", "rationale": "Supply pressure from issuance"},
         ],
-        "Heavy Funding": [
-            {"direction": "Short", "ticker": "TLT", "rationale": "Supply pressure on long end"},
-            {"direction": "Long", "ticker": "BIL", "rationale": "Front-end safety"},
+        "Moderate Fiscal Support": [
+            {"direction": "Neutral", "ticker": "TLT", "rationale": "Balanced NFA flow"},
         ],
-        "Auction Stress": [
-            {"direction": "Short", "ticker": "TLT", "rationale": "Duration supply overwhelm"},
-            {"direction": "Long", "ticker": "GLD", "rationale": "Fiscal credibility hedge"},
+        "Fiscal Contraction": [
+            {"direction": "Short", "ticker": "HYG", "rationale": "Private sector NFA squeeze"},
+            {"direction": "Long", "ticker": "TLT", "rationale": "Flight to quality on fiscal drag"},
+        ],
+        "Fiscal Drag": [
+            {"direction": "Short", "ticker": "HYG", "rationale": "Private surplus shrinking"},
+            {"direction": "Long", "ticker": "GLD", "rationale": "Hedge against fiscal contraction"},
         ],
     },
     "funding": {
@@ -827,6 +836,39 @@ TRADE_EXPRESSIONS: Dict[str, Dict[str, List[Dict[str, str]]]] = {
         "Scarcity": [
             {"direction": "Long", "ticker": "TLT", "rationale": "Flight to quality"},
             {"direction": "Short", "ticker": "HYG", "rationale": "Credit stress"},
+        ],
+    },
+    "credit": {
+        "Credit Calm": [
+            {"direction": "Short", "ticker": "HYG puts", "rationale": "Collect premium in low-vol spreads"},
+            {"direction": "Long", "ticker": "JNK", "rationale": "Carry trade — tight spreads, clip coupons"},
+            {"direction": "Long", "ticker": "HYG", "rationale": "High yield benefits from calm credit"},
+        ],
+        "Credit Euphoria": [
+            {"direction": "Long", "ticker": "HYG puts", "rationale": "Protection cheap, spreads unsustainably tight"},
+            {"direction": "Reduce", "ticker": "JNK", "rationale": "Carry/risk asymmetry unfavorable"},
+            {"direction": "Long", "ticker": "LQD", "rationale": "Rotate up in quality before widening"},
+        ],
+        "Credit Neutral": [
+            {"direction": "Neutral", "ticker": "HYG", "rationale": "No strong directional signal"},
+            {"direction": "Watch", "ticker": "CCC-BB spread", "rationale": "Monitor quality curve for direction"},
+        ],
+        "Credit Widening": [
+            {"direction": "Long", "ticker": "LQD", "rationale": "Quality rotation — IG over HY"},
+            {"direction": "Short", "ticker": "HYG", "rationale": "HY spreads widening, more downside"},
+            {"direction": "Long", "ticker": "TLT", "rationale": "Flight to safety as credit deteriorates"},
+        ],
+        "Credit Stress": [
+            {"direction": "Long", "ticker": "TLT", "rationale": "Flight to quality, rate cuts expected"},
+            {"direction": "Short", "ticker": "HYG", "rationale": "Credit stress accelerating"},
+            {"direction": "Long", "ticker": "SHY", "rationale": "Park cash in short duration"},
+            {"direction": "Long", "ticker": "XLF puts", "rationale": "Banks exposed to credit losses"},
+        ],
+        "Credit Crisis": [
+            {"direction": "Long", "ticker": "TLT", "rationale": "Maximum flight to quality"},
+            {"direction": "Short", "ticker": "HYG", "rationale": "Spreads blowing out"},
+            {"direction": "Long", "ticker": "GLD", "rationale": "Systemic risk hedge"},
+            {"direction": "Short", "ticker": "XLF", "rationale": "Bank balance sheets impaired"},
         ],
     },
 }
