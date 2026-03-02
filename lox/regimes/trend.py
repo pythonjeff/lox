@@ -16,7 +16,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# ── Trend direction labels ────────────────────────────────────────────────
+# ── Trend direction keys (internal) ───────────────────────────────────────
 TREND_DETERIORATING = "DETERIORATING"
 TREND_WEAKENING = "WEAKENING"
 TREND_STABLE = "STABLE"
@@ -39,6 +39,63 @@ TREND_COLORS = {
     TREND_IMPROVING: "green",
     TREND_STRENGTHENING: "bright_green",
 }
+
+# ── Domain-specific trend labels ──────────────────────────────────────────
+# Higher score = more stress in all domains.
+# "score falling" and "score rising" need different vocabulary per domain.
+#   key → {direction_key: display_label}
+DOMAIN_TREND_LABELS: dict[str, dict[str, str]] = {
+    "credit": {
+        TREND_DETERIORATING: "WIDENING",
+        TREND_WEAKENING:     "SOFTENING",
+        TREND_STABLE:        "STABLE",
+        TREND_IMPROVING:     "COMPRESSING",
+        TREND_STRENGTHENING: "TIGHTENING",
+    },
+    "volatility": {
+        TREND_DETERIORATING: "SPIKING",
+        TREND_WEAKENING:     "RISING",
+        TREND_STABLE:        "STABLE",
+        TREND_IMPROVING:     "FALLING",
+        TREND_STRENGTHENING: "CRUSHED",
+    },
+    "rates": {
+        TREND_DETERIORATING: "SURGING",
+        TREND_WEAKENING:     "RISING",
+        TREND_STABLE:        "STABLE",
+        TREND_IMPROVING:     "EASING",
+        TREND_STRENGTHENING: "PLUNGING",
+    },
+    "liquidity": {
+        TREND_DETERIORATING: "DRAINING",
+        TREND_WEAKENING:     "TIGHTENING",
+        TREND_STABLE:        "STABLE",
+        TREND_IMPROVING:     "EASING",
+        TREND_STRENGTHENING: "FLUSH",
+    },
+    "monetary": {
+        TREND_DETERIORATING: "HAWKISH",
+        TREND_WEAKENING:     "TIGHTENING",
+        TREND_STABLE:        "STABLE",
+        TREND_IMPROVING:     "EASING",
+        TREND_STRENGTHENING: "DOVISH",
+    },
+    "commodities": {
+        TREND_DETERIORATING: "SURGING",
+        TREND_WEAKENING:     "RISING",
+        TREND_STABLE:        "STABLE",
+        TREND_IMPROVING:     "EASING",
+        TREND_STRENGTHENING: "FALLING",
+    },
+    "usd": {
+        TREND_DETERIORATING: "WEAKENING",
+        TREND_WEAKENING:     "SOFTENING",
+        TREND_STABLE:        "STABLE",
+        TREND_IMPROVING:     "FIRMING",
+        TREND_STRENGTHENING: "SURGING",
+    },
+}
+# Domains not listed above use the generic labels.
 
 
 @dataclass(frozen=True)
@@ -68,6 +125,7 @@ class RegimeTrend:
 
     # Trend classification
     trend_direction: str = TREND_STABLE
+    trend_label: str = TREND_STABLE       # domain-aware display label
     trend_arrow: str = "—"
     trend_color: str = "dim"
 
@@ -94,6 +152,7 @@ class RegimeTrend:
             "current_score": self.current_score,
             "current_label": self.current_label,
             "trend_direction": self.trend_direction,
+            "trend_label": self.trend_label,
             "days_in_regime": self.days_in_regime,
         }
         if self.prev_label and self.prev_label != self.current_label:
@@ -262,6 +321,10 @@ def compute_regime_trend(
     if len(tail) >= 2:
         velocity_7d = _linear_slope(tail)
 
+    # Resolve domain-specific display label
+    domain_labels = DOMAIN_TREND_LABELS.get(domain, {})
+    _trend_label = domain_labels.get(trend_direction, trend_direction)
+
     return RegimeTrend(
         domain=domain,
         current_score=current_score,
@@ -274,6 +337,7 @@ def compute_regime_trend(
         score_chg_30d=score_chg_30d,
         momentum_z=momentum_z,
         trend_direction=trend_direction,
+        trend_label=_trend_label,
         trend_arrow=TREND_ARROWS[trend_direction],
         trend_color=TREND_COLORS[trend_direction],
         days_in_regime=days_in_regime,

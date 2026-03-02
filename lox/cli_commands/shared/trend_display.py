@@ -271,7 +271,7 @@ def render_trend_detail(
         prev_c = _score_color(trend.prev_score) if trend.prev_score is not None else "dim"
         prev_score_str = f"  [{prev_c}]{trend.prev_score:.0f}/100[/{prev_c}]" if trend.prev_score is not None else ""
         state_tbl.add_row("Previous", f"[{prev_c}]{trend.prev_label}[/{prev_c}]{prev_score_str}  [dim]({trend.prev_date})[/dim]")
-    state_tbl.add_row("Trend", f"[{trend.trend_color}]{trend.trend_arrow} {trend.trend_direction}[/{trend.trend_color}]")
+    state_tbl.add_row("Trend", f"[{trend.trend_color}]{trend.trend_arrow} {trend.trend_label}[/{trend.trend_color}]")
     state_tbl.add_row("Days in Regime", f"{trend.days_in_regime}d")
     parts.append(state_tbl)
     parts.append(Text(""))

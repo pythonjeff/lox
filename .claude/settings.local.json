@@ -3,7 +3,9 @@
     "allow": [
       "Bash(wc:*)",
       "Bash(grep:*)",
-      "Bash(python -c:*)"
+      "Bash(python -c:*)",
+      "Bash(git commit:*)",
+      "Bash(git add dashboard/static/dashboard.js dashboard/static/style.css dashboard/templates/dashboard.html dashboard/app.py)"
     ]
   }
 }

@@ -165,7 +165,7 @@ def _render_trend_line(parts: list, trend: Any) -> None:
     days_str = f"  [{tc}]{trend.days_in_regime}d in regime[/{tc}]"
 
     parts.append(Text.from_markup(
-        f"[{tc}]{arrow} {trend.trend_direction}[/{tc}]{prev_str}  {delta_str}{momo_str}{days_str}\n\n"
+        f"[{tc}]{arrow} {trend.trend_label}[/{tc}]{prev_str}  {delta_str}{momo_str}{days_str}\n\n"
     ))
 
 
