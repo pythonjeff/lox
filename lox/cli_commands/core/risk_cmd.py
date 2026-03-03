@@ -1,13 +1,15 @@
 """CLI command for the Portfolio Greeks Risk Dashboard.
 
 Displays consolidated portfolio-level Greeks (delta, gamma, theta, vega),
-per-underlying exposure decomposition, and position-level detail.
+per-underlying exposure decomposition, position-level detail, and
+theta breakeven analysis.
 
 Author: Lox Capital Research
 """
 from __future__ import annotations
 
 import json
+import math
 
 from rich.console import Console
 from rich.panel import Panel
@@ -220,6 +222,150 @@ def _show_risk_signals(console: Console, pg) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Theta breakeven analysis
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _show_theta_breakeven(console: Console, pg) -> None:
+    """Show theta breakeven analysis: how much does the market need to move to cover decay."""
+    # Skip if no theta (no options, or theta-neutral)
+    if pg.net_theta == 0:
+        return
+
+    # ── Per-underlying breakeven table ─────────────────────────────────
+    # Only show underlyings that have theta exposure
+    theta_underlyings = [u for u in pg.by_underlying if u.net_theta != 0]
+    if not theta_underlyings:
+        return
+
+    console.print()
+    table = RichTable(
+        title="Theta Breakeven by Underlying",
+        show_header=True,
+        header_style="bold yellow",
+        box=None,
+        padding=(0, 1),
+    )
+    table.add_column("Underlying", style="bold", min_width=6)
+    table.add_column("Price", justify="right")
+    table.add_column("θ/day", justify="right")
+    table.add_column("Δ B/E", justify="right")
+    table.add_column("Δ B/E %", justify="right")
+    table.add_column("γ Scalp %", justify="right")
+    table.add_column("Status")
+
+    for u in theta_underlyings:
+        price_str = f"${u.underlying_price:,.0f}" if u.underlying_price > 0 else "[dim]—[/dim]"
+        theta_str = _dollar(u.net_theta)
+        abs_delta = abs(u.net_delta)
+
+        # Delta breakeven: $ move needed to cover theta via delta P/L
+        if u.net_theta < 0 and abs_delta > 0:
+            be_dollar = abs(u.net_theta) / abs_delta
+            be_dollar_str = f"${be_dollar:.2f}"
+            if u.underlying_price > 0:
+                be_pct = be_dollar / u.underlying_price * 100
+                be_pct_str = f"{be_pct:.2f}%"
+            else:
+                be_pct_str = "[dim]—[/dim]"
+        elif u.net_theta >= 0:
+            be_dollar_str = "[green]earning[/green]"
+            be_pct_str = "[green]—[/green]"
+        else:
+            be_dollar_str = "[dim]—[/dim]"
+            be_pct_str = "[dim]—[/dim]"
+
+        # Gamma scalp breakeven: daily move where gamma P/L = theta cost
+        # P/L_gamma ≈ 0.5 × gamma × move² => move = sqrt(2 × |theta| / gamma)
+        if u.net_theta < 0 and u.net_gamma > 0 and u.underlying_price > 0:
+            gamma_be_move = math.sqrt(2 * abs(u.net_theta) / u.net_gamma)
+            gamma_be_pct = gamma_be_move / u.underlying_price * 100
+            gamma_be_str = f"{gamma_be_pct:.1f}%"
+        elif u.net_theta >= 0:
+            gamma_be_str = "[green]—[/green]"
+        else:
+            gamma_be_str = "[dim]n/a[/dim]"
+
+        # Status label
+        if u.net_theta > 0:
+            status = "[green]earning[/green]"
+        elif abs_delta == 0 and u.net_gamma <= 0:
+            status = "[red]pure bleed[/red]"
+        elif u.net_gamma > 0:
+            status = "[dim]long γ[/dim]"
+        else:
+            status = "[yellow]needs move[/yellow]"
+
+        table.add_row(
+            u.underlying, price_str, theta_str,
+            be_dollar_str, be_pct_str, gamma_be_str,
+            status,
+        )
+
+    console.print(table)
+
+    # ── Portfolio-level theta burn summary ─────────────────────────────
+    daily = pg.net_theta
+    weekly = daily * 5
+    monthly = daily * 21
+    annual = daily * 252
+
+    lines = []
+
+    # Time horizon projections
+    if daily < 0:
+        lines.append(f"  [b]Daily:[/b]     [red]{_dollar(daily)}[/red]")
+        lines.append(f"  [b]Weekly:[/b]    [red]{_dollar(weekly)}[/red]  [dim](5 trading days)[/dim]")
+        lines.append(f"  [b]Monthly:[/b]   [red]{_dollar(monthly)}[/red]  [dim](21 trading days)[/dim]")
+    else:
+        lines.append(f"  [b]Daily:[/b]     [green]{_dollar(daily)}[/green]")
+        lines.append(f"  [b]Weekly:[/b]    [green]{_dollar(weekly)}[/green]  [dim](5 trading days)[/dim]")
+        lines.append(f"  [b]Monthly:[/b]   [green]{_dollar(monthly)}[/green]  [dim](21 trading days)[/dim]")
+
+    # Theta as % of equity
+    if pg.account_equity > 0:
+        annual_pct = abs(annual) / pg.account_equity * 100
+        if daily < 0:
+            lines.append(f"  [b]Annual:[/b]    [red]{_dollar(annual)}[/red]  = [bold]{annual_pct:.0f}% of equity[/bold]")
+        else:
+            lines.append(f"  [b]Annual:[/b]    [green]{_dollar(annual)}[/green]  = [bold]{annual_pct:.0f}% of equity[/bold]")
+
+    lines.append("")
+
+    # Portfolio-level delta breakeven
+    if daily < 0 and abs(pg.net_delta) > 0:
+        portfolio_be = abs(daily) / abs(pg.net_delta)
+        direction = "in your favor" if pg.net_delta != 0 else ""
+        if pg.net_delta < 0:
+            direction = "↓ (your delta is short)"
+        else:
+            direction = "↑ (your delta is long)"
+        lines.append(
+            f"  [b]Delta breakeven:[/b] market needs to move "
+            f"[bold]${portfolio_be:.2f}/day[/bold] {direction}"
+        )
+
+    # Portfolio-level gamma scalp breakeven
+    if daily < 0 and pg.net_gamma > 0:
+        gamma_be = math.sqrt(2 * abs(daily) / pg.net_gamma)
+        lines.append(
+            f"  [b]Gamma scalp B/E:[/b] needs [bold]${gamma_be:.2f}[/bold] daily move "
+            f"for gamma P/L to cover theta"
+        )
+
+    # Days until 1% of equity is consumed by theta
+    if daily < 0 and pg.account_equity > 0:
+        one_pct = pg.account_equity * 0.01
+        days_to_1pct = one_pct / abs(daily)
+        lines.append(
+            f"  [b]1% equity burn:[/b] theta costs 1% of account every "
+            f"[bold]{days_to_1pct:.0f} trading days[/bold]"
+        )
+
+    console.print()
+    console.print(Panel.fit("\n".join(lines), title="Theta Burn Analysis", border_style="bold yellow"))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -257,5 +403,6 @@ def risk_dashboard(
     _show_underlying_exposure(console, pg)
     _show_position_detail(console, pg)
     _show_risk_signals(console, pg)
+    _show_theta_breakeven(console, pg)
 
     console.print()

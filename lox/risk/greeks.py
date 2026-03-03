@@ -59,6 +59,7 @@ class UnderlyingExposure:
     net_gamma: float
     net_theta: float
     net_vega: float
+    underlying_price: float = 0.0  # current price of the underlying stock
 
 
 @dataclass
@@ -100,6 +101,7 @@ class PortfolioGreeks:
                     "net_gamma": round(u.net_gamma, 4),
                     "net_theta": round(u.net_theta, 2),
                     "net_vega": round(u.net_vega, 2),
+                    "underlying_price": round(u.underlying_price, 2),
                 }
                 for u in self.by_underlying
             ],
@@ -328,6 +330,9 @@ def compute_portfolio_greeks(settings: Settings) -> PortfolioGreeks:
 
     # ── Aggregate by underlying ───────────────────────────────────────
     ul_map: dict[str, UnderlyingExposure] = {}
+    # Track underlying prices from equity positions
+    ul_prices: dict[str, float] = {}
+
     for pg in all_positions:
         ul = pg.underlying
         if ul not in ul_map:
@@ -344,6 +349,9 @@ def compute_portfolio_greeks(settings: Settings) -> PortfolioGreeks:
 
         if pg.position_type in ("equity", "short_equity"):
             exp.equity_delta += pg.delta
+            # Use equity position price as the underlying price
+            if pg.current_price > 0:
+                ul_prices[ul] = pg.current_price
         else:
             exp.options_delta += pg.delta
 
@@ -351,6 +359,22 @@ def compute_portfolio_greeks(settings: Settings) -> PortfolioGreeks:
         exp.net_gamma += pg.gamma
         exp.net_theta += pg.theta
         exp.net_vega += pg.vega
+
+    # Fetch underlying prices for option-only positions (no equity held)
+    missing_prices = [ul for ul in ul_map if ul not in ul_prices]
+    if missing_prices:
+        try:
+            from lox.data.quotes import fetch_stock_last_prices
+            fetched, _asof, _src = fetch_stock_last_prices(
+                settings=settings, symbols=missing_prices,
+            )
+            ul_prices.update(fetched)
+        except Exception as e:
+            logger.warning(f"Failed to fetch underlying prices: {e}")
+
+    # Assign underlying prices
+    for ul, exp in ul_map.items():
+        exp.underlying_price = ul_prices.get(ul, 0.0)
 
     by_underlying = sorted(
         ul_map.values(),
