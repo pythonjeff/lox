@@ -333,6 +333,17 @@ app.add_typer(nav_app, name="nav")
 weekly_app = typer.Typer(add_completion=False, help="Weekly reports")
 app.add_typer(weekly_app, name="weekly")
 
+# Risk dashboard
+@app.command("risk")
+def risk_cmd(
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh option chain data"),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+):
+    """Portfolio Greeks risk dashboard — net delta, gamma, theta, vega."""
+    from lox.cli_commands.core.risk_cmd import risk_dashboard
+    risk_dashboard(refresh=refresh, json_out=json_out)
+
+
 # Regimes (for drill-down)
 regime_app = typer.Typer(add_completion=False, help="Regime analysis")
 app.add_typer(regime_app, name="regime")

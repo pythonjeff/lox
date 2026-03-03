@@ -12,7 +12,10 @@
       "WebFetch(domain:levelup.gitconnected.com)",
       "WebFetch(domain:www.nb-data.com)",
       "WebFetch(domain:rando-brando.github.io)",
-      "WebFetch(domain:hexdocs.pm)"
+      "WebFetch(domain:hexdocs.pm)",
+      "Bash(find /Users/jeffreylarson/sites/ai-options-trader-starter/lox -type f -name \"*.py\" -exec grep -l \"delta\\\\|gamma\\\\|vega\\\\|theta\\\\|rho\\\\|Greeks\\\\|greek\\\\|option\" {} ;)",
+      "Bash(find /Users/jeffreylarson/sites/ai-options-trader-starter/lox -name \"*.py\" -type f -exec grep -l \"scenario\\\\|hedge\\\\|sizing\\\\|position_size\\\\|kelly\" {} ;)",
+      "Bash(find /Users/jeffreylarson/sites/ai-options-trader-starter/lox -type f -name \"*.py\" ! -path \"*/__pycache__/*\" ! -path \"*/.venv/*\" -exec grep -l \"portfolio\\\\|greek\\\\|delta\\\\|gamma\\\\|theta\\\\|vega\\\\|var\\\\|cvar\\\\|drawdown\\\\|exposure\\\\|hedge\" {} ;)"
     ]
   }
 }
