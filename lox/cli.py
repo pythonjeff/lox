@@ -424,6 +424,19 @@ def regime_commodities(
         show_book_impact(domain="commodities")
 
 
+@regime_app.command("oil")
+def regime_oil(
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
+    delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 1d, 7d, 1w)"),
+    alert: bool = typer.Option(False, "--alert", help="Only output if disruption is severe (for cron/monitoring)"),
+):
+    """Oil prices & Strait of Hormuz shipping traffic."""
+    from lox.cli_commands.regimes.oil_cmd import oil_snapshot
+    oil_snapshot(llm=llm, ticker=ticker, refresh=refresh, delta=delta, alert=alert)
+
+
 @regime_app.command("monetary")
 def regime_monetary(
     llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
