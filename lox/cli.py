@@ -553,6 +553,29 @@ def regime_positioning(
         show_book_impact(domain="positioning")
 
 
+@regime_app.command("earnings")
+def regime_earnings(
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh data downloads"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
+    delta: str = typer.Option("", "--delta", "-d", help="Show N-day delta (e.g. '7d', '30d')"),
+    features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+    sector: str = typer.Option("", "--sector", "-s", help="Drill into sector basket (e.g. Technology, Healthcare)"),
+):
+    """S&P 500 earnings regime (beat rate, revisions, surprise magnitude)."""
+    from lox.cli_commands.regimes.earnings_cmd import earnings_snapshot
+    earnings_snapshot(
+        llm=llm, ticker=ticker, refresh=refresh,
+        features=features, json_out=json_out, delta=delta,
+        sector=sector,
+    )
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="earnings")
+
+
 @regime_app.command("crypto")
 def regime_crypto(
     coins: str = typer.Option("BTC,ETH,SOL", "--coins", "-c", help="Comma-separated coins"),

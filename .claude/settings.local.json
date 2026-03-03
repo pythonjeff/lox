@@ -5,7 +5,14 @@
       "Bash(grep:*)",
       "Bash(python -c:*)",
       "Bash(git commit:*)",
-      "Bash(git add dashboard/static/dashboard.js dashboard/static/style.css dashboard/templates/dashboard.html dashboard/app.py)"
+      "Bash(git add dashboard/static/dashboard.js dashboard/static/style.css dashboard/templates/dashboard.html dashboard/app.py)",
+      "WebFetch(domain:site.financialmodelingprep.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:levelup.gitconnected.com)",
+      "WebFetch(domain:www.nb-data.com)",
+      "WebFetch(domain:rando-brando.github.io)",
+      "WebFetch(domain:hexdocs.pm)"
     ]
   }
 }

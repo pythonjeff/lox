@@ -96,13 +96,17 @@ REGIME_DOMAINS = [
     "monetary",
     "usd",
     "commodities",
+    "earnings",
 ]
 
 # Standard regime categories for cross-domain comparison
 REGIME_RISK_CATEGORIES = {
-    "risk_on": ["goldilocks", "normal_vol", "abundant_reserves", "strong_fiscal_stimulus", "neutral"],
-    "cautious": ["elevated", "moderate", "tightening", "moderate_fiscal_support", "inverted_curve"],
-    "risk_off": ["stagflation", "vol_shock", "funding_stress", "fiscal_dominance", "rates_shock"],
+    "risk_on": ["goldilocks", "normal_vol", "abundant_reserves", "strong_fiscal_stimulus", "neutral",
+                "earnings_boom", "earnings_expansion"],
+    "cautious": ["elevated", "moderate", "tightening", "moderate_fiscal_support", "inverted_curve",
+                 "earnings_steady", "earnings_slowdown"],
+    "risk_off": ["stagflation", "vol_shock", "funding_stress", "fiscal_dominance", "rates_shock",
+                 "earnings_contraction", "earnings_recession"],
 }
 
 

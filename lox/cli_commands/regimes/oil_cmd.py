@@ -50,6 +50,46 @@ def _trend_label(values: list[float], higher_is_worse: bool = True) -> str:
 # Oil data fetching
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _fetch_oil_live(settings) -> dict:
+    """
+    Fetch live WTI/Brent from FMP when available.
+    Uses CL=F/BZ=F (futures) or USO/BNO (ETFs) as proxies.
+    Returns {wti, brent, asof} or empty dict on failure.
+    """
+    if not getattr(settings, "FMP_API_KEY", None):
+        return {}
+    import requests
+    wti_syms = {"CL=F", "CLUSD", "USO"}
+    brent_syms = {"BZ=F", "BZUSD", "BNO"}
+    for symbols in [["CL=F", "BZ=F"], ["USO", "BNO"]]:
+        try:
+            url = "https://financialmodelingprep.com/api/v3/quote/" + ",".join(symbols)
+            resp = requests.get(url, params={"apikey": settings.FMP_API_KEY}, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            if not isinstance(data, list):
+                continue
+            out = {}
+            for item in data:
+                sym = (item.get("symbol") or "").upper()
+                price = item.get("price")
+                if price is not None:
+                    try:
+                        p = float(price)
+                        if sym in wti_syms:
+                            out["wti"] = p
+                        elif sym in brent_syms:
+                            out["brent"] = p
+                    except (ValueError, TypeError):
+                        pass
+            if out.get("wti") is not None:
+                out["asof"] = "live"
+                return out
+        except Exception:
+            continue
+    return {}
+
+
 def _fetch_oil_data(settings, refresh: bool = False) -> dict:
     """Fetch WTI and Brent crude data from FRED."""
     from lox.data.fred import FredClient
@@ -274,10 +314,12 @@ def _tanker_ctx(latest, avg_30d):
     if latest is None or avg_30d is None:
         return "tanker transits"
     ratio = latest / avg_30d if avg_30d > 0 else 1.0
-    if ratio < 0.6:
-        return "severe drop — potential blockade/disruption"
-    if ratio < 0.8:
-        return "below average — rerouting or slowdown?"
+    if ratio < 0.25:
+        return "[bold red]strait effectively shut — blockade[/bold red]"
+    if ratio < 0.5:
+        return "[red]severe drop — blockade/disruption[/red]"
+    if ratio < 0.7:
+        return "[red]below average — rerouting or slowdown[/red]"
     if ratio < 0.95:
         return "slightly below norm"
     if ratio < 1.05:
@@ -406,7 +448,13 @@ def _show_hormuz_panel(console, hz, disruption_details=None):
         if avg7 is None:
             continue
         baseline_val = b_tankers if "tanker" in col else None
-        ctx = _tanker_ctx(avg7, baseline_val or avg30) if "tanker" in col else ""
+        # Use Today for Signal when available — 7d avg lags acute events (e.g. invasion yesterday)
+        ref = baseline_val or avg30
+        if "tanker" in col and ref and ref > 0:
+            use_for_signal = latest if latest is not None else avg7
+            ctx = _tanker_ctx(use_for_signal, ref)
+        else:
+            ctx = ""
         st.add_row(
             label,
             f"{latest:.0f}" if latest is not None else "—",
@@ -634,6 +682,13 @@ def oil_snapshot(
 
     # ── Fetch oil data ────────────────────────────────────────────────────
     oil = _fetch_oil_data(settings, refresh=refresh)
+    live = _fetch_oil_live(settings)
+    if live.get("wti") is not None:
+        oil["wti"] = live["wti"]
+        oil["asof"] = "live"
+        if live.get("brent") is not None:
+            oil["brent"] = live["brent"]
+            oil["brent_wti_spread"] = live["brent"] - live["wti"]
 
     # ── Fetch Hormuz data ─────────────────────────────────────────────────
     console.print("[dim]Fetching Strait of Hormuz transit data from IMF PortWatch...[/dim]")

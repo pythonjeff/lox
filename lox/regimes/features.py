@@ -21,23 +21,24 @@ logger = logging.getLogger(__name__)
 
 # ── Regime weights for overall score (sum to 1.0) ────────────────────────
 REGIME_WEIGHTS = {
-    "Growth": 0.15,
+    "Growth": 0.13,
     "Inflation": 0.10,
     "Volatility": 0.15,
-    "Credit": 0.15,
+    "Credit": 0.13,
     "Rates": 0.10,
     "Funding": 0.05,
     "Fiscal": 0.05,
-    "Consumer": 0.10,
+    "Consumer": 0.08,
     "Monetary": 0.05,
     "USD": 0.03,
     "Commodities": 0.03,
     "Positioning": 0.04,
+    "Earnings": 0.06,
 }
 
 # ── 12 domain names (ordered for display) ────────────────────────────────
 CORE_DOMAINS = ["growth", "inflation", "volatility", "credit", "rates", "liquidity"]
-EXTENDED_DOMAINS = ["consumer", "fiscal", "usd", "commodities"]
+EXTENDED_DOMAINS = ["consumer", "fiscal", "usd", "commodities", "earnings"]
 ALL_DOMAINS = CORE_DOMAINS + EXTENDED_DOMAINS
 
 
@@ -58,11 +59,12 @@ class UnifiedRegimeState:
     rates: Optional[RegimeResult] = None
     liquidity: Optional[RegimeResult] = None
 
-    # Extended 4 (for overlay/context)
+    # Extended 5 (for overlay/context)
     consumer: Optional[RegimeResult] = None
     fiscal: Optional[RegimeResult] = None
     usd: Optional[RegimeResult] = None
     commodities: Optional[RegimeResult] = None
+    earnings: Optional[RegimeResult] = None
 
     # Aggregate risk assessment
     overall_risk_score: float = 50.0
@@ -951,6 +953,38 @@ def build_unified_regime_state(
             logger.warning(f"Failed to build commodities regime: {e}")
             return None
 
+    def _build_earnings():
+        try:
+            from lox.altdata.earnings_market import compute_earnings_regime_inputs
+            from lox.earnings.regime import classify_earnings_regime
+
+            inputs = compute_earnings_regime_inputs(settings=settings, refresh=refresh)
+            if inputs.get("error"):
+                logger.warning(f"Earnings data issue: {inputs['error']}")
+                return None
+
+            # v2: pass sector-level signals for 3-layer scoring
+            top = inputs.get("top_sectors") or []
+            worst = inputs.get("worst_sectors") or []
+            worst_br = worst[-1][1]["beat_rate"] if worst else None
+
+            result = classify_earnings_regime(
+                beat_rate=inputs["beat_rate"],
+                avg_surprise_pct=inputs["avg_surprise_pct"],
+                net_revision_ratio=inputs["net_revision_ratio"],
+                reporting_density=inputs["reporting_density"],
+                sector_dispersion=inputs.get("sector_dispersion"),
+                worst_sector_beat_rate=worst_br,
+                sectors_beating=inputs.get("sectors_beating"),
+                total_sectors_rated=inputs.get("total_sectors_rated"),
+                best_sector=top[0][0] if top else None,
+                worst_sector=worst[-1][0] if worst else None,
+            )
+            return result
+        except Exception as e:
+            logger.warning(f"Failed to build earnings regime: {e}")
+            return None
+
     # ── Submit all builders to thread pool ─────────────────────────────────
     builders = {
         "growth": _build_growth,
@@ -963,6 +997,7 @@ def build_unified_regime_state(
         "fiscal": _build_fiscal,
         "usd": _build_usd,
         "commodities": _build_commodities,
+        "earnings": _build_earnings,
     }
 
     with ThreadPoolExecutor(max_workers=10, thread_name_prefix="regime") as pool:

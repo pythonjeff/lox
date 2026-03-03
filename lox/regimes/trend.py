@@ -94,6 +94,13 @@ DOMAIN_TREND_LABELS: dict[str, dict[str, str]] = {
         TREND_IMPROVING:     "FIRMING",
         TREND_STRENGTHENING: "SURGING",
     },
+    "inflation": {
+        TREND_DETERIORATING: "ACCELERATING",
+        TREND_WEAKENING:     "RISING",
+        TREND_STABLE:        "STABLE",
+        TREND_IMPROVING:     "DECELERATING",
+        TREND_STRENGTHENING: "COOLING",
+    },
 }
 # Domains not listed above use the generic labels.
 
