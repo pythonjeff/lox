@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # ── Regime weights for overall score (sum to 1.0) ────────────────────────
 REGIME_WEIGHTS = {
     "Growth": 0.13,
-    "Inflation": 0.10,
+    "Inflation": 0.09,
     "Volatility": 0.15,
     "Credit": 0.13,
     "Rates": 0.10,
@@ -30,15 +30,16 @@ REGIME_WEIGHTS = {
     "Fiscal": 0.05,
     "Consumer": 0.08,
     "Monetary": 0.05,
-    "USD": 0.03,
-    "Commodities": 0.03,
+    "USD": 0.02,
+    "Commodities": 0.02,
     "Positioning": 0.04,
     "Earnings": 0.06,
+    "Policy": 0.03,
 }
 
 # ── 12 domain names (ordered for display) ────────────────────────────────
 CORE_DOMAINS = ["growth", "inflation", "volatility", "credit", "rates", "liquidity"]
-EXTENDED_DOMAINS = ["consumer", "fiscal", "usd", "commodities", "earnings"]
+EXTENDED_DOMAINS = ["consumer", "fiscal", "usd", "commodities", "earnings", "policy"]
 ALL_DOMAINS = CORE_DOMAINS + EXTENDED_DOMAINS
 
 
@@ -59,12 +60,13 @@ class UnifiedRegimeState:
     rates: Optional[RegimeResult] = None
     liquidity: Optional[RegimeResult] = None
 
-    # Extended 5 (for overlay/context)
+    # Extended 6 (for overlay/context)
     consumer: Optional[RegimeResult] = None
     fiscal: Optional[RegimeResult] = None
     usd: Optional[RegimeResult] = None
     commodities: Optional[RegimeResult] = None
     earnings: Optional[RegimeResult] = None
+    policy: Optional[RegimeResult] = None
 
     # Aggregate risk assessment
     overall_risk_score: float = 50.0
@@ -985,6 +987,45 @@ def build_unified_regime_state(
             logger.warning(f"Failed to build earnings regime: {e}")
             return None
 
+    def _build_policy():
+        try:
+            from lox.altdata.policy_market import compute_policy_inputs
+            from lox.policy.regime import classify_policy_regime
+
+            inputs = compute_policy_inputs(settings=settings, start_date=start_date, refresh=refresh)
+            if inputs.error:
+                logger.warning(f"Policy data issue: {inputs.error}")
+                return None
+
+            # Note: cross-regime scores (inflation, commodities, vol) are not
+            # available yet because they run in parallel. The CLI command
+            # fetches them from regime_history for Layer 3. Here we pass None
+            # so the classifier still produces a Layer-1 + Layer-2 score.
+            oil_disruption = None
+            try:
+                from lox.data.regime_history import get_score_series
+                oil_series = get_score_series("oil")
+                if oil_series:
+                    oil_disruption = oil_series[-1].get("score")
+            except Exception:
+                pass
+
+            return classify_policy_regime(
+                epu_level=inputs.epu_level,
+                epu_1y_percentile=inputs.epu_1y_percentile,
+                epu_30d_change=inputs.epu_30d_change,
+                news_article_count_7d=inputs.news_article_count_7d,
+                news_article_count_30d=inputs.news_article_count_30d,
+                import_price_yoy=inputs.import_price_yoy,
+                import_price_mom_accel=inputs.import_price_mom_accel,
+                vix_level=inputs.vix_level,
+                dxy_20d_chg=inputs.dxy_20d_chg,
+                oil_disruption_score=oil_disruption,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to build policy regime: {e}")
+            return None
+
     # ── Submit all builders to thread pool ─────────────────────────────────
     builders = {
         "growth": _build_growth,
@@ -998,6 +1039,7 @@ def build_unified_regime_state(
         "usd": _build_usd,
         "commodities": _build_commodities,
         "earnings": _build_earnings,
+        "policy": _build_policy,
     }
 
     with ThreadPoolExecutor(max_workers=10, thread_name_prefix="regime") as pool:

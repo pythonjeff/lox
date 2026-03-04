@@ -587,6 +587,31 @@ def regime_earnings(
         show_book_impact(domain="earnings")
 
 
+@regime_app.command("policy")
+def regime_policy(
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh data downloads"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
+    delta: str = typer.Option("", "--delta", "-d", help="Show N-day delta (e.g. '7d', '30d')"),
+    features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+    alert: bool = typer.Option(False, "--alert", help="Only output if regime is extreme (for cron/monitoring)"),
+    calendar: bool = typer.Option(False, "--calendar", help="Show upcoming events that could shift this regime"),
+    trades: bool = typer.Option(False, "--trades", help="Show quick trade expressions for current regime"),
+):
+    """Policy / geopolitical uncertainty regime (EPU, trade friction, news)."""
+    from lox.cli_commands.regimes.policy_cmd import policy_snapshot
+    policy_snapshot(
+        llm=llm, ticker=ticker, refresh=refresh,
+        features=features, json_out=json_out, delta=delta,
+        alert=alert, calendar=calendar, trades=trades,
+    )
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="policy")
+
+
 @regime_app.command("crypto")
 def regime_crypto(
     coins: str = typer.Option("BTC,ETH,SOL", "--coins", "-c", help="Comma-separated coins"),

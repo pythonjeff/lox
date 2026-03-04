@@ -337,42 +337,74 @@ def register_core(app: typer.Typer) -> None:
     @app.command("suggest")
     def suggest(
         count: int = typer.Option(5, "--count", "-n", help="Number of ideas"),
+        benchmark: str = typer.Option("SPY", "--benchmark", "-b", help="Benchmark for correlation (e.g. SPY)"),
+        no_correlation: bool = typer.Option(False, "--no-correlation", help="Skip correlation fetch (faster)"),
+        deep: bool = typer.Option(False, "--deep", help="Run per-candidate Monte Carlo (slower, ~15-20s)"),
     ):
         """
-        Trade ideas based on your actual positions and current regime.
+        Quant-level trade ideas: ticker + direction scored by playbook, scenarios & correlation.
 
-        Scans your portfolio for risks, then uses the regime state to
-        generate specific hedges, income plays, and directional ideas.
+        Scores candidates using regime-conditioned k-NN analog returns, active
+        macro scenarios, and correlation vs benchmark. Portfolio-aware: penalises
+        concentration and prefers diversifying exposure.
 
         Examples:
             lox suggest
-            lox suggest --count 3
+            lox suggest --deep --count 8
+            lox suggest --benchmark QQQ --count 5
         """
+        from rich.text import Text
+
+        _SPARK = "▁▂▃▄▅▆▇█"
+
+        def _mini_spark(values):
+            if not values or len(values) < 2:
+                return ""
+            lo, hi = min(values), max(values)
+            span = hi - lo if hi != lo else 1.0
+            return "".join(
+                _SPARK[min(len(_SPARK) - 1, int((v - lo) / span * (len(_SPARK) - 1)))]
+                for v in values[-20:]
+            )
+
         console = Console()
         settings = load_settings()
 
-        with console.status("[cyan]Loading positions & regime...[/cyan]"):
+        mode_label = "[bold magenta]DEEP[/bold magenta] " if deep else ""
+        with console.status(f"[cyan]{mode_label}Scoring candidates (playbook + scenarios + correlation)...[/cyan]"):
             trading, _ = make_clients(settings)
             positions = trading.get_all_positions()
-            acct = trading.get_account()
-            cash = _safe_float(getattr(acct, "cash", 0))
-            equity = _safe_float(getattr(acct, "equity", 0))
 
             try:
                 from lox.regimes import build_unified_regime_state
+                from lox.suggest import suggest_cross_asset
+
                 regime_state = build_unified_regime_state(settings=settings, start_date="2020-01-01")
                 overall = regime_state.overall_category
                 risk_score = regime_state.overall_risk_score
                 vol_label = regime_state.volatility.label if regime_state.volatility else "N/A"
                 credit_label = regime_state.credit.label if regime_state.credit else "N/A"
                 macro_quad = regime_state.macro_quadrant or "N/A"
+
+                scored = suggest_cross_asset(
+                    regime_state=regime_state,
+                    positions=positions,
+                    benchmark=benchmark,
+                    count=count,
+                    settings=settings,
+                    use_correlation=not no_correlation,
+                    deep=deep,
+                )
             except Exception as e:
-                console.print(f"[yellow]Regime data unavailable: {e}[/yellow]")
+                console.print(f"[yellow]Regime/suggest failed: {e}[/yellow]")
+                import traceback
+                traceback.print_exc()
                 overall = "UNKNOWN"
                 risk_score = 50
                 vol_label = "N/A"
                 credit_label = "N/A"
                 macro_quad = "N/A"
+                scored = []
 
         # Regime context banner
         risk_color = "red" if risk_score >= 60 else "yellow" if risk_score >= 45 else "green"
@@ -386,135 +418,114 @@ def register_core(app: typer.Typer) -> None:
             border_style="cyan",
         ))
 
-        # Parse positions into actionable data
-        pos_data = []
-        values = []
-        for p in positions:
-            sym = str(getattr(p, "symbol", ""))
-            mv = abs(_safe_float(getattr(p, "market_value", 0)))
-            values.append(mv)
-            pos_data.append({
-                "sym": sym,
-                "qty": _safe_float(getattr(p, "qty", 0)),
-                "mv": mv,
-                "pnl_pc": _safe_float(getattr(p, "unrealized_plpc", 0)),
-                "pnl": _safe_float(getattr(p, "unrealized_pl", 0)),
-                "entry": _safe_float(getattr(p, "avg_entry_price", 0)),
-                "current": _safe_float(getattr(p, "current_price", 0)),
-            })
+        if not scored:
+            console.print("[green]No macro-aligned ideas — portfolio may already cover regime.[/green]")
+            return
 
-        total_mv = sum(values) or 1.0
-        for p in pos_data:
-            p["weight"] = p["mv"] / total_mv
+        # Main conviction table
+        t = Table(title=f"Trade Ideas ({len(scored)})", show_header=True, expand=True)
+        t.add_column("#", style="dim", width=3, justify="right")
+        t.add_column("Dir", style="bold", width=6)
+        t.add_column("Ticker", style="bold", width=7)
+        t.add_column("Score", width=7, justify="right")
+        t.add_column("Conv", width=6)
+        t.add_column("E[R]", width=7, justify="right")
+        t.add_column("Hit%", width=6, justify="right")
+        t.add_column("VaR₅", width=7, justify="right")
+        t.add_column("Analogs", width=8, justify="right")
+        if deep:
+            t.add_column("MC Med", width=7, justify="right")
+        t.add_column("Thesis", ratio=1)
 
-        ideas = []
+        for i, s in enumerate(scored, 1):
+            dir_style = "[green]LONG[/green]" if s.direction == "LONG" else "[red]SHORT[/red]"
 
-        # ── HEDGES: based on actual risk exposure ─────────────────────
-        # Big losers: suggest cutting or hedging
-        big_losers = [p for p in pos_data if p["pnl_pc"] < -0.15]
-        for p in sorted(big_losers, key=lambda x: x["pnl_pc"])[:2]:
-            underlying = p["sym"].split(" ")[0] if " " in p["sym"] else p["sym"]
-            if p["pnl_pc"] < -0.30:
-                ideas.append({
-                    "type": "EXIT",
-                    "ticker": p["sym"],
-                    "action": f"Close position (down {p['pnl_pc']*100:.0f}%)",
-                    "rationale": f"Cut loss at ${abs(p['pnl']):,.0f}. Redeploy capital.",
-                })
+            # Score color
+            if s.composite_score >= 70:
+                sc_str = f"[bold green]{s.composite_score:.0f}[/bold green]"
+            elif s.composite_score >= 45:
+                sc_str = f"[yellow]{s.composite_score:.0f}[/yellow]"
             else:
-                ideas.append({
-                    "type": "HEDGE",
-                    "ticker": underlying,
-                    "action": f"Buy protective put or tighten stop",
-                    "rationale": f"Down {p['pnl_pc']*100:.0f}%, ${abs(p['pnl']):,.0f} at risk.",
-                })
+                sc_str = f"[dim]{s.composite_score:.0f}[/dim]"
 
-        # Concentrated positions: suggest trimming
-        concentrated = [p for p in pos_data if p["weight"] > 0.25]
-        for p in concentrated[:2]:
-            ideas.append({
-                "type": "TRIM",
-                "ticker": p["sym"],
-                "action": f"Reduce to <25% (currently {p['weight']*100:.0f}%)",
-                "rationale": "Concentration risk — single name > 25% of book.",
-            })
+            # Conviction badge
+            conv_map = {"HIGH": "[bold green]HIGH[/bold green]", "MEDIUM": "[yellow]MED[/yellow]", "LOW": "[dim]LOW[/dim]"}
+            conv_str = conv_map.get(s.conviction, s.conviction)
 
-        # High-risk regime: portfolio-level hedges
-        if risk_score >= 55:
-            ideas.append({
-                "type": "HEDGE",
-                "ticker": "SPY",
-                "action": "Buy put spread (e.g. 30-45 DTE, -5% strike)",
-                "rationale": f"Regime risk elevated ({risk_score:.0f}/100). Tail protection.",
-            })
+            # Expected return (negate for SHORT — profit when asset drops)
+            er = s.exp_return * 100
+            if s.direction == "SHORT":
+                er = -er
+            er_str = f"[green]+{er:.1f}%[/green]" if er > 0 else f"[red]{er:.1f}%[/red]" if er < 0 else "0.0%"
 
-        # ── INCOME: covered calls on winners ──────────────────────────
-        winners = [p for p in pos_data if p["pnl_pc"] > 0.10 and p["qty"] > 0]
-        for p in sorted(winners, key=lambda x: -x["pnl_pc"])[:2]:
-            underlying = p["sym"].split(" ")[0] if " " in p["sym"] else p["sym"]
-            if p["qty"] >= 100 or (p["qty"] >= 1 and " " not in p["sym"]):
-                ideas.append({
-                    "type": "INCOME",
-                    "ticker": underlying,
-                    "action": f"Sell covered call (up {p['pnl_pc']*100:.0f}%)",
-                    "rationale": f"Lock in gains, collect premium. P&L: ${p['pnl']:+,.0f}.",
-                })
+            # Hit rate
+            hr_str = f"{s.hit_rate * 100:.0f}%" if s.n_analogs > 0 else "—"
 
-        # ── DIRECTIONAL: regime-aware ─────────────────────────────────
-        if risk_score < 45:
-            ideas.append({
-                "type": "GROWTH",
-                "ticker": "QQQ" if "GROWTH" in macro_quad.upper() else "XLF",
-                "action": "Bull call spread or long shares",
-                "rationale": f"Low-risk regime ({risk_score:.0f}). Lean into momentum.",
-            })
-        elif "STAGFLATION" in macro_quad.upper() or "HOT" in macro_quad.upper():
-            ideas.append({
-                "type": "ROTATE",
-                "ticker": "XLE / GLD",
-                "action": "Rotate into real assets / commodities",
-                "rationale": f"Macro: {macro_quad}. Favor inflation beneficiaries.",
-            })
+            # VaR
+            var_val = s.var_5 * 100
+            var_str = f"[red]{var_val:.1f}%[/red]" if var_val < 0 else f"{var_val:.1f}%"
 
-        # Low cash warning
-        cash_pct = (cash / equity * 100) if equity > 0 else 0
-        if cash_pct < 10 and big_losers:
-            ideas.append({
-                "type": "FREE $",
-                "ticker": big_losers[0]["sym"],
-                "action": f"Close weakest position to raise cash",
-                "rationale": f"Cash at {cash_pct:.0f}%. Need dry powder to act on ideas above.",
-            })
+            # Analog count + confidence
+            if s.n_analogs >= 100:
+                an_str = f"[green]{s.n_analogs}[/green]"
+            elif s.n_analogs >= 50:
+                an_str = f"[yellow]{s.n_analogs}[/yellow]"
+            elif s.n_analogs > 0:
+                an_str = f"[dim]{s.n_analogs}[/dim]"
+            else:
+                an_str = "—"
 
-        # Render ideas table
-        if ideas:
-            t = Table(title=f"Trade Ideas ({len(ideas)})", show_header=True)
-            t.add_column("Type", style="bold cyan", width=8)
-            t.add_column("Ticker", style="bold", width=22)
-            t.add_column("Action", width=42)
-            t.add_column("Rationale", style="dim")
-            for idea in ideas[:count]:
-                type_style = {
-                    "EXIT": "[red]EXIT[/red]",
-                    "HEDGE": "[yellow]HEDGE[/yellow]",
-                    "TRIM": "[yellow]TRIM[/yellow]",
-                    "INCOME": "[green]INCOME[/green]",
-                    "GROWTH": "[cyan]GROWTH[/cyan]",
-                    "ROTATE": "[magenta]ROTATE[/magenta]",
-                    "FREE $": "[red]FREE $[/red]",
-                }.get(idea["type"], idea["type"])
-                t.add_row(
-                    type_style,
-                    idea["ticker"][:22],
-                    idea["action"],
-                    idea["rationale"][:60],
-                )
-            console.print(t)
-        else:
-            console.print("[green]Portfolio looks clean — no immediate action items.[/green]")
+            row = [str(i), dir_style, s.ticker, sc_str, conv_str, er_str, hr_str, var_str, an_str]
 
-        console.print(f"\n[dim]Run [bold]lox analyze[/bold] for full position breakdown, "
-                      f"[bold]lox regimes unified[/bold] for regime detail.[/dim]")
+            if deep:
+                if s.mc_median_return is not None:
+                    mc_val = s.mc_median_return * 100
+                    mc_str = f"[green]+{mc_val:.1f}%[/green]" if mc_val > 0 else f"[red]{mc_val:.1f}%[/red]"
+                else:
+                    mc_str = "—"
+                row.append(mc_str)
+
+            thesis_short = (s.thesis or "")[:55]
+            row.append(f"[dim]{thesis_short}[/dim]")
+
+            t.add_row(*row)
+
+        console.print(t)
+
+        # Score breakdown for top pick
+        top = scored[0]
+        console.print(Panel(
+            f"[bold]Playbook:[/bold] {top.playbook_score:.0f}  |  "
+            f"[bold]Scenario:[/bold] {top.scenario_score:.0f}  |  "
+            f"[bold]Correlation:[/bold] {top.correlation_score:.0f}"
+            + (f"  |  [bold]MC:[/bold] {top.mc_score:.0f}" if deep else "")
+            + f"\n[bold]Sharpe est:[/bold] {top.sharpe_est:.2f}  |  "
+            f"[bold]Source:[/bold] {top.source}",
+            title=f"Top Pick: {top.ticker} {top.direction}",
+            expand=False,
+            border_style="green" if top.conviction == "HIGH" else "yellow",
+        ))
+
+        # Active scenarios callout
+        try:
+            from lox.regimes.scenarios import evaluate_scenarios, SCENARIOS
+            active = evaluate_scenarios(regime_state, SCENARIOS) if 'regime_state' in dir() else []
+            if active:
+                lines = []
+                for s in active[:3]:
+                    lines.append(f"[bold]{s.name}[/bold] ({s.conviction}) — {s.conditions_met}/{s.conditions_total} conditions")
+                    lines.append(f"  [dim]Risk: {s.primary_risk[:70]}[/dim]")
+                console.print(Panel(
+                    "\n".join(lines),
+                    title="Active Macro Scenarios",
+                    expand=False,
+                    border_style="cyan",
+                ))
+        except Exception:
+            pass
+
+        mode_note = " [magenta]--deep[/magenta] MC overlay active" if deep else " Add [bold]--deep[/bold] for Monte Carlo overlay"
+        console.print(f"\n[dim]Benchmark: {benchmark} |{mode_note} | [bold]lox regime unified[/bold] for regime detail.[/dim]")
 
     @app.command("run")
     def run():
@@ -541,7 +552,7 @@ def register_core(app: typer.Typer) -> None:
         # Step 3: Trade ideas
         console.print()
         console.rule("[bold cyan]Trade Ideas[/bold cyan]")
-        suggest(count=5)
+        suggest(count=3)
 
         console.print()
         console.rule("[dim]End of briefing[/dim]")

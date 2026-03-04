@@ -11,7 +11,11 @@ from lox.rates.signals import build_rates_dataset
 from lox.usd.signals import build_usd_dataset
 from lox.volatility.signals import build_volatility_dataset
 from lox.housing.signals import build_housing_dataset
-from lox.solar.signals import build_solar_dataset
+
+try:
+    from lox.solar.signals import build_solar_dataset
+except ImportError:
+    build_solar_dataset = None
 
 
 def build_regime_feature_matrix(
@@ -35,7 +39,11 @@ def build_regime_feature_matrix(
     commod_df = build_commodities_dataset(settings=settings, start_date=start_date, refresh=refresh_fred)
     fiscal_df = build_fiscal_dataset(settings=settings, start_date=start_date, refresh=refresh_fred)
     housing_df = build_housing_dataset(settings=settings, start_date=start_date, refresh=refresh_fred)
-    solar_df = build_solar_dataset(settings=settings, start_date=start_date, refresh=refresh_fred)
+    solar_df = (
+        build_solar_dataset(settings=settings, start_date=start_date, refresh=refresh_fred)
+        if build_solar_dataset is not None
+        else pd.DataFrame({"date": macro_df["date"]})
+    )
 
     f = pd.DataFrame({"date": pd.to_datetime(macro_df["date"])})
     f["macro_disconnect_score"] = macro_df.get("DISCONNECT_SCORE")
