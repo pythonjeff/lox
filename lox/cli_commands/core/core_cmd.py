@@ -338,6 +338,7 @@ def register_core(app: typer.Typer) -> None:
     def suggest(
         count: int = typer.Option(5, "--count", "-n", help="Number of ideas"),
         benchmark: str = typer.Option("SPY", "--benchmark", "-b", help="Benchmark for correlation (e.g. SPY)"),
+        category: str = typer.Option("", "--category", "-c", help="Focus on one category: sectors, commodities, rates, credit, equity_indices, dollar, real_estate, volatility, crypto"),
         no_correlation: bool = typer.Option(False, "--no-correlation", help="Skip correlation fetch (faster)"),
         deep: bool = typer.Option(False, "--deep", help="Run per-candidate Monte Carlo (slower, ~15-20s)"),
     ):
@@ -348,9 +349,19 @@ def register_core(app: typer.Typer) -> None:
         macro scenarios, and correlation vs benchmark. Portfolio-aware: penalises
         concentration and prefers diversifying exposure.
 
+        Filter by asset class with -c:
+
+            lox suggest -c sectors        (sector ETFs only)
+            lox suggest -c commodities    (gold, oil, copper, ag, miners)
+            lox suggest -c dollar         (UUP, UDN, FX pairs)
+            lox suggest -c rates          (TLT, TIP, duration spectrum)
+            lox suggest -c credit         (HYG, LQD, EM debt, loans)
+            lox suggest -c crypto         (COIN, MARA, BITO, GBTC)
+
         Examples:
             lox suggest
-            lox suggest --deep --count 8
+            lox suggest -c sectors --count 8
+            lox suggest -c commodities --deep
             lox suggest --benchmark QQQ --count 5
         """
         from rich.text import Text
@@ -370,8 +381,23 @@ def register_core(app: typer.Typer) -> None:
         console = Console()
         settings = load_settings()
 
+        # Validate category (with fuzzy match for common typos)
+        from lox.suggest.cross_asset import VALID_CATEGORIES, UNIVERSE_BY_CATEGORY
+        cat = category.lower().strip()
+        if cat and cat not in UNIVERSE_BY_CATEGORY:
+            from difflib import get_close_matches
+            matches = get_close_matches(cat, VALID_CATEGORIES, n=1, cutoff=0.6)
+            if matches:
+                cat = matches[0]
+                console.print(f"[dim]Interpreted '{category}' as '{cat}'[/dim]")
+            else:
+                console.print(f"[red]Unknown category '{category}'.[/red]")
+                console.print(f"[dim]Valid categories: {', '.join(VALID_CATEGORIES)}[/dim]")
+                raise typer.Exit(1)
+
+        cat_label = f"[bold cyan]{cat}[/bold cyan] " if cat else ""
         mode_label = "[bold magenta]DEEP[/bold magenta] " if deep else ""
-        with console.status(f"[cyan]{mode_label}Scoring candidates (playbook + scenarios + correlation)...[/cyan]"):
+        with console.status(f"[cyan]{mode_label}{cat_label}Scoring candidates (playbook + scenarios + correlation)...[/cyan]"):
             trading, _ = make_clients(settings)
             positions = trading.get_all_positions()
 
@@ -386,7 +412,7 @@ def register_core(app: typer.Typer) -> None:
                 credit_label = regime_state.credit.label if regime_state.credit else "N/A"
                 macro_quad = regime_state.macro_quadrant or "N/A"
 
-                scored = suggest_cross_asset(
+                result = suggest_cross_asset(
                     regime_state=regime_state,
                     positions=positions,
                     benchmark=benchmark,
@@ -394,7 +420,11 @@ def register_core(app: typer.Typer) -> None:
                     settings=settings,
                     use_correlation=not no_correlation,
                     deep=deep,
+                    category=cat,
                 )
+                scored = result.scored
+                portfolio_impact = result.portfolio_impact
+                port_greeks = result.portfolio_greeks
             except Exception as e:
                 console.print(f"[yellow]Regime/suggest failed: {e}[/yellow]")
                 import traceback
@@ -405,14 +435,23 @@ def register_core(app: typer.Typer) -> None:
                 credit_label = "N/A"
                 macro_quad = "N/A"
                 scored = []
+                portfolio_impact = None
+                port_greeks = None
 
-        # Regime context banner
+        # Regime context banner — compact labels
         risk_color = "red" if risk_score >= 60 else "yellow" if risk_score >= 45 else "green"
+        vol_short = vol_label.replace("volatility", "vol").replace("(baseline)", "").strip()
+        vol_short = vol_short.split("(")[0].strip() if "(" in vol_short else vol_short
+        credit_short = credit_label.replace("Credit ", "").strip() if credit_label.startswith("Credit") else credit_label
+        macro_short = macro_quad.strip("— ").strip()
+        nav_str = ""
+        if port_greeks and getattr(port_greeks, "account_equity", 0):
+            nav_str = f"  |  [bold]NAV:[/bold] ${port_greeks.account_equity:,.0f}"
         console.print(Panel(
-            f"[bold]Regime:[/bold] {overall} ([{risk_color}]{risk_score:.0f}/100[/{risk_color}])\n"
-            f"[bold]Macro:[/bold] {macro_quad}  |  "
-            f"[bold]Vol:[/bold] {vol_label}  |  "
-            f"[bold]Credit:[/bold] {credit_label}",
+            f"[bold]Regime:[/bold] {overall.upper()} ([{risk_color}]{risk_score:.0f}/100[/{risk_color}])  |  "
+            f"[bold]Macro:[/bold] {macro_short}  |  "
+            f"[bold]Vol:[/bold] {vol_short}  |  "
+            f"[bold]Credit:[/bold] {credit_short}{nav_str}",
             title="Market Context",
             expand=False,
             border_style="cyan",
@@ -422,25 +461,28 @@ def register_core(app: typer.Typer) -> None:
             console.print("[green]No macro-aligned ideas — portfolio may already cover regime.[/green]")
             return
 
-        # Main conviction table
-        t = Table(title=f"Trade Ideas ({len(scored)})", show_header=True, expand=True)
+        has_sizing = any(s.pct_nav > 0 for s in scored)
+
+        # Main table — compact quant layout (thesis printed separately below)
+        title_cat = f" — {cat.title()}" if cat else ""
+        t = Table(title=f"Trade Ideas ({len(scored)}){title_cat}", show_header=True, expand=False, padding=(0, 1))
         t.add_column("#", style="dim", width=3, justify="right")
-        t.add_column("Dir", style="bold", width=6)
-        t.add_column("Ticker", style="bold", width=7)
-        t.add_column("Score", width=7, justify="right")
-        t.add_column("Conv", width=6)
-        t.add_column("E[R]", width=7, justify="right")
-        t.add_column("Hit%", width=6, justify="right")
-        t.add_column("VaR₅", width=7, justify="right")
-        t.add_column("Analogs", width=8, justify="right")
+        t.add_column("Ticker", style="bold", width=6)
+        t.add_column("Dir", width=5)
+        t.add_column("Score", width=5, justify="right")
+        t.add_column("E[R]", width=6, justify="right")
+        t.add_column("Hit%", width=4, justify="right")
+        t.add_column("VaR₅", width=6, justify="right")
+        t.add_column("Sharpe", width=6, justify="right")
         if deep:
-            t.add_column("MC Med", width=7, justify="right")
-        t.add_column("Thesis", ratio=1)
+            t.add_column("MC Med", width=6, justify="right")
+        if has_sizing:
+            t.add_column("Size%", width=5, justify="right")
 
         for i, s in enumerate(scored, 1):
             dir_style = "[green]LONG[/green]" if s.direction == "LONG" else "[red]SHORT[/red]"
 
-            # Score color
+            # Score with conviction color
             if s.composite_score >= 70:
                 sc_str = f"[bold green]{s.composite_score:.0f}[/bold green]"
             elif s.composite_score >= 45:
@@ -448,34 +490,25 @@ def register_core(app: typer.Typer) -> None:
             else:
                 sc_str = f"[dim]{s.composite_score:.0f}[/dim]"
 
-            # Conviction badge
-            conv_map = {"HIGH": "[bold green]HIGH[/bold green]", "MEDIUM": "[yellow]MED[/yellow]", "LOW": "[dim]LOW[/dim]"}
-            conv_str = conv_map.get(s.conviction, s.conviction)
-
-            # Expected return (negate for SHORT — profit when asset drops)
+            # Expected return
             er = s.exp_return * 100
             if s.direction == "SHORT":
                 er = -er
             er_str = f"[green]+{er:.1f}%[/green]" if er > 0 else f"[red]{er:.1f}%[/red]" if er < 0 else "0.0%"
 
-            # Hit rate
             hr_str = f"{s.hit_rate * 100:.0f}%" if s.n_analogs > 0 else "—"
 
-            # VaR
             var_val = s.var_5 * 100
             var_str = f"[red]{var_val:.1f}%[/red]" if var_val < 0 else f"{var_val:.1f}%"
 
-            # Analog count + confidence
-            if s.n_analogs >= 100:
-                an_str = f"[green]{s.n_analogs}[/green]"
-            elif s.n_analogs >= 50:
-                an_str = f"[yellow]{s.n_analogs}[/yellow]"
-            elif s.n_analogs > 0:
-                an_str = f"[dim]{s.n_analogs}[/dim]"
+            # Sharpe estimate
+            if s.sharpe_est and abs(s.sharpe_est) > 0:
+                sh_color = "green" if s.sharpe_est >= 1.0 else "yellow" if s.sharpe_est >= 0.5 else "dim"
+                sh_str = f"[{sh_color}]{s.sharpe_est:.2f}[/{sh_color}]"
             else:
-                an_str = "—"
+                sh_str = "—"
 
-            row = [str(i), dir_style, s.ticker, sc_str, conv_str, er_str, hr_str, var_str, an_str]
+            row = [str(i), s.ticker, dir_style, sc_str, er_str, hr_str, var_str, sh_str]
 
             if deep:
                 if s.mc_median_return is not None:
@@ -485,25 +518,59 @@ def register_core(app: typer.Typer) -> None:
                     mc_str = "—"
                 row.append(mc_str)
 
-            thesis_short = (s.thesis or "")[:55]
-            row.append(f"[dim]{thesis_short}[/dim]")
+            if has_sizing:
+                if s.pct_nav > 0:
+                    row.append(f"{s.pct_nav * 100:.1f}%")
+                else:
+                    row.append("—")
 
             t.add_row(*row)
 
         console.print(t)
 
-        # Score breakdown for top pick
+        # Thesis commentary + signal flags
+        console.print()
+        for i, s in enumerate(scored, 1):
+            dir_tag = "[green]▲[/green]" if s.direction == "LONG" else "[red]▼[/red]"
+            size_tag = f"  [cyan]{s.sizing_label}[/cyan]" if s.sizing_label else ""
+            console.print(f"  {dir_tag} [bold]{s.ticker}[/bold]{size_tag}  [dim]{s.thesis}[/dim]")
+            for flag in s.signal_flags:
+                console.print(f"      [yellow]⚠ {flag}[/yellow]")
+
+        # Portfolio Impact panel
+        if portfolio_impact and portfolio_impact.total_notional > 0:
+            console.print()
+            impact_lines = [
+                f"[bold]Notional:[/bold] ${portfolio_impact.total_notional:,.0f} ({portfolio_impact.total_pct_nav * 100:.1f}% NAV)",
+                f"[bold]Net Delta:[/bold] {portfolio_impact.current_net_delta:+,.0f} → {portfolio_impact.projected_net_delta:+,.0f}",
+                f"[bold]E[PnL] 20d:[/bold] ${portfolio_impact.blended_exp_pnl:+,.0f}",
+                f"[bold]Div VaR:[/bold] ${portfolio_impact.naive_diversified_var:,.0f}",
+            ]
+            console.print(Panel(
+                "  |  ".join(impact_lines),
+                title=f"Portfolio Impact ({portfolio_impact.n_ideas} ideas)",
+                expand=False,
+                border_style="cyan",
+            ))
+
+        # Top pick breakdown — compact
+        console.print()
         top = scored[0]
+        conv_color = "green" if top.conviction == "HIGH" else "yellow" if top.conviction == "MEDIUM" else "dim"
+        top_parts = [
+            f"[bold]Playbook:[/bold] {top.playbook_score:.0f}",
+            f"[bold]Scenario:[/bold] {top.scenario_score:.0f}",
+            f"[bold]Corr:[/bold] {top.correlation_score:.0f}",
+        ]
+        if deep:
+            top_parts.append(f"[bold]MC:[/bold] {top.mc_score:.0f}")
+        if top.sizing_label:
+            top_parts.append(f"[bold]Size:[/bold] {top.sizing_label} ({top.pct_nav * 100:.1f}%)")
         console.print(Panel(
-            f"[bold]Playbook:[/bold] {top.playbook_score:.0f}  |  "
-            f"[bold]Scenario:[/bold] {top.scenario_score:.0f}  |  "
-            f"[bold]Correlation:[/bold] {top.correlation_score:.0f}"
-            + (f"  |  [bold]MC:[/bold] {top.mc_score:.0f}" if deep else "")
-            + f"\n[bold]Sharpe est:[/bold] {top.sharpe_est:.2f}  |  "
-            f"[bold]Source:[/bold] {top.source}",
-            title=f"Top Pick: {top.ticker} {top.direction}",
+            "  |  ".join(top_parts),
+            title=f"Top Pick: [bold]{top.ticker}[/bold] {top.direction} [{conv_color}]{top.conviction}[/{conv_color}]",
             expand=False,
-            border_style="green" if top.conviction == "HIGH" else "yellow",
+            border_style=conv_color,
         ))
 
         # Active scenarios callout
@@ -514,7 +581,8 @@ def register_core(app: typer.Typer) -> None:
                 lines = []
                 for s in active[:3]:
                     lines.append(f"[bold]{s.name}[/bold] ({s.conviction}) — {s.conditions_met}/{s.conditions_total} conditions")
-                    lines.append(f"  [dim]Risk: {s.primary_risk[:70]}[/dim]")
+                    if s.primary_risk:
+                        lines.append(f"  [dim]{s.primary_risk[:72]}[/dim]")
                 console.print(Panel(
                     "\n".join(lines),
                     title="Active Macro Scenarios",
@@ -525,7 +593,10 @@ def register_core(app: typer.Typer) -> None:
             pass
 
         mode_note = " [magenta]--deep[/magenta] MC overlay active" if deep else " Add [bold]--deep[/bold] for Monte Carlo overlay"
-        console.print(f"\n[dim]Benchmark: {benchmark} |{mode_note} | [bold]lox regime unified[/bold] for regime detail.[/dim]")
+        cat_note = f" | Category: [bold]{cat}[/bold]" if cat else ""
+        console.print(f"\n[dim]Benchmark: {benchmark}{cat_note} |{mode_note}[/dim]")
+        if not cat:
+            console.print(f"[dim]Focus: [bold]-c[/bold] {' | '.join(VALID_CATEGORIES)}[/dim]")
 
     @app.command("run")
     def run():

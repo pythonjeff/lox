@@ -41,7 +41,7 @@ def register(app: typer.Typer) -> None:
     @app.command("ticker")
     def ticker_cmd(
         symbol: str = typer.Argument(..., help="Ticker symbol (e.g., AAPL, NVDA, SPY)"),
-        chart: bool = typer.Option(True, "--chart/--no-chart", help="Generate price chart"),
+        chart: bool = typer.Option(False, "--chart/--no-chart", help="Generate price chart"),
         llm: bool = typer.Option(False, "--llm/--no-llm", help="Include LLM analysis (off by default)"),
     ):
         """

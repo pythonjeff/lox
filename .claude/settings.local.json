@@ -22,7 +22,8 @@
       "Bash(lox regime policy)",
       "Bash(lox regime policy --features)",
       "Bash(lox regime unified)",
-      "Bash(lox research regimes --scenarios)"
+      "Bash(lox research regimes --scenarios)",
+      "Bash(python -m pytest tests/test_suggest_scoring.py -v)"
     ]
   }
 }

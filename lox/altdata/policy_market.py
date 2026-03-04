@@ -42,9 +42,11 @@ POLICY_NEWS_KEYWORDS: list[str] = [
     "section 301",
     "section 232",
     "trade deficit",
-    "USTR",
     "trade representative",
     "geopolitical",
+    "trade restriction",
+    "trade tension",
+    "customs duty",
 ]
 
 
@@ -227,12 +229,18 @@ def compute_policy_inputs(
             include_content=False,  # only need titles + metadata
         )
 
-        # Hard-filter: article must contain at least one policy keyword
-        kw_lower = [kw.lower() for kw in POLICY_NEWS_KEYWORDS]
+        # Hard-filter: article must contain at least one policy keyword.
+        # Use word-boundary matching to avoid false positives like
+        # "industries" matching "USTR" or "transaction" matching "sanction".
+        import re
+        kw_patterns = [
+            re.compile(r"\b" + re.escape(kw.lower()) + r"s?\b")
+            for kw in POLICY_NEWS_KEYWORDS
+        ]
         articles = []
         for a in raw_articles:
             text = f"{a.title} {a.snippet or ''}".lower()
-            if any(kw in text for kw in kw_lower):
+            if any(pat.search(text) for pat in kw_patterns):
                 articles.append(a)
 
         if articles:

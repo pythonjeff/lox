@@ -55,6 +55,28 @@ class ScoredCandidate:
     source: str = ""            # "scenario", "quadrant", "default"
     scenario_conviction: str = ""
 
+    # Position sizing (populated post-scoring by sizing.py)
+    realized_vol: float = 0.0
+    notional: float = 0.0
+    pct_nav: float = 0.0
+    exp_pnl: float = 0.0
+    sizing_label: str = ""
+
+    # Signal tension
+    signal_flags: list[str] = field(default_factory=list)
+
+    # Raw correlation for signal flag detection
+    raw_correlation: float | None = None
+
+
+@dataclass
+class SuggestResult:
+    """Full result from suggest_cross_asset including sizing and portfolio impact."""
+
+    scored: list[ScoredCandidate]
+    portfolio_greeks: object | None = None    # PortfolioGreeks
+    portfolio_impact: object | None = None    # PortfolioImpact
+
 
 def compute_composite_scores(
     *,
@@ -199,6 +221,7 @@ def compute_composite_scores(
             mc_var_5=mc_v5,
             source=cand.get("source", ""),
             scenario_conviction=sc_conviction,
+            raw_correlation=corr_val if ticker in correlation_scores else None,
         ))
 
     scored.sort(key=lambda x: x.composite_score, reverse=True)
