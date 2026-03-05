@@ -258,6 +258,39 @@ class UnifiedRegimeState:
                     params["rate_drift_adj"] += 0.005
                     params["spread_drift_adj"] += 0.002
 
+        # ── Trend / momentum adjustments ────────────────────────────────
+        # Fast-deteriorating pillars (high momentum_z) amplify vol/jump,
+        # fast-improving pillars provide a modest dampener.
+        # Only apply for key risk-leading pillars.
+        _trend_pillars = ["credit", "volatility", "liquidity", "growth"]
+        for domain in _trend_pillars:
+            trend = self.trends.get(domain)
+            if trend is None:
+                continue
+            mz = getattr(trend, "momentum_z", None)
+            if mz is None:
+                continue
+
+            if mz > 1.5:
+                # Fast deterioration — amplify vol and jump
+                vol_boost = min(1.0 + 0.04 * mz, 1.25)  # cap at +25%
+                jump_boost = min(1.0 + 0.06 * mz, 1.40)  # cap at +40%
+                params["equity_vol_adj"] *= vol_boost
+                params["jump_prob_adj"] *= jump_boost
+                drivers["equity_vol_adj"].append(
+                    f"{domain}.trend(z={mz:.1f}) +{(vol_boost - 1)*100:.0f}%"
+                )
+                drivers["jump_prob_adj"].append(
+                    f"{domain}.trend(z={mz:.1f}) +{(jump_boost - 1)*100:.0f}%"
+                )
+            elif mz < -1.5:
+                # Fast improvement — modest dampener
+                vol_damp = max(1.0 + 0.02 * mz, 0.90)   # cap at -10%
+                params["equity_vol_adj"] *= vol_damp
+                drivers["equity_vol_adj"].append(
+                    f"{domain}.trend(z={mz:.1f}) {(vol_damp - 1)*100:.0f}%"
+                )
+
         params["_drivers"] = drivers
         return params
 

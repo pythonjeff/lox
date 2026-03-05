@@ -39,6 +39,12 @@ class MCScore:
     p75_return: float        # upside scenario
     upside_ratio: float      # p75_return / abs(p25_return) — reward/risk
     realized_vol: float      # annualised historical vol
+    # Path-level risk metrics (from upgrade #1)
+    var_95: float = 0.0            # VaR at 95% confidence (%)
+    cvar_95: float = 0.0           # CVaR / expected shortfall (%)
+    max_drawdown_median: float = 0.0  # median max drawdown (%)
+    sortino: float = 0.0           # annualised Sortino ratio
+    prob_loss: float = 0.0         # probability of any loss (%)
 
 
 def score_candidates_mc(
@@ -142,6 +148,8 @@ def _run_mc_for_ticker(
     downside = abs(p25_ret) if p25_ret != 0 else 1e-9
     upside_ratio = upside / downside
 
+    risk = result.get("risk_metrics", {})
+
     return MCScore(
         ticker=ticker,
         current_price=current_price,
@@ -151,4 +159,9 @@ def _run_mc_for_ticker(
         p75_return=p75_ret,
         upside_ratio=upside_ratio,
         realized_vol=result.get("realized_vol_annual", 0.0),
+        var_95=risk.get("var_95", 0.0),
+        cvar_95=risk.get("cvar_95", 0.0),
+        max_drawdown_median=risk.get("max_drawdown_median", 0.0),
+        sortino=risk.get("sortino", 0.0),
+        prob_loss=risk.get("prob_loss", 0.0),
     )
