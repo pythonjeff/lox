@@ -307,59 +307,90 @@ def _build_pm_system_prompt(state, greeks, positions, account: dict) -> str:
     """Build CIO-grade system prompt with all data injected."""
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # Macro summary
+    # ── Macro: full pillar data with metrics ─────────────────────────
     macro_lines = []
+    movers = []  # pillars that moved >5pts in 7d
     if state:
         for display_name, domain_key in PM_PILLARS:
             regime = getattr(state, domain_key, None)
             if regime:
                 t = (state.trends or {}).get(domain_key)
-                delta_str = f"Δ7d {t.score_chg_7d:+.0f}" if t and t.score_chg_7d is not None else ""
+                chg7 = t.score_chg_7d if t and t.score_chg_7d is not None else 0
+                delta_str = f"Δ7d {chg7:+.0f}" if t and t.score_chg_7d is not None else ""
+                trend_str = f"trend={t.trend_direction}" if t else ""
                 metrics_str = ", ".join(f"{k}: {v}" for k, v in (regime.metrics or {}).items() if v is not None)
-                macro_lines.append(f"  {display_name}: {regime.score:.0f}/100 {regime.label} {delta_str}  [{metrics_str}]")
+                macro_lines.append(f"  {display_name}: {regime.score:.0f}/100 [{regime.label}] {delta_str} {trend_str}  |  {metrics_str}")
+                if abs(chg7) > 5:
+                    direction = "UP" if chg7 > 0 else "DOWN"
+                    movers.append(f"{display_name} moved {direction} {abs(chg7):.0f}pts → now {regime.score:.0f} ({regime.label})")
 
     macro_block = "\n".join(macro_lines) if macro_lines else "  Data unavailable"
+    movers_block = "\n  ".join(movers) if movers else "None"
 
-    # Scenarios
+    # ── Scenarios with full trade expressions ────────────────────────
     scenario_lines = []
     if state and state.active_scenarios:
         for s in state.active_scenarios:
-            trades_str = ", ".join(f"{t.direction} {t.ticker}" for t in s.trades[:2])
-            scenario_lines.append(f"  {s.conviction} {s.name} ({s.conditions_met}/{s.conditions_total}) → {trades_str}")
+            scenario_lines.append(f"  {s.conviction} CONVICTION: {s.name} ({s.conditions_met}/{s.conditions_total} conditions)")
+            scenario_lines.append(f"    Thesis: {s.thesis}")
+            for t in s.trades:
+                scenario_lines.append(f"    → {t.direction} {t.ticker} via {t.instrument} ({t.sizing_hint}) — {t.rationale}")
+            scenario_lines.append(f"    Primary risk: {s.primary_risk}")
     scenario_block = "\n".join(scenario_lines) if scenario_lines else "  None active"
 
-    # Portfolio
-    port_lines = []
+    # ── Portfolio: aggregates + per-underlying Greeks ─────────────────
     nav = account.get("equity", 0)
     pnl = account.get("pnl", 0)
     pnl_pct = account.get("pnl_pct", 0)
     cash_pct = account.get("cash_pct", 0)
-    port_lines.append(f"  NAV: ${nav:,.0f}  Fund P&L: ${pnl:+,.0f} ({pnl_pct:+.1f}%)  Cash: {cash_pct:.1f}%")
+
+    port_lines = [f"  NAV: ${nav:,.0f}  Fund P&L: ${pnl:+,.0f} ({pnl_pct:+.1f}%)  Cash: {cash_pct:.1f}%"]
 
     if greeks:
-        port_lines.append(f"  Greeks: Delta {greeks.net_delta:+.0f}  Gamma {greeks.net_gamma:+.2f}  Theta ${greeks.net_theta:+.0f}/day  Vega {greeks.net_vega:+.0f}")
+        port_lines.append(f"  Portfolio Greeks: Delta {greeks.net_delta:+.0f}  Gamma {greeks.net_gamma:+.2f}  Theta ${greeks.net_theta:+.0f}/day  Vega {greeks.net_vega:+.0f}")
+        theta_bp = abs(greeks.net_theta) / nav * 10000 if nav > 0 else 0
+        port_lines.append(f"  Theta burn: ${abs(greeks.net_theta):.0f}/day = {theta_bp:.0f}bp/day of NAV")
 
+        # Per-underlying exposure
+        if greeks.by_underlying:
+            port_lines.append("\n  Exposure by underlying:")
+            for u in greeks.by_underlying:
+                port_lines.append(
+                    f"    {u.underlying} (${u.underlying_price:,.2f}): "
+                    f"delta={u.net_delta:+.0f} gamma={u.net_gamma:+.2f} "
+                    f"theta=${u.net_theta:+.0f}/day vega={u.net_vega:+.0f}"
+                )
+
+    # Per-position detail
     if positions:
+        port_lines.append("\n  Positions:")
         for p in positions:
             sym = str(getattr(p, "symbol", ""))
             qty = _safe_float(getattr(p, "qty", 0))
             pnl_p = _safe_float(getattr(p, "unrealized_pl", 0))
             pnl_pc = _safe_float(getattr(p, "unrealized_plpc", 0)) * 100
             mv = _safe_float(getattr(p, "market_value", 0))
-            port_lines.append(f"  {sym}: qty={qty:+.1f} mv=${mv:,.0f} P&L=${pnl_p:+,.0f} ({pnl_pc:+.1f}%)")
+            cost = _safe_float(getattr(p, "avg_entry_price", 0))
+            current = _safe_float(getattr(p, "current_price", 0))
+            side = getattr(p, "side", "")
+            port_lines.append(
+                f"    {sym}: {side} qty={qty:+.1f} entry=${cost:.2f} now=${current:.2f} "
+                f"mv=${mv:,.0f} P&L=${pnl_p:+,.0f} ({pnl_pc:+.1f}%)"
+            )
 
     if greeks and greeks.risk_signals:
+        port_lines.append("\n  Risk signals:")
         for sig in greeks.risk_signals:
-            port_lines.append(f"  ⚠ {sig}")
+            port_lines.append(f"    ⚠ {sig}")
 
     portfolio_block = "\n".join(port_lines)
 
-    # Overall
+    # ── Overall ──────────────────────────────────────────────────────
     overall = ""
     if state:
         overall = f"Risk: {state.overall_risk_score:.0f}/100 ({state.overall_category.upper()})  Quadrant: {state.macro_quadrant}"
 
-    return f"""You are the CIO of a startup hedge fund delivering the PM morning note to your portfolio manager.
+    return f"""You are the CIO of a $1M startup hedge fund. This is the PM morning note. Your PM reads this before markets open and needs to know exactly what to DO today.
 Today: {today}
 
 ## Fund Overview
@@ -368,28 +399,44 @@ Today: {today}
 ## Macro Environment (10 pillars, 0-100 score, higher = more stress)
 {macro_block}
 
+## 7-Day Movers (pillars that moved >5 points)
+  {movers_block}
+
 ## Active Scenarios
 {scenario_block}
 
 ## Portfolio & Greeks
 {portfolio_block}
 
-## Your Instructions
-You are writing a dense, opinionated 2-3 paragraph morning briefing. This is not a summary — it's a BRIEF.
+## OUTPUT FORMAT — follow this EXACTLY
 
-RULES:
-- Lead with THE thing that matters most today. No preamble.
-- Cite exact numbers from the data: scores, deltas, P&L, Greeks. Don't paraphrase.
-- Reference specific positions by name. Say what to do with them.
-- State conviction: HIGH / MEDIUM / LOW.
-- Give 1-2 concrete trade ideas with entry logic tied to the regime data.
-- Flag the #1 risk to the book right now.
-- If theta burn is high relative to NAV, flag it.
-- If any pillar moved >5 points in 7 days, call it out.
-- Max 250 words. Dense. Every sentence earns its place.
-- End with what you're watching today (catalyst, data release, level).
-- NEVER use phrases like "it's important to note" or "investors should consider".
-- Take a side. Have a view. Be wrong sometimes — that's better than hedging every sentence."""
+**WHAT MOVED** (2-3 sentences)
+Name the biggest pillar movers in the last 7 days. Cite the exact score, delta, and the key metric driving it. Example: "Vol spiked +16 to 67 — VIX at 23.8 with contango flipping negative at -7.3%, meaning the term structure is inverted and hedges are getting expensive."
+
+**THE BOOK** (3-5 sentences)
+Go position by position through the book. For each position:
+- Is the current regime helping or hurting this position? Be specific.
+- What's the P&L and is the thesis still intact?
+- Give a VERB: hold, add, cut, roll, trail stop, take profit. No ambiguity.
+For puts: they PROFIT when the underlying drops. Stress regimes are TAILWINDS for puts.
+For calls: they PROFIT when the underlying rises. Risk-on regimes are TAILWINDS for calls.
+
+**ACTION** (2-3 sentences)
+1-2 new trade ideas tied to the regime data. Be specific: ticker, direction, instrument type, and WHY the regime setup supports it. Reference the scenario trade expressions if any are active.
+
+**RISK** (1 sentence)
+The single biggest risk to the book right now. What breaks the thesis.
+
+**WATCHING** (1 sentence)
+The specific catalyst, data release, or technical level you're watching today.
+
+## RULES
+- Cite EXACT numbers from the data. Not "elevated" — say "VIX at 23.8, z-score +1.4".
+- Every position in the book gets a verb. No position left unaddressed.
+- Theta burn: if >20bp/day of NAV, it's a problem. Flag it with the exact numbers.
+- Scenarios: if active, your trade ideas should align with or explicitly disagree with the scenario trades.
+- Max 350 words. No filler. No "it's worth noting" or "investors should consider".
+- Take a side. State conviction. Be wrong sometimes."""
 
 
 def _render_llm_briefing(console: Console, settings: Settings, state, greeks, positions, account: dict) -> None:
@@ -417,8 +464,8 @@ def _render_llm_briefing(console: Console, settings: Settings, state, greeks, po
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": "Deliver the PM morning note."},
             ],
-            temperature=0.4,
-            max_tokens=1000,
+            temperature=0.5,
+            max_tokens=1500,
             stream=True,
         )
 

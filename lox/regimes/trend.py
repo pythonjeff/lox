@@ -24,12 +24,13 @@ TREND_IMPROVING = "IMPROVING"
 TREND_STRENGTHENING = "STRENGTHENING"
 
 # Arrow/symbol mapping for compact display
+# Arrows track SCORE direction: score UP (more stress) = ▲, score DOWN (less stress) = ▼
 TREND_ARROWS = {
-    TREND_DETERIORATING: "▼▼",
-    TREND_WEAKENING: "▼",
+    TREND_DETERIORATING: "▲▲",
+    TREND_WEAKENING: "▲",
     TREND_STABLE: "—",
-    TREND_IMPROVING: "▲",
-    TREND_STRENGTHENING: "▲▲",
+    TREND_IMPROVING: "▼",
+    TREND_STRENGTHENING: "▼▼",
 }
 
 TREND_COLORS = {
