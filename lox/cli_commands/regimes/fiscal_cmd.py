@@ -635,51 +635,149 @@ def _run_fiscal_snapshot(
     pb_disp = f"{float(private_balance_pct_gdp):+.1f}%" if isinstance(private_balance_pct_gdp, (int, float)) else "n/a"
     pb_imp_disp = f"{float(private_balance_impulse):+.2f}%" if isinstance(private_balance_impulse, (int, float)) else "n/a"
 
+    # ── Compute directional changes ──────────────────────────────────────
+    def _chg_arrow(delta: float | None, *, invert: bool = False, units: str = "", fmt: str = "{:+.1f}") -> str:
+        """Color-coded change string. invert=True means rising is bad."""
+        if delta is None:
+            return ""
+        bad_up = invert
+        if abs(delta) < 0.01:
+            return "[dim]— flat[/dim]"
+        color = ("red" if delta > 0 else "green") if bad_up else ("green" if delta > 0 else "red")
+        arrow = "▲" if delta > 0 else "▼"
+        return f"[{color}]{arrow} {fmt.format(delta)}{units}[/{color}]"
+
+    # Deficit 30d change (in $B, positive = wider deficit = more NFA to private sector)
+    deficit_30d_chg = None
+    if d30 and isinstance(d30.get("deficit_12m"), (int, float)):
+        deficit_30d_chg = (deficit_12m - float(d30["deficit_12m"])) * 1_000_000 / 1e9  # → $B
+
+    # Deficit 1y change  
+    deficit_1y_chg = None
+    if d1y and isinstance(d1y.get("deficit_12m"), (int, float)):
+        deficit_1y_chg = (deficit_12m - float(d1y["deficit_12m"])) * 1_000_000 / 1e9
+
+    # Deficit % GDP change (30d)
+    deficit_pct_30d_chg = None
+    if (d30 and isinstance(d30.get("deficit_12m"), (int, float))
+            and isinstance(gdp_millions, (int, float)) and float(gdp_millions) != 0):
+        prev_pct = 100.0 * float(d30["deficit_12m"]) / float(gdp_millions)
+        deficit_pct_30d_chg = float(deficit_pct_gdp) - prev_pct if isinstance(deficit_pct_gdp, (int, float)) else None
+
+    # TGA 4w dollar change for display
+    tga_4w_val = tga.get("tga_d_4w") if tga else None
+    tga_13w_val = tga.get("tga_d_13w") if tga else None
+
+    # Short context labels (full explanation lives in --full mode)
+    def _pb_short(v):
+        if not isinstance(v, (int, float)): return ""
+        v = float(v)
+        if v <= -2: return "deep deficit — fragile"
+        if v <= 0: return "private deficit"
+        if v <= 3: return "modest surplus"
+        return "strong surplus"
+
+    def _deficit_short(v):
+        if not isinstance(v, (int, float)): return ""
+        v = float(v)
+        if v < 3: return "contractionary"
+        if v < 6: return "moderate NFA"
+        return "strong NFA"
+
+    def _impulse_short(v):
+        if not isinstance(v, (int, float)): return ""
+        v = float(v)
+        if v <= -1: return "sharp drag"
+        if v <= -0.25: return "shrinking"
+        if v <= 0.25: return "neutral"
+        if v <= 1: return "growing"
+        return "strong thrust"
+
+    def _tga_short(z):
+        if not isinstance(z, (int, float)): return ""
+        v = float(z)
+        if v <= -0.75: return "low → supportive"
+        if v >= 0.75: return "high → draining"
+        return "normal range"
+
     metrics = [
-        {"name": "─── Sectoral Balance ───", "value": "", "context": ""},
-        {"name": "Private balance", "value": pb_disp, "context": _private_balance_ctx(private_balance_pct_gdp)},
-        {"name": "Private impulse", "value": pb_imp_disp, "context": _private_impulse_ctx(private_balance_impulse)},
-        {"name": "─── Gov't Spending ───", "value": "", "context": ""},
-        {"name": "Deficit 12m", "value": disp, "context": "= private sector NFA flow"},
-        {"name": "Deficit (% GDP)", "value": deficit_pct_gdp_disp, "context": _deficit_level_ctx(float(deficit_pct_gdp)) if isinstance(deficit_pct_gdp, (int, float)) else "n/a"},
-        {"name": "Deficit impulse", "value": impulse_disp, "context": _deficit_impulse_ctx(float(impulse)) if isinstance(impulse, (int, float)) else "n/a"},
-        {"name": "Long issuance share", "value": long_share_disp, "context": _duration_share_ctx(float(long_share)) if isinstance(long_share, (int, float)) else "n/a"},
-        {"name": "─── Reserve Drain ───", "value": "", "context": ""},
-        {"name": "TGA level", "value": tga_level, "context": _tga_level_ctx(tga_z_level)},
-        {"name": "TGA (4w z-score)", "value": tga_z_disp, "context": _tga_z_ctx(float(tga_z)) if isinstance(tga_z, (int, float)) else "n/a"},
+        {"name": "── Sectoral Balance", "value": "", "context": ""},
+        {
+            "name": "Private balance",
+            "value": pb_disp,
+            "change": _chg_arrow(private_balance_impulse, invert=True, units="pp YoY"),
+            "context": _pb_short(private_balance_pct_gdp),
+        },
+        {"name": "── Gov't Spending", "value": "", "context": ""},
+        {
+            "name": "Deficit 12m",
+            "value": disp,
+            "change": _chg_arrow(deficit_30d_chg, invert=False, units="B 30d", fmt="{:+,.0f}") if deficit_30d_chg is not None else "",
+            "context": f"YoY Δ: {d_yoy}" if d_yoy and d_yoy != "n/a" else "",
+        },
+        {
+            "name": "Deficit (% GDP)",
+            "value": deficit_pct_gdp_disp,
+            "change": _chg_arrow(deficit_pct_30d_chg, invert=False, units="pp 30d") if deficit_pct_30d_chg is not None else "",
+            "context": _deficit_short(deficit_pct_gdp),
+        },
+        {
+            "name": "Impulse (% GDP)",
+            "value": impulse_disp,
+            "context": _impulse_short(impulse),
+        },
+        {
+            "name": "Long issuance",
+            "value": long_share_disp,
+            "context": "bill-heavy" if isinstance(long_share, (int, float)) and float(long_share) < 0.25 else
+                       "long-heavy → watch" if isinstance(long_share, (int, float)) and float(long_share) >= 0.40 else
+                       "balanced",
+        },
+        {"name": "── Reserve Drain", "value": "", "context": ""},
+        {
+            "name": "TGA level",
+            "value": tga_level,
+            "change": _chg_arrow(
+                float(tga_4w_val) * 1_000_000 / 1e9 if isinstance(tga_4w_val, (int, float)) else None,
+                invert=True, units="B 4w", fmt="{:+,.0f}",
+            ) if isinstance(tga_4w_val, (int, float)) else "",
+            "context": _tga_short(tga_z_level),
+        },
     ]
 
-    # Per-tenor auction quality (replaces misleading blended rows)
+    # Per-tenor auction quality — compact: one row per tenor bucket
+    metrics.append({"name": "── Auctions", "value": "", "context": ""})
     _tenor_labels = {"front": "2Y-5Y", "back": "7Y-30Y"}
+
+    def _auction_signal(tail, dealer, btc):
+        flags = 0
+        if isinstance(tail, (int, float)) and float(tail) >= 3: flags += 1
+        if isinstance(dealer, (int, float)) and float(dealer) >= 20: flags += 1
+        if isinstance(btc, (int, float)) and float(btc) < 2.3: flags += 1
+        if flags >= 2: return "[red]stress[/red]"
+        if flags == 1: return "[yellow]watch[/yellow]"
+        return "[green]ok[/green]"
+
     if by_tenor:
         for bucket in ("front", "back"):
             b = by_tenor.get(bucket, {})
             if not isinstance(b, dict) or not b.get("n"):
                 continue
             prefix = _tenor_labels.get(bucket, bucket)
-            n_auctions = b.get("n", 0)
             b_tail = b.get("tail_bps")
             b_dealer = b.get("dealer_take_pct")
             b_btc = b.get("btc")
+            sig = _auction_signal(b_tail, b_dealer, b_btc)
+            t_s = f"{float(b_tail):.1f}" if isinstance(b_tail, (int, float)) else "—"
+            d_s = f"{float(b_dealer):.0f}" if isinstance(b_dealer, (int, float)) else "—"
+            c_s = f"{float(b_btc):.1f}" if isinstance(b_btc, (int, float)) else "—"
             metrics.append({
-                "name": f"Tail ({prefix})",
-                "value": f"{float(b_tail):.1f}bp" if isinstance(b_tail, (int, float)) else "n/a",
-                "context": _auction_tail_ctx(b_tail) if isinstance(b_tail, (int, float)) else "n/a",
+                "name": prefix,
+                "value": f"{t_s}bp/{d_s}%/{c_s}x",
+                "context": sig,
             })
-            metrics.append({
-                "name": f"Dealer take ({prefix})",
-                "value": f"{float(b_dealer):.1f}%" if isinstance(b_dealer, (int, float)) else "n/a",
-                "context": _dealer_take_ctx(b_dealer) if isinstance(b_dealer, (int, float)) else "n/a",
-            })
-            if isinstance(b_btc, (int, float)):
-                metrics.append({
-                    "name": f"Bid/cover ({prefix})",
-                    "value": f"{float(b_btc):.2f}x",
-                    "context": _btc_ctx(b_btc),
-                })
     else:
-        metrics.append({"name": "Auction tail (all)", "value": tail_disp, "context": _auction_tail_ctx(tail_bps) if isinstance(tail_bps, (int, float)) else "n/a"})
-        metrics.append({"name": "Dealer take (all)", "value": dealer_disp, "context": _dealer_take_ctx(dealer_take) if isinstance(dealer_take, (int, float)) else "n/a"})
+        metrics.append({"name": "All tenors", "value": f"{tail_disp}/{dealer_disp}", "context": ""})
 
     # Append MC impact to description if available
     full_desc = fpi_desc

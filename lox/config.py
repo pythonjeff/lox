@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     FMP_API_KEY: str | None = None
     TRADING_ECONOMICS_API_KEY: str | None = None
     MASSIVE_API_KEY: str | None = None  # Polygon.io / Massive - options OI, volume, greeks
+    MARINETRAFFIC_API_KEY: str | None = None  # Optional: real-time AIS vessel tracking
 
     # Crypto perps
     CCXT_EXCHANGE: str = "okx"
@@ -84,6 +85,10 @@ class Settings(BaseSettings):
     @property
     def massive_api_key(self) -> str | None:
         return self.MASSIVE_API_KEY
+
+    @property
+    def marinetraffic_api_key(self) -> str | None:
+        return self.MARINETRAFFIC_API_KEY
 
     @property
     def price_source(self) -> str:

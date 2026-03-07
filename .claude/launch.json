@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "flask", "--app", "dashboard.app", "run", "--port", "5001"],
+      "port": 5001
+    }
+  ]
+}

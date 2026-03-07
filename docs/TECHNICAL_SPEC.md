@@ -52,25 +52,24 @@ This document provides operational and architectural documentation for technical
 ### Module Structure
 
 ```
-src/ai_options_trader/
+lox/
 ├── cli.py                    # Entry point, command registration
 ├── config.py                 # Settings and environment loading
 ├── cli_commands/             # CLI command implementations
-│   ├── dashboard_cmd.py      # Unified dashboard
-│   ├── monte_carlo_v01_cmd.py# Monte Carlo simulation
-│   ├── stress_cmd.py         # Stress testing
-│   └── ...                   # ~50 command modules
-├── portfolio/                # Portfolio management
-│   ├── positions.py          # Position and Portfolio classes
-│   ├── greeks.py             # Greek calculations
-│   ├── stress_test.py        # Stress test framework
-│   └── alpaca_adapter.py     # Alpaca → Portfolio conversion
-├── llm/                      # LLM and simulation
-│   ├── monte_carlo.py        # MC engine (v0)
-│   ├── monte_carlo_v01.py    # MC engine (v0.1, position-level)
-│   └── analyst.py            # LLM prompt construction
-├── regimes/                  # Regime classification
-│   └── core.py               # Base regime framework
+│   ├── core/                 # pm, status, account, nav, risk, weekly
+│   ├── regimes/              # vol, credit, rates, funding, growth, etc.
+│   ├── research/             # ticker, regimes, portfolio, scenario, chat
+│   └── shared/               # Shared display components
+├── risk/                     # Portfolio risk
+│   └── greeks.py             # Portfolio Greeks aggregation
+├── regimes/                  # Regime classification framework
+│   ├── features.py           # Unified regime state builder
+│   ├── scenarios.py          # Cross-regime macro scenarios
+│   └── trend.py              # Trend/momentum tracking
+├── scenarios/                # Monte Carlo scenario engine
+│   └── engine.py             # Block-bootstrap MC
+├── llm/                      # LLM analysis
+│   └── core/analyst.py       # Research briefs and synthesis
 ├── macro/                    # Macro pillar
 │   ├── models.py             # Data models
 │   └── regime.py             # Macro regime classifier
@@ -504,9 +503,9 @@ results = engine.generate_scenarios(n_scenarios=10000)
 
 ```bash
 # CLI tools
+lox pm
 lox status
-lox dashboard
-lox labs stress
+lox risk
 
 # Dashboard (local)
 cd dashboard
@@ -605,23 +604,13 @@ def api_regime_analysis_force():
 ### Top-Level Commands
 
 ```bash
+lox pm                        # PM Morning Report (macro + portfolio + LLM)
 lox status                    # Portfolio health
-lox dashboard                 # Unified regime dashboard
-lox account summary           # Account details
-
-lox options scan              # Options scanner
-lox options pick              # Best option selection
-lox ideas catalyst            # Event-driven ideas
-```
-
-### Labs Commands (Power User)
-
-```bash
-lox labs stress               # Stress testing
-lox labs mc-v01               # Monte Carlo simulation
-lox labs deep TICKER          # Deep dive analysis
-lox labs vol --llm            # Volatility regime + LLM
-lox labs rates snapshot --llm # Rates analysis + LLM
+lox risk                      # Greeks dashboard
+lox scan -t NVDA              # Options scanner
+lox research regimes          # Unified regime overview
+lox research ticker NVDA      # Deep ticker research
+lox research scenario SPY     # Monte Carlo macro shock sim
 ```
 
 ### Full Command List

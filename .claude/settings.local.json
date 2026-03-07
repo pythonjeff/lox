@@ -23,7 +23,11 @@
       "Bash(lox regime policy --features)",
       "Bash(lox regime unified)",
       "Bash(lox research regimes --scenarios)",
-      "Bash(python -m pytest tests/test_suggest_scoring.py -v)"
+      "Bash(python -m pytest tests/test_suggest_scoring.py -v)",
+      "Bash(git add data/nav_flows.csv data/nav_investor_flows.csv)",
+      "Bash(git push origin main)",
+      "Bash(git push heroku main)",
+      "Bash(done)"
     ]
   }
 }

@@ -2,6 +2,30 @@
 
 ---
 
+## v5 — CLI Consolidation + PM Morning Report (2026-03-06)
+
+### CLI Cleanup
+- **Removed** 12 unused CLI files and ~800 lines of dead code
+- **Removed commands**: `lox dashboard`, `lox analyze`, `lox suggest`, `lox run`, `lox regime macro`, `lox regime unified`
+- **Removed regime commands**: `lox regime commodities`, `lox regime usd`, `lox regime positioning`, `lox regime monetary`, `lox regime policy`, `lox regime crypto`
+- **Removed research commands**: `lox research cvna`, `lox research oi-scan`
+- **Moved** `invite-investor` and `create-admin` into `lox account` subgroup
+- Backend data modules (growth, inflation, commodities, usd, etc.) remain intact — only CLI surface removed
+
+### New: `lox pm` — PM Morning Report
+- Single command daily hedge fund briefing: `lox pm`
+- Parallel data fetch (regime state + Greeks + positions via ThreadPoolExecutor)
+- 4 sections: Macro Environment (10-pillar heatmap), Active Scenarios, Portfolio (NAV/Greeks/bleeders/winners/risk signals), LLM CIO Briefing
+- LLM on by default with streaming output; CIO-grade system prompt (dense, opinionated, 250 words max)
+- `--no-llm` for data-only mode, `--json` for machine-readable output
+- Graceful degradation if any data source fails
+
+### Documentation
+- Updated all docs to reflect current CLI structure
+- Removed references to deleted commands throughout
+
+---
+
 ## v4 — Regime Restructuring (2026-02-10)
 
 ### 12-Domain Regime System (up from 10)

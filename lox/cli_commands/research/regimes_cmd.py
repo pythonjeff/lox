@@ -295,7 +295,6 @@ def _show_regime_detail(console: Console, settings, state, pillar: str, include_
     pillar_aliases = {
         "growth": "growth",
         "inflation": "inflation",
-        "macro": "growth",
         "vol": "volatility",
         "volatility": "volatility",
         "credit": "credit",
@@ -304,8 +303,9 @@ def _show_regime_detail(console: Console, settings, state, pillar: str, include_
         "funding": "liquidity",
         "consumer": "consumer",
         "fiscal": "fiscal",
-        "usd": "usd",
-        "commodities": "commodities",
+        "earnings": "earnings",
+        "oil": "oil",
+        "commodities": "oil",
     }
 
     if pillar not in pillar_aliases:
@@ -343,12 +343,12 @@ def _show_regime_detail(console: Console, settings, state, pillar: str, include_
     elif domain == "fiscal":
         from lox.cli_commands.regimes.fiscal_cmd import fiscal_snapshot
         fiscal_snapshot(llm=include_llm, refresh=False)
-    elif domain == "usd":
-        from lox.cli_commands.regimes.usd_cmd import run_usd_snapshot
-        run_usd_snapshot(llm=include_llm, refresh=False)
-    elif domain == "commodities":
-        from lox.cli_commands.regimes.commodities_cmd import _run_commodities_snapshot
-        _run_commodities_snapshot(llm=include_llm, refresh=False)
+    elif domain == "earnings":
+        from lox.cli_commands.regimes.earnings_cmd import earnings_snapshot
+        earnings_snapshot(llm=include_llm, refresh=False)
+    elif domain == "oil":
+        from lox.cli_commands.regimes.oil_cmd import oil_snapshot
+        oil_snapshot(llm=include_llm, refresh=False)
 
 
 def _show_llm_commentary(console: Console, settings, state, book_impacts=None):

@@ -42,6 +42,16 @@ MACRO_FRED_MAP: dict[str, str] = {
     "gold": "GOLDAMGBD228NLBM",
 }
 
+# Yahoo Finance tickers for live prices (FRED lags 1-2 days for market data).
+# Used as primary source; FRED is the fallback.
+MACRO_YF_MAP: dict[str, str] = {
+    "oil": "CL=F",
+    "vix": "^VIX",
+    "10y": "^TNX",
+    "dxy": "DX-Y.NYB",
+    "gold": "GC=F",
+}
+
 MACRO_DISPLAY_NAMES: dict[str, str] = {
     "oil": "Oil (WTI)",
     "cpi": "CPI (YoY)",
@@ -152,6 +162,8 @@ class OptimalExitEstimate:
     qty: float
     entry_value: float      # current option price per contract ($)
     scenario_pnl: dict[str, float] = field(default_factory=dict)
+    scenario_peak_pnl: dict[str, float] = field(default_factory=dict)
+    scenario_worst_pnl: dict[str, float] = field(default_factory=dict)
     # Optimal exit stats (from full-path analysis)
     median_peak_pnl: float = 0.0
     p25_peak_pnl: float = 0.0
@@ -347,6 +359,29 @@ def estimate_optimal_exit(
         else:
             ever_profit = ever_double = ever_triple = np.zeros(n_paths, dtype=bool)
 
+        # Peak and worst P&L per scenario bucket: bucket paths by terminal price,
+        # then report the median of the best/worst exit within each bucket.
+        terminal_prices_sampled = sampled[:, -1]
+        scenario_peak_pnl: dict[str, float] = {}
+        scenario_worst_pnl: dict[str, float] = {}
+        worst_pnl_per_path = np.min(pnl_mat, axis=1)  # (n_paths,)
+        bucket_bounds = {
+            "BULL":      (scenarios["BASE"]["target"], float("inf")),
+            "BASE":      (scenarios["BEAR"]["target"], scenarios["BASE"]["target"]),
+            "BEAR":      (scenarios["TAIL_RISK"]["range"][1], scenarios["BEAR"]["target"]),
+            "TAIL_RISK": (0.0, scenarios["TAIL_RISK"]["range"][1]),
+        }
+        for key, (lo, hi) in bucket_bounds.items():
+            mask = (terminal_prices_sampled >= lo) & (terminal_prices_sampled < hi)
+            if key == "BULL":
+                mask = terminal_prices_sampled >= lo
+            if mask.any():
+                scenario_peak_pnl[key] = round(float(np.median(peak_pnl_per_path[mask])), 0)
+                scenario_worst_pnl[key] = round(float(np.median(worst_pnl_per_path[mask])), 0)
+            else:
+                scenario_peak_pnl[key] = scenario_pnl.get(key, 0)
+                scenario_worst_pnl[key] = scenario_pnl.get(key, 0)
+
         estimates.append(OptimalExitEstimate(
             display_name=pos["display_name"],
             opt_type=opt_type,
@@ -355,6 +390,8 @@ def estimate_optimal_exit(
             qty=qty,
             entry_value=entry_price,
             scenario_pnl=scenario_pnl,
+            scenario_peak_pnl=scenario_peak_pnl,
+            scenario_worst_pnl=scenario_worst_pnl,
             median_peak_pnl=round(float(np.median(peak_pnl_per_path)), 0),
             p25_peak_pnl=round(float(np.percentile(peak_pnl_per_path, 25)), 0),
             p75_peak_pnl=round(float(np.percentile(peak_pnl_per_path, 75)), 0),
@@ -385,13 +422,51 @@ def _compute_cpi_yoy(fred: FredClient) -> float | None:
 
 # ── Core engine ───────────────────────────────────────────────────────────
 
+def _fetch_yf_live(variables: list[str]) -> dict[str, float]:
+    """Try yfinance for live market prices. Returns what it can, silently."""
+    live: dict[str, float] = {}
+    yf_needed = {v: MACRO_YF_MAP[v] for v in variables if v in MACRO_YF_MAP}
+    if not yf_needed:
+        return live
+    try:
+        import yfinance as yf
+        tickers = list(yf_needed.values())
+        data = yf.download(tickers, period="1d", progress=False, threads=True)
+        if data.empty:
+            return live
+        for var, ticker in yf_needed.items():
+            try:
+                close = data["Close"]
+                # yfinance 1.2+ always returns multi-level columns (Price, Ticker)
+                if hasattr(close, "columns"):
+                    val = float(close[ticker].iloc[-1].item())
+                else:
+                    val = float(close.iloc[-1].item())
+                if val > 0:
+                    live[var] = val
+            except Exception:
+                continue
+    except Exception as exc:
+        logger.debug("yfinance live fetch failed: %s", exc)
+    return live
+
+
 def _fetch_current_values(
     fred: FredClient,
     variables: list[str],
 ) -> dict[str, float | None]:
-    """Fetch current values for requested macro variables from FRED."""
+    """Fetch current values: yfinance live first, then FRED as fallback."""
     values: dict[str, float | None] = {}
+
+    # Try yfinance for live market data (covers oil, vix, 10y, dxy, gold)
+    live = _fetch_yf_live(variables)
+    for var, price in live.items():
+        values[var] = price
+
     for var in variables:
+        if var in values:
+            continue
+
         if var == "cpi":
             values[var] = _compute_cpi_yoy(fred)
             continue
@@ -407,9 +482,6 @@ def _fetch_current_values(
                 values[var] = None
             else:
                 raw = float(df.iloc[-1]["value"])
-                # FRED reports spread series (HY OAS, etc.) in percentage
-                # points (e.g. 3.50 = 350bps). Convert to bps to match
-                # the user-facing unit.
                 if var == "hy_spread":
                     raw *= 100.0
                 values[var] = raw

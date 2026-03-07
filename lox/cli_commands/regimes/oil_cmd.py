@@ -2,7 +2,8 @@
 CLI command for the Oil & Energy Chokepoint regime.
 
 Deep-dive into crude oil prices (WTI, Brent), spreads, volatility,
-and Strait of Hormuz shipping traffic from IMF PortWatch.
+and multi-chokepoint shipping traffic from IMF PortWatch.
+Tracks Hormuz, Bab el-Mandeb, Suez, Malacca, Bosporus, and Cape of Good Hope.
 """
 from __future__ import annotations
 
@@ -157,83 +158,16 @@ def _fetch_oil_data(settings, refresh: bool = False) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Strait of Hormuz data fetching (IMF PortWatch ArcGIS API)
+# Multi-chokepoint shipping data (via lox.data.shipping)
 # ─────────────────────────────────────────────────────────────────────────────
 
-HORMUZ_PORTID = "chokepoint6"
-PORTWATCH_BASE = (
-    "https://services9.arcgis.com/weJ1QsnbMYJlCHdG/arcgis/rest/services/"
-    "Daily_Chokepoints_Data/FeatureServer/0/query"
-)
-
-
-def _fetch_hormuz_data(days: int = 120) -> dict | None:
-    """
-    Fetch Strait of Hormuz transit data from IMF PortWatch ArcGIS API.
-    Returns dict with DataFrame and summary stats, or None on failure.
-    """
-    import requests
-    import pandas as pd
-
-    try:
-        all_rows = []
-        # Fetch recent data in DESC order, paginate if needed
-        for offset in range(0, 2000, 1000):
-            resp = requests.get(
-                PORTWATCH_BASE,
-                params={
-                    "where": f"portid='{HORMUZ_PORTID}'",
-                    "outFields": "date,n_tanker,n_total,n_container,n_dry_bulk,"
-                                 "capacity_tanker,capacity,portname",
-                    "outSR": "4326",
-                    "f": "json",
-                    "resultRecordCount": "1000",
-                    "resultOffset": str(offset),
-                    "orderByFields": "date DESC",
-                },
-                timeout=15,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            if "error" in data:
-                break
-            features = data.get("features", [])
-            if not features:
-                break
-            all_rows.extend(f["attributes"] for f in features)
-            if len(features) < 1000:
-                break
-
-        if not all_rows:
-            return None
-
-        df = pd.DataFrame(all_rows)
-        df["date"] = pd.to_datetime(df["date"], unit="ms")
-        df = df.sort_values("date").reset_index(drop=True)
-
-        # Trim to requested window
-        cutoff = datetime.now() - timedelta(days=days)
-        df = df[df["date"] >= pd.Timestamp(cutoff)].reset_index(drop=True)
-        if df.empty:
-            return None
-
-        result = {"df": df, "asof": str(df["date"].iloc[-1].date())}
-
-        for col in ["n_tanker", "n_total", "capacity_tanker", "capacity"]:
-            if col in df.columns:
-                s = pd.to_numeric(df[col], errors="coerce").dropna()
-                if not s.empty:
-                    result[f"{col}_latest"] = float(s.iloc[-1])
-                    result[f"{col}_7d_avg"] = float(s.tail(7).mean())
-                    result[f"{col}_30d_avg"] = float(s.tail(30).mean())
-                    if len(s) >= 60:
-                        result[f"{col}_60d_avg"] = float(s.tail(60).mean())
-                    result[f"{col}_values"] = [float(v) for v in s.tail(90)]
-
-        return result
-    except Exception as e:
-        logger.warning("Failed to fetch Hormuz data: %s", e)
-        return None
+def _fetch_all_chokepoints(days: int = 365, marinetraffic_key: str | None = None):
+    """Fetch all oil-relevant chokepoints and compute composite disruption."""
+    from lox.data.shipping import fetch_oil_chokepoints, compute_composite_disruption, get_hormuz_compat
+    chokepoints = fetch_oil_chokepoints(days=days, marinetraffic_key=marinetraffic_key)
+    composite = compute_composite_disruption(chokepoints)
+    hz = get_hormuz_compat(chokepoints)
+    return chokepoints, composite, hz
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -369,207 +303,93 @@ def _show_oil_sparklines(console, oil):
             console.print(ln)
 
 
-def _show_hormuz_panel(console, hz, disruption_details=None):
-    """Show Strait of Hormuz shipping traffic dashboard."""
-    from rich.table import Table as RichTable
-
-    if hz is None:
-        console.print("\n[dim]─── Strait of Hormuz ──────────────────────────────────────────[/dim]")
-        console.print("  [yellow]IMF PortWatch data unavailable — check connectivity[/yellow]")
+def _show_chokepoint_sparklines(console, chokepoints):
+    """Compact chokepoint sparklines — just trends and stress flags."""
+    if not chokepoints:
+        console.print("  [yellow]PortWatch data unavailable[/yellow]")
         return
 
-    baseline_tankers = (disruption_details or {}).get("baseline_tankers")
+    for key in ["hormuz", "bab_el_mandeb", "suez", "malacca", "bosporus", "cape"]:
+        cd = chokepoints.get(key)
+        if cd is None:
+            continue
+        vals = cd.tanker_values_30d
+        if len(vals) < 10:
+            continue
 
-    console.print()
-    console.print("[dim]─── Strait of Hormuz (IMF PortWatch) ─────────────────────────[/dim]")
-    console.print(f"  [dim]AIS data as of: {hz.get('asof', '?')}[/dim]")
-
-    # Sparklines for tanker transits and total transits
-    for col, label in [("n_tanker", "Tankers"), ("n_total", "All Ships")]:
-        vals = hz.get(f"{col}_values", [])
-        if len(vals) >= 10:
-            avg_7 = hz.get(f"{col}_7d_avg", 0)
-            # Compare 7d avg vs pre-conflict baseline when available
-            if col == "n_tanker" and baseline_tankers and baseline_tankers > 0:
-                pct_vs = ((avg_7 / baseline_tankers) - 1) * 100
-                ref_label = "pre-conflict"
-            else:
-                avg_30 = hz.get(f"{col}_30d_avg", 0)
-                pct_vs = ((avg_7 / avg_30) - 1) * 100 if avg_30 > 0 else 0
-                ref_label = "30d avg"
-            color = "green" if pct_vs >= -5 else ("yellow" if pct_vs >= -20 else "red")
-            console.print(
-                f"  {label:<10} {_sparkline(vals[-30:])}  "
-                f"{avg_7:.0f}/day (7d)  "
-                f"[{color}]{pct_vs:+.0f}% vs {ref_label}[/{color}]"
-            )
-
-    # Capacity sparkline (tanker)
-    cap_vals = hz.get("capacity_tanker_values", [])
-    if len(cap_vals) >= 10:
-        avg_7_cap = hz.get("capacity_tanker_7d_avg", 0)
-        baseline_cap = (disruption_details or {}).get("baseline_cap")
-        if baseline_cap and baseline_cap > 0:
-            pct = ((avg_7_cap / baseline_cap) - 1) * 100
-            ref_label = "pre-conflict"
+        avg_7 = cd.avg_7d_tankers or 0
+        baseline = cd.baseline_tankers
+        if baseline and baseline > 0:
+            pct_vs = ((avg_7 / baseline) - 1) * 100
         else:
-            avg_30_cap = hz.get("capacity_tanker_30d_avg", 0)
-            pct = ((avg_7_cap / avg_30_cap) - 1) * 100 if avg_30_cap > 0 else 0
-            ref_label = "30d avg"
-        color = "green" if pct >= -5 else ("yellow" if pct >= -20 else "red")
+            avg_30 = cd.avg_30d_tankers or 0
+            pct_vs = ((avg_7 / avg_30) - 1) * 100 if avg_30 > 0 else 0
+        color = "green" if pct_vs >= -5 else ("yellow" if pct_vs >= -20 else "red")
+
+        flag = ""
+        if cd.disruption_score >= 30:
+            flag = f"  [bold red]⚠[/bold red]"
+        elif cd.disruption_score >= 15:
+            flag = f"  [yellow]![/yellow]"
+
         console.print(
-            f"  {'Tnkr Cap':<10} {_sparkline(cap_vals[-30:])}  "
-            f"{avg_7_cap/1e6:.1f}M DWT (7d)  "
-            f"[{color}]{pct:+.0f}% vs {ref_label}[/{color}]"
+            f"  {cd.short:<13} {_sparkline(vals)}  "
+            f"{avg_7:>3.0f}  [{color}]{pct_vs:+4.0f}%[/{color}]{flag}"
         )
 
-    # Stats table
-    st = RichTable(
-        title="Transit Summary",
-        show_header=True,
-        header_style="bold cyan",
-        box=None,
-        padding=(0, 1),
-    )
-    st.add_column("Metric", min_width=18)
-    st.add_column("Today", justify="right")
-    st.add_column("7d Avg", justify="right")
-    st.add_column("30d Avg", justify="right")
-    st.add_column("Baseline", justify="right")
-    st.add_column("Signal")
 
-    b_tankers = (disruption_details or {}).get("baseline_tankers")
-    b_cap = (disruption_details or {}).get("baseline_cap")
-
-    for col, label in [("n_tanker", "Tanker Transits"), ("n_total", "Total Transits")]:
-        latest = hz.get(f"{col}_latest")
-        avg7 = hz.get(f"{col}_7d_avg")
-        avg30 = hz.get(f"{col}_30d_avg")
-        if avg7 is None:
-            continue
-        baseline_val = b_tankers if "tanker" in col else None
-        # Use Today for Signal when available — 7d avg lags acute events (e.g. invasion yesterday)
-        ref = baseline_val or avg30
-        if "tanker" in col and ref and ref > 0:
-            use_for_signal = latest if latest is not None else avg7
-            ctx = _tanker_ctx(use_for_signal, ref)
-        else:
-            ctx = ""
-        st.add_row(
-            label,
-            f"{latest:.0f}" if latest is not None else "—",
-            f"{avg7:.0f}",
-            f"{avg30:.0f}" if avg30 is not None else "—",
-            f"{baseline_val:.0f}" if baseline_val is not None else "—",
-            ctx,
-        )
-
-    for col, label in [("capacity_tanker", "Tanker Capacity"), ("capacity", "Total Capacity")]:
-        latest = hz.get(f"{col}_latest")
-        avg7 = hz.get(f"{col}_7d_avg")
-        avg30 = hz.get(f"{col}_30d_avg")
-        if avg7 is None:
-            continue
-        baseline_c = b_cap if "tanker" in col else None
-        st.add_row(
-            label,
-            f"{latest/1e6:.1f}M" if latest is not None else "—",
-            f"{avg7/1e6:.1f}M",
-            f"{avg30/1e6:.1f}M" if avg30 is not None else "—",
-            f"{baseline_c/1e6:.1f}M" if baseline_c is not None else "—",
-            "",
-        )
-
-    console.print()
-    console.print(st)
-
-    # Disruption detection + trajectory (use 7d avg vs baseline, not single-day)
-    tanker_7d = hz.get("n_tanker_7d_avg", 0)
-    tanker_30d = hz.get("n_tanker_30d_avg", 0)
-    tanker_60d = hz.get("n_tanker_60d_avg")
-    baseline_t = (disruption_details or {}).get("baseline_tankers", 0)
-
-    ref_val = baseline_t if baseline_t > 0 else tanker_30d
-    if ref_val > 0 and tanker_7d > 0:
-        ratio_vs_baseline = tanker_7d / ref_val
-
-        if ratio_vs_baseline < 0.5:
-            console.print(f"  [bold red]⚠ SEVERE DISRUPTION: Tanker traffic at {ratio_vs_baseline*100:.0f}% of baseline — active blockade[/bold red]")
-        elif ratio_vs_baseline < 0.7:
-            console.print(f"  [red]⚠ DISRUPTION: Tanker traffic at {ratio_vs_baseline*100:.0f}% of baseline — significant rerouting[/red]")
-        elif ratio_vs_baseline < 0.85:
-            console.print(f"  [yellow]⚠ Below normal: Tanker traffic at {ratio_vs_baseline*100:.0f}% of baseline — supply constrained[/yellow]")
-
-        # Trajectory: 7d vs 30d vs 60d
-        trajectory = (disruption_details or {}).get("trajectory", "")
-        if trajectory == "worsening":
-            console.print("  [bold red]↘ WORSENING: 7d traffic declining — disruption escalating[/bold red]")
-            console.print("    [red]Oil upside risk: supply shortfall deepening → expect further price pressure[/red]")
-        elif trajectory == "recovering":
-            console.print("  [green]↗ RECOVERING: 7d traffic improving — disruption easing[/green]")
-            console.print("    [green]Oil risk: supply gradually returning → geopolitical premium may fade[/green]")
-        elif ratio_vs_baseline < 0.9:
-            console.print("  [yellow]→ PERSISTING: Traffic below baseline, no strong recovery yet[/yellow]")
-            console.print("    [yellow]Oil risk: sustained supply deficit → prices stay supported[/yellow]")
-
-
-def _show_oil_hormuz_cross(console, oil, hz):
-    """Cross-reference oil prices with Hormuz traffic."""
-    if hz is None or oil.get("wti") is None:
+def _show_signals(console, oil, chokepoints, composite):
+    """Show only actionable signals — skip anything neutral."""
+    if not chokepoints or oil.get("wti") is None:
         return
 
     lines: list[str] = []
-
-    tanker_latest = hz.get("n_tanker_latest", 0)
-    tanker_30d = hz.get("n_tanker_30d_avg", 0)
-    wti = oil["wti"]
     wti_30d_chg = oil.get("wti_30d_chg")
 
-    if tanker_30d > 0:
-        ratio = tanker_latest / tanker_30d
+    hz = chokepoints.get("hormuz")
+    if hz and hz.avg_7d_tankers and hz.baseline_tankers and hz.baseline_tankers > 0:
+        ratio = hz.avg_7d_tankers / hz.baseline_tankers
         if ratio < 0.8 and wti_30d_chg is not None and wti_30d_chg > 5:
-            lines.append(
-                "  Hormuz traffic ↓ + WTI ↑ → [red]supply disruption confirmed — geopolitical premium building[/red]"
-            )
+            lines.append("  Hormuz ↓ + WTI ↑ → [red]supply disruption confirmed[/red]")
         elif ratio < 0.8 and (wti_30d_chg is None or wti_30d_chg < 2):
-            lines.append(
-                "  Hormuz traffic ↓ but WTI flat → [yellow]rerouting absorbed, watch for delayed impact[/yellow]"
-            )
-        elif ratio > 1.1 and wti_30d_chg is not None and wti_30d_chg < -5:
-            lines.append(
-                "  Hormuz traffic ↑ + WTI ↓ → [green]supply flowing freely — demand weakness driving prices[/green]"
-            )
+            lines.append("  Hormuz ↓ but WTI flat → [yellow]rerouting absorbed[/yellow]")
 
-    # Cross-regime signals
+    bab = chokepoints.get("bab_el_mandeb")
+    suez = chokepoints.get("suez")
+    if bab and bab.disruption_score >= 15 and suez and suez.disruption_score >= 15:
+        lines.append(f"  Red Sea stressed: BaM {bab.disruption_score} + Suez {suez.disruption_score} → [yellow]shipping costs elevated[/yellow]")
+    elif bab and bab.disruption_score >= 30:
+        lines.append(f"  Bab el-Mandeb disrupted ({bab.disruption_score}) → [red]Red Sea risk[/red]")
+
+    if composite.rerouting_detected:
+        lines.append(f"  [yellow]⚡ Rerouting: Cape GH traffic up while Red Sea down[/yellow]")
+
+    disrupted_count = sum(1 for k, cd in chokepoints.items()
+                         if not cd.is_reroute_indicator and cd.disruption_score >= 15)
+    if disrupted_count >= 3:
+        lines.append(f"  [bold red]⚠ {disrupted_count} chokepoints disrupted — systemic supply risk[/bold red]")
+
     try:
         from lox.data.regime_history import get_score_series
         for domain, display in [("credit", "Credit"), ("volatility", "Vol"), ("growth", "Growth")]:
             series = get_score_series(domain)
             if not series:
                 continue
-            latest = series[-1]
-            sc = latest.get("score")
-            lb = latest.get("label", "")
+            sc = series[-1].get("score")
             if not isinstance(sc, (int, float)):
                 continue
-            short_lb = lb.split("(")[0].strip() if "(" in lb else lb
-
             if domain == "growth" and sc > 60 and wti_30d_chg is not None and wti_30d_chg < -10:
-                lines.append(f"  {display} score {sc:.0f} ({short_lb}) + WTI falling → [yellow]demand destruction — recessionary signal[/yellow]")
-            elif domain == "growth" and sc < 40 and wti_30d_chg is not None and wti_30d_chg > 10:
-                lines.append(f"  {display} score {sc:.0f} ({short_lb}) + WTI rising → [yellow]supply-driven — not demand pull[/yellow]")
-            elif domain == "volatility" and sc > 55:
-                lines.append(f"  {display} score {sc:.0f} ({short_lb}) — [yellow]elevated vol environment[/yellow]")
+                lines.append(f"  Growth {sc:.0f} + WTI falling → [yellow]demand destruction[/yellow]")
             elif domain == "credit" and sc > 55 and wti_30d_chg is not None and wti_30d_chg > 10:
-                lines.append(f"  {display} score {sc:.0f} ({short_lb}) + oil spike → [red]stagflationary setup[/red]")
-            else:
-                lines.append(f"  {display} score {sc:.0f} ({short_lb}) — [dim]neutral[/dim]")
+                lines.append(f"  Credit {sc:.0f} + oil spike → [red]stagflationary[/red]")
+            elif domain == "volatility" and sc > 55:
+                lines.append(f"  Vol elevated ({sc:.0f})")
     except Exception:
         pass
 
     if lines:
         console.print()
-        console.print("[dim]─── Cross-Regime Signals ──────────────────────────────────────[/dim]")
+        console.print("[dim]─── Signals ───────────────────────────────────────────────────[/dim]")
         for ln in lines:
             console.print(ln)
 
@@ -579,86 +399,20 @@ def _show_oil_hormuz_cross(console, oil, hz):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _compute_disruption_score(hz: dict | None) -> tuple[int, str, dict]:
-    """
-    Compute a 0-100 disruption severity score for Hormuz.
-    0 = normal flow, 100 = complete blockade.
-    Compares against pre-conflict baseline (oldest available data).
-    Returns (score, label, details).
-    """
+    """Legacy wrapper — kept for backward compatibility with snapshot delta logic."""
     details: dict = {}
     if hz is None:
         return 0, "Unknown", details
-
-    df = hz.get("df")
-    if df is None or df.empty:
-        return 0, "No data", details
-
-    import pandas as pd
-
-    tanker_s = pd.to_numeric(df["n_tanker"], errors="coerce").dropna()
-    cap_s = pd.to_numeric(df.get("capacity_tanker", pd.Series(dtype=float)), errors="coerce").dropna()
-
-    if len(tanker_s) < 14:
-        return 0, "Insufficient data", details
-
-    # Pre-conflict baseline: use oldest 30 days as proxy for normal levels
-    baseline_tankers = float(tanker_s.head(30).mean())
-    baseline_cap = float(cap_s.head(30).mean()) if len(cap_s) >= 30 else None
-
-    # Current state: 7d average (more stable than single day)
-    current_tankers = float(tanker_s.tail(7).mean())
-    current_cap = float(cap_s.tail(7).mean()) if len(cap_s) >= 7 else None
-
-    details["baseline_tankers"] = baseline_tankers
-    details["current_tankers_7d"] = current_tankers
-    details["baseline_cap"] = baseline_cap
-    details["current_cap_7d"] = current_cap
-
-    # Transit deficit vs baseline
-    transit_ratio = current_tankers / baseline_tankers if baseline_tankers > 0 else 1.0
-    transit_deficit = max(0, 1.0 - transit_ratio)
-    details["transit_pct_of_baseline"] = transit_ratio * 100
-
-    # Capacity deficit vs baseline
-    cap_deficit = 0.0
-    if baseline_cap and baseline_cap > 0 and current_cap:
-        cap_ratio = current_cap / baseline_cap
-        cap_deficit = max(0, 1.0 - cap_ratio)
-        details["cap_pct_of_baseline"] = cap_ratio * 100
-
-    # Weighted score
-    if baseline_cap and baseline_cap > 0:
-        raw = transit_deficit * 0.4 + cap_deficit * 0.6
-    else:
-        raw = transit_deficit
-    score = int(min(100, raw * 100))
-
-    # Trajectory: 7d vs 30d (is it getting better or worse?)
-    avg_30 = float(tanker_s.tail(30).mean())
-    if avg_30 > 0:
-        trajectory = (current_tankers - avg_30) / avg_30 * 100
-        details["trajectory_pct"] = trajectory
-        if trajectory > 10:
-            details["trajectory"] = "recovering"
-        elif trajectory < -10:
-            details["trajectory"] = "worsening"
-        else:
-            details["trajectory"] = "stable"
-
-    if score >= 70:
-        label = "Severe Disruption"
-    elif score >= 50:
-        label = "Major Disruption"
-    elif score >= 30:
-        label = "Moderate Disruption"
-    elif score >= 15:
-        label = "Mild Disruption"
-    elif score >= 5:
-        label = "Minor Disruption"
-    else:
-        label = "Normal Flow"
-
-    return score, label, details
+    # Extract from backward-compat hz dict (populated by get_hormuz_compat)
+    details["baseline_tankers"] = hz.get("_baseline_tankers")
+    details["current_tankers_7d"] = hz.get("n_tanker_7d_avg")
+    details["baseline_cap"] = hz.get("_baseline_cap")
+    details["current_cap_7d"] = hz.get("capacity_tanker_7d_avg")
+    tanker_7d = hz.get("n_tanker_7d_avg", 0)
+    baseline = hz.get("_baseline_tankers", 0)
+    if baseline and baseline > 0 and tanker_7d:
+        details["transit_pct_of_baseline"] = (tanker_7d / baseline) * 100
+    return hz.get("_disruption_score", 0), hz.get("_disruption_label", "Unknown"), details
 
 
 def oil_snapshot(
@@ -670,9 +424,8 @@ def oil_snapshot(
     alert: bool = False,
 ) -> None:
     """Entry point for `lox regime oil`."""
-    from rich.console import Console, Group
+    from rich.console import Console
     from rich.panel import Panel
-    from rich.table import Table as RichTable
     from rich.text import Text
     from lox.config import load_settings
     from lox.cli_commands.shared.labs_utils import save_snapshot
@@ -690,12 +443,33 @@ def oil_snapshot(
             oil["brent"] = live["brent"]
             oil["brent_wti_spread"] = live["brent"] - live["wti"]
 
-    # ── Fetch Hormuz data ─────────────────────────────────────────────────
-    console.print("[dim]Fetching Strait of Hormuz transit data from IMF PortWatch...[/dim]")
-    hz = _fetch_hormuz_data(days=365)
+    # ── Fetch all oil chokepoints ────────────────────────────────────────
+    mt_key = getattr(settings, "MARINETRAFFIC_API_KEY", None)
+    console.print("[dim]Fetching oil chokepoint transit data (Hormuz, Bab el-Mandeb, Suez, Malacca, Bosporus, Cape GH)...[/dim]")
+    chokepoints, composite, hz = _fetch_all_chokepoints(days=365, marinetraffic_key=mt_key)
 
-    # ── Disruption score ──────────────────────────────────────────────────
-    disruption_score, disruption_label, disruption_details = _compute_disruption_score(hz)
+    # Use composite score as the primary disruption metric
+    disruption_score = composite.score
+    disruption_label = composite.label
+
+    # Build backward-compat disruption_details from Hormuz data
+    hz_cd = chokepoints.get("hormuz")
+    disruption_details: dict = {}
+    if hz_cd:
+        disruption_details["baseline_tankers"] = hz_cd.baseline_tankers
+        disruption_details["current_tankers_7d"] = hz_cd.avg_7d_tankers
+        disruption_details["baseline_cap"] = hz_cd.baseline_cap_tanker
+        disruption_details["current_cap_7d"] = hz_cd.avg_7d_cap_tanker
+        if hz_cd.baseline_tankers and hz_cd.baseline_tankers > 0 and hz_cd.avg_7d_tankers:
+            disruption_details["transit_pct_of_baseline"] = (hz_cd.avg_7d_tankers / hz_cd.baseline_tankers) * 100
+        disruption_details["trajectory"] = hz_cd.trajectory
+        disruption_details["trajectory_pct"] = hz_cd.trajectory_pct
+        # Inject into hz dict for legacy compat
+        if hz:
+            hz["_baseline_tankers"] = hz_cd.baseline_tankers
+            hz["_baseline_cap"] = hz_cd.baseline_cap_tanker
+            hz["_disruption_score"] = hz_cd.disruption_score
+            hz["_disruption_label"] = hz_cd.disruption_label
 
     # ── Build snapshot for persistence ───────────────────────────────────
     snapshot_data = {
@@ -708,10 +482,16 @@ def oil_snapshot(
         "wti_1y_pctl": oil.get("wti_1y_pctl"),
         "disruption_score": disruption_score,
         "disruption_label": disruption_label,
+        "composite_disruption_score": composite.score,
+        "rerouting_detected": composite.rerouting_detected,
     }
+    for key in ["hormuz", "bab_el_mandeb", "suez", "malacca", "bosporus", "cape"]:
+        cd = chokepoints.get(key)
+        if cd:
+            snapshot_data[f"{key}_tanker_7d_avg"] = cd.avg_7d_tankers
+            snapshot_data[f"{key}_tanker_30d_avg"] = cd.avg_30d_tankers
+            snapshot_data[f"{key}_disruption_score"] = cd.disruption_score
     if hz:
-        snapshot_data["hormuz_tanker_7d_avg"] = hz.get("n_tanker_7d_avg")
-        snapshot_data["hormuz_tanker_30d_avg"] = hz.get("n_tanker_30d_avg")
         snapshot_data["hormuz_total_7d_avg"] = hz.get("n_total_7d_avg")
         snapshot_data["hormuz_cap_tanker_7d_avg"] = hz.get("capacity_tanker_7d_avg")
 
@@ -749,26 +529,10 @@ def oil_snapshot(
             console.print(f"\n[dim]No cached data from {delta_days}d ago. Run `lox regime oil` daily to build history.[/dim]")
         return
 
-    # ── Build main panel ──────────────────────────────────────────────────
+    # ── Build compact panel ─────────────────────────────────────────────
     wti = oil["wti"]
     brent = oil["brent"]
     spread = oil.get("brent_wti_spread")
-
-    def _v(x, fmt="{:.2f}"):
-        return fmt.format(x) if x is not None else "n/a"
-
-    def _chg(x, fmt="{:+.2f}"):
-        return fmt.format(x) if x is not None else "n/a"
-
-    # Headline
-    headline_parts = []
-    if wti is not None:
-        headline_parts.append(f"WTI ${wti:.2f}")
-    if brent is not None:
-        headline_parts.append(f"Brent ${brent:.2f}")
-    if spread is not None:
-        headline_parts.append(f"Spread ${spread:.2f}")
-    headline = " | ".join(headline_parts) if headline_parts else "No data"
 
     # Oil sentiment
     if wti is not None:
@@ -785,94 +549,75 @@ def oil_snapshot(
     else:
         sentiment = "[dim]Unknown[/dim]"
 
-    # Hormuz status (use disruption score)
-    hz_status = ""
-    if disruption_score >= 30:
-        hz_status = f" | [bold red]⚠ Hormuz DISRUPTED ({disruption_score}/100)[/bold red]"
-    elif disruption_score >= 15:
-        hz_status = f" | [yellow]Hormuz below normal ({disruption_score}/100)[/yellow]"
-    elif disruption_score >= 5:
-        hz_status = f" | [yellow]Hormuz minor disruption ({disruption_score}/100)[/yellow]"
-    elif hz is not None:
-        hz_status = " | [green]Hormuz normal flow[/green]"
+    # Price line
+    price_parts = []
+    if wti is not None:
+        chg_30 = oil.get("wti_30d_chg")
+        chg_str = f" ({chg_30:+.0f} 30d)" if chg_30 is not None else ""
+        price_parts.append(f"WTI ${wti:.2f}{chg_str}")
+    if brent is not None:
+        price_parts.append(f"Brent ${brent:.2f}")
+    if spread is not None:
+        price_parts.append(f"Sprd ${spread:.2f}")
+    price_line = " | ".join(price_parts) if price_parts else "No data"
 
-    metrics = RichTable(box=None, padding=(0, 2), show_header=True, header_style="dim")
-    metrics.add_column("Metric", min_width=22)
-    metrics.add_column("Value", justify="right", min_width=10)
-    metrics.add_column("Context", min_width=30)
+    # Context line
+    ctx_parts = [sentiment]
+    vol = oil.get("wti_vol_20d")
+    if vol is not None:
+        v_color = "red" if vol > 35 else ("yellow" if vol > 25 else "dim")
+        ctx_parts.append(f"[{v_color}]Vol {vol:.0f}%[/{v_color}]")
+    pctl = oil.get("wti_1y_pctl")
+    if pctl is not None:
+        ctx_parts.append(f"[dim]{pctl:.0f}th pctl[/dim]")
 
-    metrics.add_row("─── Crude Oil ───", "", "")
-    metrics.add_row("WTI Crude", f"${_v(wti)}", _wti_ctx(wti))
-    metrics.add_row("Brent Crude", f"${_v(brent)}", _brent_ctx(brent))
-    metrics.add_row("Brent-WTI Spread", f"${_v(spread)}", _spread_ctx(spread))
-
-    metrics.add_row("─── Velocity ───", "", "")
-    metrics.add_row("WTI 5d", f"${_chg(oil.get('wti_5d_chg'))}", "5-day change")
-    metrics.add_row("WTI 30d", f"${_chg(oil.get('wti_30d_chg'))}", "30-day change")
-    metrics.add_row("WTI 90d", f"${_chg(oil.get('wti_90d_chg'))}", "90-day change")
-
-    metrics.add_row("─── Risk ───", "", "")
-    metrics.add_row("WTI Vol (20d ann.)", f"{_v(oil.get('wti_vol_20d'), '{:.0f}')}%", _vol_ctx(oil.get("wti_vol_20d")))
-    metrics.add_row("Brent Vol (20d ann.)", f"{_v(oil.get('brent_vol_20d'), '{:.0f}')}%", _vol_ctx(oil.get("brent_vol_20d")))
-    if oil.get("wti_1y_pctl") is not None:
-        metrics.add_row("WTI 1Y Percentile", f"{oil['wti_1y_pctl']:.0f}th", _pctl_ctx(oil["wti_1y_pctl"]))
-    if oil.get("wti_1y_high") is not None and oil.get("wti_1y_low") is not None:
-        metrics.add_row("WTI 1Y Range", f"${oil['wti_1y_low']:.0f}–${oil['wti_1y_high']:.0f}", f"current ${wti:.0f}" if wti else "")
-
-    # Disruption score in panel
-    metrics.add_row("─── Hormuz Disruption ───", "", "")
+    # Disruption line
     d_color = "bold red" if disruption_score >= 50 else ("red" if disruption_score >= 30 else ("yellow" if disruption_score >= 15 else "green"))
-    d_bar_len = int(disruption_score / 2)
-    d_bar = "█" * d_bar_len + "░" * (50 - d_bar_len)
-    metrics.add_row("Disruption Score", f"[{d_color}]{disruption_score}/100[/{d_color}]", f"[{d_color}]{disruption_label}[/{d_color}]")
-    metrics.add_row("Severity", f"[{d_color}]{d_bar}[/{d_color}]", "")
+    traj = composite.trajectory
+    t_arrow = {"recovering": "↗", "worsening": "↘"}.get(traj, "→")
+    disruption_line = f"Supply Disruption: [{d_color}]{disruption_score}/100 {disruption_label}[/{d_color}]  {t_arrow} {traj}"
 
-    # Baseline comparison
-    baseline_t = disruption_details.get("baseline_tankers")
-    current_t = disruption_details.get("current_tankers_7d")
-    pct_baseline = disruption_details.get("transit_pct_of_baseline")
-    trajectory = disruption_details.get("trajectory", "")
-    traj_pct = disruption_details.get("trajectory_pct")
-    if baseline_t and current_t and pct_baseline is not None:
-        metrics.add_row(
-            "vs Pre-Conflict",
-            f"{pct_baseline:.0f}%",
-            f"{current_t:.0f}/day vs {baseline_t:.0f}/day baseline",
-        )
-    if trajectory and traj_pct is not None:
-        t_color = "green" if trajectory == "recovering" else ("red" if trajectory == "worsening" else "yellow")
-        t_arrow = "↗" if trajectory == "recovering" else ("↘" if trajectory == "worsening" else "→")
-        metrics.add_row(
-            "Trajectory",
-            f"[{t_color}]{t_arrow} {trajectory.upper()}[/{t_color}]",
-            f"7d avg {traj_pct:+.0f}% vs 30d avg",
-        )
+    # Per-chokepoint mini scores
+    cp_parts = []
+    for key, label in [("hormuz", "Hz"), ("bab_el_mandeb", "BaM"), ("suez", "Sz"), ("malacca", "Ml"), ("bosporus", "Bs")]:
+        sc = composite.per_chokepoint.get(key)
+        if sc is not None:
+            c = "red" if sc >= 30 else ("yellow" if sc >= 15 else "green")
+            cp_parts.append(f"[{c}]{label}:{sc}[/{c}]")
+    cp_line = "  ".join(cp_parts)
 
-    parts = Group(
-        Text.from_markup(f"As of: {oil['asof']}\n"),
-        Text.from_markup(f"{sentiment}  {headline}{hz_status}\n"),
-        metrics,
-    )
+    # Build panel text
+    panel_lines = [
+        f"{price_line}",
+        f"{'  '.join(ctx_parts)}",
+        "",
+        disruption_line,
+        f"  {cp_line}",
+    ]
+    if composite.rerouting_detected:
+        panel_lines.append("  [yellow]⚡ Rerouting detected — Cape GH absorbing Red Sea diversion[/yellow]")
 
+    panel_text = Text.from_markup("\n".join(panel_lines))
     panel = Panel(
-        parts,
+        panel_text,
         title="[bold]Oil & Energy Chokepoint[/bold]",
+        subtitle=f"[dim]{oil['asof']}[/dim]",
         border_style="yellow",
         padding=(1, 2),
     )
     rprint(panel)
 
-    # ── Block 1: Price sparklines ─────────────────────────────────────────
-    _show_oil_sparklines(console, oil)
+    # ── Chokepoint sparklines ─────────────────────────────────────────────
+    console.print()
+    any_asof = next((cd.asof for cd in chokepoints.values() if cd.asof), "?")
+    console.print(f"[dim]─── Chokepoint Trends (30d tankers/day, AIS {any_asof}) ────────[/dim]")
+    _show_chokepoint_sparklines(console, chokepoints)
 
-    # ── Block 2: Strait of Hormuz dashboard ──────────────────────────────
-    _show_hormuz_panel(console, hz, disruption_details)
-
-    # ── Block 3: Cross-regime signals ────────────────────────────────────
-    _show_oil_hormuz_cross(console, oil, hz)
+    # ── Actionable signals only ───────────────────────────────────────────
+    _show_signals(console, oil, chokepoints, composite)
 
     if llm:
-        snapshot_data = {
+        llm_data = {
             "wti": wti,
             "brent": brent,
             "brent_wti_spread": spread,
@@ -881,18 +626,22 @@ def oil_snapshot(
             "wti_90d_chg": oil.get("wti_90d_chg"),
             "wti_vol_20d": oil.get("wti_vol_20d"),
             "wti_1y_pctl": oil.get("wti_1y_pctl"),
+            "composite_disruption_score": composite.score,
+            "composite_disruption_label": composite.label,
+            "rerouting_detected": composite.rerouting_detected,
         }
-        if hz:
-            snapshot_data["hormuz_tanker_latest"] = hz.get("n_tanker_latest")
-            snapshot_data["hormuz_tanker_30d_avg"] = hz.get("n_tanker_30d_avg")
-            snapshot_data["hormuz_total_latest"] = hz.get("n_total_latest")
+        for key in ["hormuz", "bab_el_mandeb", "suez", "malacca", "bosporus", "cape"]:
+            cd = chokepoints.get(key)
+            if cd:
+                llm_data[f"{key}_tankers_7d"] = cd.avg_7d_tankers
+                llm_data[f"{key}_disruption"] = cd.disruption_score
 
         from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
         print_llm_regime_analysis(
             settings=settings,
             domain="oil",
-            snapshot=snapshot_data,
+            snapshot=llm_data,
             regime_label=sentiment,
-            regime_description="Oil price and Strait of Hormuz shipping traffic analysis",
+            regime_description="Oil price and multi-chokepoint shipping traffic analysis (Hormuz, Bab el-Mandeb, Suez, Malacca, Bosporus, Cape of Good Hope)",
             ticker=ticker,
         )

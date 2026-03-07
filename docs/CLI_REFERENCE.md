@@ -4,54 +4,47 @@ Full command reference for the Lox CLI.
 
 ---
 
-## CLI Structure (5 Pillars)
+## CLI Structure
 
 ```
 lox                           # Help with examples
 |
-+-- [1] Fund Information
++-- PM Morning Report
+|   +-- pm                    # Daily CIO briefing (macro + portfolio + LLM)
+|
++-- Research
+|   +-- research regimes      # Unified regime overview (10 pillars)
+|   +-- research ticker NVDA  # Deep ticker research
+|   +-- research portfolio    # Open position outlook
+|   +-- research scenario SPY # Monte Carlo macro shock sim
+|   +-- research chat         # Interactive research chat
+|
++-- Regime Drill-Down
+|   +-- regime growth         # Growth (payrolls, ISM, claims)
+|   +-- regime inflation      # Inflation (CPI, PCE, breakevens)
+|   +-- regime vol            # Volatility (VIX)
+|   +-- regime credit         # Credit spreads (HY OAS, BBB, AAA)
+|   +-- regime rates          # Yield curve
+|   +-- regime funding        # Funding markets (SOFR)
+|   +-- regime consumer       # Consumer (sentiment, spending)
+|   +-- regime fiscal         # Fiscal (deficits, TGA)
+|   +-- regime earnings       # Earnings (beat rate, revisions)
+|   +-- regime oil            # Commodities (oil, gold, copper)
+|
++-- Portfolio & Risk
 |   +-- status                # Portfolio health
-|   +-- nav                   # NAV management
-|
-+-- [2] Macro & Regimes
-|   +-- dashboard             # All regimes at a glance
-|   +-- regime                # Economic regime analysis (12 domains)
-|       +-- growth            # Growth (payrolls, ISM, claims)
-|       +-- inflation         # Inflation (CPI, PCE, breakevens)
-|       +-- vol               # Volatility (VIX)
-|       +-- credit            # Credit spreads (HY OAS, BBB, AAA)
-|       +-- rates             # Yield curve
-|       +-- funding           # Funding markets (SOFR)
-|       +-- consumer          # Consumer (sentiment, spending, mortgage)
-|       +-- fiscal            # Fiscal (deficits, TGA)
-|       +-- positioning       # Positioning (VIX term, P/C, AAII)
-|       +-- monetary          # Monetary policy (reserves, RRP)
-|       +-- usd               # USD (DXY)
-|       +-- commodities       # Commodities (oil, gold, copper)
-|       +-- macro             # Alias: Growth + Inflation + quadrant
-|       +-- unified           # All 12 regimes + MC adjustments
-|
-+-- [3] Portfolio Analysis
-|   +-- scenario              # Portfolio scenarios
-|       +-- monte-carlo       # Monte Carlo simulation
-|       +-- stress            # Stress testing
-|       +-- forward           # Forward-looking scenarios
-|       +-- custom            # Custom scenario builder
-|
-+-- [4] Ideas Generation
-|   +-- scan-extremes         # Overbought/oversold scanner
-|   +-- ideas                 # Trade ideas
+|   +-- risk                  # Greeks dashboard
 |   +-- scan -t TICKER        # Options chain scanner
 |
-+-- [5] Research
-|   +-- research ticker TICKER # Deep ticker research
-|   +-- research regimes      # Unified regime view
-|   +-- research portfolio    # Open position outlook
-|   +-- chat                  # Interactive research chat
-|   +-- labs                  # Advanced tools (power users)
++-- Accounting
+|   +-- account               # Alpaca account details
+|   +-- nav                   # NAV management
+|   +-- weekly                # Investor reports
 |
-+-- trade                     # Trade execution
-+-- options                   # Full options toolset
++-- Crypto
+|   +-- crypto data           # Market data + technicals
+|   +-- crypto research       # LLM analysis
+|   +-- crypto trade          # Order execution
 ```
 
 ---
@@ -60,12 +53,24 @@ lox                           # Help with examples
 
 | Command | Purpose |
 |---------|---------|
+| `lox pm` | PM Morning Report — macro + portfolio + LLM briefing |
 | `lox status` | Portfolio health at a glance |
-| `lox dashboard` | All regime pillars |
+| `lox risk` | Greeks dashboard + theta breakeven |
 | `lox scan -t TICKER` | Options chain scanner |
-| `lox research ticker TICKER` | Deep ticker research (momentum, HF metrics, SEC filings) |
-| `lox regime vol` | Volatility regime |
-| `lox regime fiscal` | Fiscal regime |
+| `lox research ticker TICKER` | Deep ticker research |
+| `lox research regimes` | Unified regime overview |
+
+---
+
+## PM Morning Report
+
+```bash
+lox pm                # Full report with streaming LLM CIO brief (default)
+lox pm --no-llm       # Data sections only (macro + scenarios + portfolio)
+lox pm --json         # Machine-readable JSON output
+```
+
+Sections: Macro Environment (10-pillar heatmap), Active Scenarios, Portfolio (NAV/Greeks/bleeders/winners/risk signals), LLM CIO Briefing.
 
 ---
 
@@ -77,11 +82,11 @@ lox                           # Help with examples
 | `lox research ticker NVDA --llm` | With LLM synthesis |
 | `lox research regimes` | Unified regime overview |
 | `lox research regimes --llm` | With AI commentary |
+| `lox research regimes --trend` | Trend dashboard (sparklines, momentum) |
 | `lox research regimes -d vol` | Drill into volatility regime |
+| `lox research regimes --book` | Position exposure vs regimes |
 | `lox research portfolio` | LLM outlook on open positions |
-| `lox regime vol --llm` | Volatility with LLM |
-| `lox regime rates` | Rates/curve analysis |
-| `lox scan-extremes` | Find overbought/oversold tickers |
+| `lox research scenario SPY` | Monte Carlo macro shock sim |
 
 ---
 
@@ -99,17 +104,14 @@ lox regime funding                # Funding markets (SOFR, repo)
 # Extended regimes (context)
 lox regime consumer               # Consumer (sentiment, spending, mortgage rates)
 lox regime fiscal                 # Fiscal (deficits, TGA)
-lox regime positioning            # Positioning (VIX term slope, put/call, AAII)
-lox regime monetary               # Monetary policy (reserves, RRP)
-lox regime usd                    # USD (DXY)
-lox regime commodities            # Commodities (oil, gold, copper)
-
-# Aliases and unified views
-lox regime macro                  # Alias: shows Growth + Inflation + macro quadrant
-lox regime unified                # All 12 regimes + MC adjustments + regime changes
+lox regime earnings               # Earnings (S&P 500 beat rate, revisions)
+lox regime oil                    # Oil/commodities (energy, metals)
 
 # Add --llm to any command for LLM analysis
 lox regime vol --llm
+
+# Add --book for position impact analysis
+lox regime credit --book
 ```
 
 ---
@@ -120,16 +122,6 @@ lox regime vol --llm
 |---------|---------|
 | `lox scan -t NVDA` | Options chain (default: puts, 30-365 DTE) |
 | `lox scan -t CRWV --want put --min-days 100` | Custom DTE range |
-| `lox options best NVDA --budget 500` | Best options under budget |
-
----
-
-## Scenario Analysis
-
-```bash
-lox scenario monte-carlo          # Monte Carlo simulation
-lox scenario stress               # Stress testing
-```
 
 ---
 
@@ -140,44 +132,30 @@ lox scenario stress               # Stress testing
 | `lox chat` | Interactive research chat |
 | `lox chat -t AAPL` | Ticker-focused chat |
 | `lox chat -c fiscal` | Chat with regime context |
-
----
-
-## Advanced Tools (Power Users)
-
-```bash
-lox labs ticker deep -t AAPL --llm    # Full ticker deep dive
-lox labs mc-v01 --regime RISK_OFF     # Specific regime scenario
-lox labs unified                       # All 12 regimes
-lox labs transitions                   # Transition matrix with signal adjustments
-lox labs train-correlations            # Train Monte Carlo correlations on real data
-```
+| `lox chat -c regimes` | Chat with all regime data |
 
 ---
 
 ## Daily Workflow
 
 ```bash
-# Morning: Dashboard review (5 min)
-lox status                    # Portfolio health
-lox dashboard                 # All regimes at a glance
+# Morning: PM Report (2 min)
+lox pm                        # Full CIO briefing with LLM
 
-# Research (as needed)
+# Drill-down (as needed)
+lox regime vol                # Volatility deep dive
+lox regime credit --book      # Credit + position exposure
 lox research ticker NVDA      # Full research report
-lox regime vol                # Volatility regime
-lox regime fiscal             # Fiscal regime
 
 # Options scanning
-lox scan -t CRWV --want put   # Options chain
+lox scan -t CRWV --want put
 lox scan -t NVDA --min-days 60 --max-days 180
 
-# Ideas and scenarios
-lox scan-extremes             # Find overbought/oversold tickers
-lox ideas                     # Trade ideas
-lox scenario monte-carlo      # Monte Carlo simulation
+# Scenarios
+lox research scenario SPY     # Monte Carlo macro shock sim
 
-# EOD: Record NAV
-lox nav snapshot
+# EOD
+lox nav snapshot              # Record NAV
 ```
 
 ---

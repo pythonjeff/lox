@@ -78,16 +78,19 @@ def render_regime_panel(
     if description:
         parts.append(Text.from_markup(f"{description}\n\n"))
     if metrics:
+        has_change = any(m.get("change") for m in metrics)
         mt = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 2))
         mt.add_column("Metric", style="cyan")
         mt.add_column("Value", justify="right")
+        if has_change:
+            mt.add_column("Chg", justify="right", min_width=10)
         mt.add_column("Context", style="dim")
         for m in metrics:
-            mt.add_row(
-                str(m.get("name", "—")),
-                str(m.get("value", "—")),
-                str(m.get("context", "")),
-            )
+            row = [str(m.get("name", "—")), str(m.get("value", "—"))]
+            if has_change:
+                row.append(str(m.get("change", "")))
+            row.append(str(m.get("context", "")))
+            mt.add_row(*row)
         parts.append(mt)
     if sub_scores:
         parts.append(Text.from_markup("\n"))

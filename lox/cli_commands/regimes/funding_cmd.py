@@ -122,14 +122,14 @@ def _persist_ctx(v):
 def _rrp_ctx(v):
     if not isinstance(v, (int, float)):
         return "overnight RRP buffer"
-    v = float(v) / 1000  # to trillions
-    if v > 1.5:
+    bn = float(v) / 1000  # input is millions, convert to billions
+    if bn > 500:
         return "large buffer — ample excess liquidity"
-    if v > 0.5:
-        return "moderate buffer"
-    if v > 0.1:
-        return "shrinking — buffer nearly depleted"
-    return "near zero — no excess liquidity"
+    if bn > 100:
+        return "moderate buffer — some excess liquidity"
+    if bn > 20:
+        return "low — buffer nearly depleted"
+    return "depleted — no excess liquidity cushion"
 
 
 def _reserves_ctx(v):

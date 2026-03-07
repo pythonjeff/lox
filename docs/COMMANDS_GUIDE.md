@@ -1,95 +1,75 @@
-## Lox Fund CLI — Command guide (easy → advanced)
+## Lox Fund CLI — Command Guide
 
 ### 0) Quick mental model
-- **Account briefing** → **Autopilot trades** → **NAV tracking**
+- **`lox pm`** → **Regime drill-down** → **Research** → **NAV tracking**
 
-### 1) Easiest daily commands (no flags)
-- **`lox account`**: show mode/cash/equity/buying power.
-- **`lox account summary`**: LLM briefing of positions + risk watch (trackers + US/USD events + curated links).
-- **`lox autopilot run-once`**: generates a budgeted trade plan (default engine = regime analogs + factor momentum).
-- **`lox nav snapshot`**: write a NAV snapshot from Alpaca and compute returns.
-- **`lox nav investor report`**: investor ownership/basis/value/P&L via unitized NAV.
-- **`lox weekly report`**: weekly summary (NAV snapshot, trades, thesis, macro performance).
+### 1) Daily commands (start here)
+- **`lox pm`**: PM Morning Report — macro regime heatmap, active scenarios, portfolio Greeks, LLM CIO brief. LLM is on by default.
+- **`lox pm --no-llm`**: Data sections only (fast).
+- **`lox pm --json`**: Machine-readable output.
+- **`lox status`**: Quick portfolio health (NAV, P&L, cash).
+- **`lox risk`**: Greeks dashboard with theta breakeven analysis.
 
-### 2) Execution (paper-first)
-- **`lox autopilot run-once --execute`**: prompts and submits **paper** orders.
-- **`lox autopilot run-once --execute --live`**: allows **live** orders (only if `ALPACA_PAPER=false`), with extra confirmations.
-
-### 3) Thesis + explainability (recommended)
-- **`lox autopilot run-once --thesis inflation_fiscal --explain`**: biases selection toward inflation + fiscal-wall exposures and prints **WHY THESE TRADES** (drivers + US/USD events + Treasury auctions).
-- **`lox autopilot run-once --no-explain`**: quiet mode (trade table only).
-
-### 4) Options scanners
-- **`lox options moonshot`**: in-budget longshot options ideas, with review/execute prompts.
-- **`lox options moonshot --ticker SLV`**: single-name moonshot.
-
-### 5) Fund accounting (investors + cashflows)
-- **`lox nav investor import "Investor list.xlsx"`**: import investor code/amount/join date into the investor ledger.
-- **`lox nav investor contribute JL 50 --note "Feb add"`**: logs a contribution to **both** ledgers (fund cashflows + investor flows).
-- **`lox nav show`**: show the NAV sheet history.
-
-**Ledger note:** `nav_flows.csv` (fund cashflows) and `nav_investor_flows.csv` (investor ledger) are separate by design.  
-Use `lox nav investor contribute` for real investor cash moves so both ledgers stay in sync.
-
-### 6) Model diagnostics (research)
-- **`lox model macro-model-eval --basket starter --book longonly`**: walk-forward eval (Spearman, hit rate, top–bottom spread, portfolio returns).
-- **`lox model macro-model-eval-ab --basket starter --book longonly`**: A/B sweep across regime families (`whitelist-extra`).
-- **`lox model macro-model-dataset --basket starter --limit 20`**: inspect/export the ML dataset.
-
-### 7) Idea generation from a link (LLM)
-- **`lox ideas event --url <URL> --thesis "..."`**: turn an article into structured hedge/trade ideas (optional execution).
-
-### 8) Interactive Research Chat (LLM)
-- **`lox chat`**: start interactive chat with portfolio context loaded.
-- **`lox chat -c fiscal`**: chat with US fiscal regime data (deficits, issuance, TGA).
-- **`lox chat -c funding`**: chat with funding/liquidity context (SOFR, repo, reserves).
-- **`lox chat -c macro`**: chat with macro regime context (growth + inflation quadrant).
-- **`lox chat -c regimes`**: chat with all regime classifications loaded.
-- **Ticker deep-dive**: ask about specific tickers (e.g., "tell me about FXI") for automatic snapshot, news, and analysis.
-
-### 9) Unified Regime Analysis
-- **`lox regime unified`**: view all 12 regime domains with scores, macro quadrant, Monte Carlo adjustments, regime changes, and portfolio implication.
-- **`lox regime unified --json`**: export flat ML feature vector for model training.
-- **`lox regime growth`**: Growth regime (payrolls, ISM, claims, industrial production).
-- **`lox regime inflation`**: Inflation regime (CPI, Core PCE, breakevens, PPI).
+### 2) Regime drill-down
+- **`lox regime vol`**: Volatility regime (VIX, term structure).
 - **`lox regime credit`**: Credit regime (HY OAS, BBB/AAA spreads).
-- **`lox regime consumer`**: Consumer regime (Michigan Sentiment, retail sales, mortgage rates).
-- **`lox regime positioning`**: Positioning regime (VIX term structure, put/call, AAII).
-- **`lox regime macro`**: Alias — shows Growth + Inflation + derived macro quadrant.
-- **`lox labs transitions`**: regime transition probabilities adjusted for leading indicators.
-- **`lox labs transitions --no-adjust`**: raw historical transition frequencies.
-- **`lox labs transitions --horizon 126`**: 6-month forecast horizon.
-- **`lox labs transitions --current risk_on`**: forecast from specific starting state.
+- **`lox regime rates`**: Rates/yield curve analysis.
+- **`lox regime funding`**: Funding/liquidity (SOFR, repo, reserves).
+- **`lox regime growth`**: Growth regime (payrolls, ISM, claims).
+- **`lox regime inflation`**: Inflation regime (CPI, Core PCE, breakevens).
+- **`lox regime consumer`**: Consumer regime (sentiment, spending, mortgage rates).
+- **`lox regime fiscal`**: Fiscal regime (deficits, TGA, issuance).
+- **`lox regime earnings`**: Earnings regime (S&P 500 beat rate, revisions).
+- **`lox regime oil`**: Oil/commodities regime.
 
-**Leading Indicator Signals** (auto-detected):
-- Yield curve inversion (2s10s < 0)
-- VIX elevated (> 25) or complacent (< 13)
-- VIX term structure inversion
-- Credit spreads widening (HY OAS z > 1)
-- Funding stress (SOFR spike)
-- Rates shock (10Y z > 1.5)
+Add `--llm` to any regime command for LLM analysis. Add `--book` for position impact.
 
-### 10) Power-user / Labs
-- **`lox labs <module> ...`**: regime builders, datasets, diagnostics, legacy tools.
-  - Examples:
-    - `lox labs fiscal snapshot`
-    - `lox labs rates snapshot`
-    - `lox labs funding snapshot`
-    - `lox labs vol --llm`
-    - `lox labs ticker outlook -t AAPL`
-    - `lox labs ticker news -t NVDA`
-    - `lox labs mc-v01 --regime RISK_OFF --real`
-    - `lox labs hedge` (defensive trade ideas)
-    - `lox labs grow` (offensive trade ideas)
+### 3) Unified regime views
+- **`lox research regimes`**: All pillars with scores, trend arrows, 7d deltas.
+- **`lox research regimes --trend`**: Full trend dashboard (sparklines, momentum z, velocity).
+- **`lox research regimes --detail credit`**: Drill into a specific pillar.
+- **`lox research regimes --scenarios`**: Active macro scenarios.
+- **`lox research regimes --llm`**: AI commentary on regime state.
+- **`lox research regimes --book`**: Position exposure vs regime state.
 
-### 11) Portfolio Analysis
-- **`lox status`**: quick portfolio health (NAV, P&L, cash).
-- **`lox status -v`**: with position details.
-- **`lox analyze --depth deep`**: full LLM portfolio analysis.
-- **`lox suggest --style defensive`**: trade ideas aligned to risk posture.
-- **`lox closed-trades`**: realized P&L from closed positions.
+### 4) Research
+- **`lox research ticker NVDA`**: Full hedge-fund-style research (momentum, HF metrics, fundamentals, SEC filings).
+- **`lox research ticker NVDA --llm`**: With LLM synthesis.
+- **`lox research portfolio`**: LLM outlook on all open positions.
+- **`lox research scenario SPY`**: Monte Carlo macro shock simulation.
+
+### 5) Options scanning
+- **`lox scan -t NVDA`**: Options chain (default: puts, 30-365 DTE).
+- **`lox scan -t CRWV --want put --min-days 100`**: Custom DTE range.
+
+### 6) Interactive chat
+- **`lox chat`**: Interactive research chat with portfolio context.
+- **`lox chat -t AAPL`**: Ticker-focused chat.
+- **`lox chat -c fiscal`**: Chat with fiscal regime data.
+- **`lox chat -c funding`**: Chat with funding/liquidity context.
+- **`lox chat -c regimes`**: Chat with all regime classifications.
+
+### 7) Fund accounting
+- **`lox account`**: Alpaca account details.
+- **`lox account summary`**: LLM summary with risk watch + news + calendar.
+- **`lox nav snapshot`**: Write NAV snapshot and compute returns.
+- **`lox nav investor report`**: Investor ownership/basis/value/P&L via unitized NAV.
+- **`lox nav investor contribute JL 50 --note "Feb add"`**: Log contribution to both ledgers.
+- **`lox weekly report`**: Weekly summary (NAV, trades, thesis, macro).
+- **`lox weekly report --share`**: Investor-facing version.
+- **`lox closed-trades`**: Realized P&L from closed positions.
+
+### 8) Crypto perps
+- **`lox crypto data`**: BTC, ETH, SOL overview + technicals.
+- **`lox crypto research`**: Data + macro regime LLM analysis.
+- **`lox crypto analyze`**: Perps-specific trading analysis.
+- **`lox crypto balance`**: Account balance & equity.
+- **`lox crypto positions`**: Open positions with PnL.
+- **`lox crypto trade BTC BUY 0.001 --leverage 5`**: Place a trade.
+- **`lox crypto close BTC`**: Close a position.
 
 ### Notes
 - Run **`lox <command> --help`** for flags.
 - Paper vs live is controlled by **`ALPACA_PAPER`** and **`--live`**.
 - All `--llm` flags require `OPENAI_API_KEY` in `.env`.
+- `lox pm` has LLM on by default; use `--no-llm` for data only.

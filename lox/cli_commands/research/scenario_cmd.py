@@ -463,21 +463,21 @@ def _show_price_distribution(console: Console, result) -> None:
     table = Table(
         title=f"[bold]{result.horizon_days}-Day Price Distribution[/bold]",
         box=None,
-        padding=(0, 2),
+        padding=(0, 1),
         show_header=True,
         header_style="bold",
     )
-    table.add_column("Scenario", style="bold", min_width=12)
-    table.add_column("Target", justify="right", min_width=8)
-    table.add_column("Range", min_width=16)
-    table.add_column("Return", justify="right", min_width=8)
-    table.add_column("Prob", justify="right", min_width=6)
+    table.add_column("Scenario", style="bold", min_width=10)
+    table.add_column("Target", justify="right", min_width=7)
+    table.add_column("Range", min_width=15)
+    table.add_column("Return", justify="right", min_width=7)
+    table.add_column("Prob", justify="right", min_width=5)
 
     if has_positions:
         for pe in result.position_estimates:
             cp = "P" if pe.opt_type == "put" else "C"
-            label = f"{pe.strike:.0f}{cp} P&L"
-            table.add_column(label, justify="right", min_width=10)
+            table.add_column(f"{pe.strike:.0f}{cp} Best", justify="right", min_width=9)
+            table.add_column(f"{pe.strike:.0f}{cp} Worst", justify="right", min_width=9)
 
     scenario_colors = {
         "BULL": "green",
@@ -509,9 +509,12 @@ def _show_price_distribution(console: Console, result) -> None:
 
         if has_positions:
             for pe in result.position_estimates:
-                pnl = pe.scenario_pnl.get(key, 0)
-                pnl_color = "green" if pnl > 0 else "red" if pnl < 0 else "dim"
-                row.append(f"[{pnl_color}]${pnl:+,.0f}[/{pnl_color}]")
+                peak = pe.scenario_peak_pnl.get(key, 0) if pe.scenario_peak_pnl else pe.scenario_pnl.get(key, 0)
+                peak_color = "green" if peak > 0 else "red" if peak < 0 else "dim"
+                row.append(f"[{peak_color}]${peak:+,.0f}[/{peak_color}]")
+                worst = pe.scenario_worst_pnl.get(key, 0) if pe.scenario_worst_pnl else pe.scenario_pnl.get(key, 0)
+                worst_color = "green" if worst > 0 else "red" if worst < 0 else "dim"
+                row.append(f"[{worst_color}]${worst:+,.0f}[/{worst_color}]")
 
         table.add_row(*row)
 

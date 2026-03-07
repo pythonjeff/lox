@@ -190,7 +190,7 @@ def classify_policy_regime(
                 amplifier += 4
                 tags.append("news_elevated")
 
-    # Hormuz disruption cross-signal
+    # Oil supply disruption cross-signal (composite: Hormuz, Bab el-Mandeb, Suez, Malacca, Bosporus)
     if oil_disruption_score is not None:
         if oil_disruption_score >= 30:
             amplifier += 5
