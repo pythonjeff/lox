@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from lox.config import load_settings
 from lox.regimes.base import categorize_regime, RegimeResult
@@ -84,6 +84,9 @@ class UnifiedRegimeState:
     # Per-domain trend/momentum (populated after regime build)
     trends: dict = field(default_factory=dict)  # {domain: RegimeTrend}
 
+    # Composite regime classification (populated after trends)
+    composite: Optional[Any] = None  # CompositeRegimeResult
+
     def to_feature_dict(self) -> dict:
         """Convert all regimes to flat ML feature dictionary."""
         features = {
@@ -104,6 +107,11 @@ class UnifiedRegimeState:
                 features[f"{domain}_regime"] = "unknown"
                 features[f"{domain}_score"] = 50.0
                 features[f"{domain}_category"] = "cautious"
+
+        if self.composite:
+            features["composite_regime"] = self.composite.regime
+            features["composite_confidence"] = self.composite.confidence
+            features["composite_dispersion"] = self.composite.pillar_dispersion
 
         return features
 
@@ -1160,6 +1168,14 @@ def build_unified_regime_state(
     except Exception as e:
         logger.warning(f"Failed to detect inconsistencies: {e}")
         state.active_dislocations = []
+
+    # ── Classify composite regime ──────────────────────────────────────────
+    try:
+        from lox.regimes.composite import classify_composite_regime
+        state.composite = classify_composite_regime(state)
+    except Exception as e:
+        logger.warning(f"Failed to classify composite regime: {e}")
+        state.composite = None
 
     return state
 

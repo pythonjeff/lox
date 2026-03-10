@@ -371,3 +371,38 @@ def register(app: typer.Typer) -> None:
         console.print()
         console.print("[dim]Usage: These probabilities weight Monte Carlo scenarios.[/dim]")
         console.print("[dim]       Use --no-adjust to see raw historical frequencies.[/dim]")
+
+    # ── Composite Regime ──────────────────────────────────────────────────
+
+    @app.command("composite")
+    def composite_regime(
+        refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
+        json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    ):
+        """
+        Composite regime classification — hedge-fund-style macro regime ID.
+
+        Compresses 12 pillar scores into 5 named macro regimes:
+        RISK-ON, REFLATION, STAGFLATION, RISK-OFF, TRANSITION.
+
+        Shows confidence, transition outlook, swing factors, and canonical playbook.
+        """
+        from lox.regimes import build_unified_regime_state
+
+        console = Console()
+        settings = load_settings()
+
+        with console.status("[cyan]Building regime state...[/cyan]"):
+            state = build_unified_regime_state(settings=settings, refresh=refresh)
+
+        if state.composite is None:
+            console.print("[red]Failed to classify composite regime.[/red]")
+            raise typer.Exit(1)
+
+        if json_output:
+            import json as json_module
+            console.print(json_module.dumps(state.composite.to_dict(), indent=2))
+            return
+
+        from lox.cli_commands.shared.composite_display import render_composite_dashboard
+        render_composite_dashboard(state.composite, console)

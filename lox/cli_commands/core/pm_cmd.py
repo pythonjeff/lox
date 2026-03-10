@@ -102,8 +102,8 @@ PM_PILLARS = [
 
 
 def _fetch_all_data(settings: Settings) -> dict[str, Any]:
-    """Parallel fetch: regime state, portfolio greeks, raw positions."""
-    results: dict[str, Any] = {"state": None, "greeks": None, "positions": [], "account": {}}
+    """Parallel fetch: regime state, portfolio greeks, raw positions, econ calendar."""
+    results: dict[str, Any] = {"state": None, "greeks": None, "positions": [], "account": {}, "calendar": []}
 
     def _regime():
         from lox.regimes import build_unified_regime_state
@@ -120,9 +120,68 @@ def _fetch_all_data(settings: Settings) -> dict[str, Any]:
         positions = trading.get_all_positions()
         return acct, positions
 
-    tasks = {"regime": _regime, "greeks": _greeks, "positions": _positions}
+    def _calendar():
+        """Fetch next 5 days of US high-impact economic events."""
+        import requests as _req
+        from datetime import timedelta, timezone as _tz
+        api_key = getattr(settings, "FMP_API_KEY", None)
+        if not api_key:
+            return []
+        now = datetime.now(_tz.utc)
+        from_d = now.strftime("%Y-%m-%d")
+        to_d = (now + timedelta(days=5)).strftime("%Y-%m-%d")
+        try:
+            resp = _req.get(
+                "https://financialmodelingprep.com/api/v3/economic_calendar",
+                params={"from": from_d, "to": to_d, "apikey": api_key},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            events = resp.json()
+            if not isinstance(events, list):
+                return []
+            high_impact_kw = [
+                "FOMC", "CPI", "PCE", "GDP", "NFP", "Jobless", "Fed", "Auction",
+                "Employment", "Payroll", "Retail Sales", "ISM", "PPI", "Michigan",
+                "Housing", "Durable", "Treasury",
+            ]
+            out = []
+            cutoff = now + timedelta(days=5)
+            for e in events:
+                if not isinstance(e, dict):
+                    continue
+                date_str = e.get("date", "")
+                try:
+                    from datetime import timezone as _tz2
+                    dt = datetime.fromisoformat(date_str.replace(" ", "T").replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=_tz2.utc)
+                except Exception:
+                    continue
+                if dt < now or dt > cutoff:
+                    continue
+                country = (e.get("country") or "").upper()
+                if country and country != "US":
+                    continue
+                name = e.get("event", "")
+                is_high = any(kw.lower() in name.lower() for kw in high_impact_kw)
+                out.append({
+                    "date": dt.strftime("%a %b %-d"),
+                    "time": dt.strftime("%-I:%M%p ET"),
+                    "event": name,
+                    "estimate": e.get("estimate"),
+                    "previous": e.get("previous"),
+                    "high_impact": is_high,
+                })
+            # Sort by date, high-impact first
+            out.sort(key=lambda x: (not x["high_impact"], x["date"]))
+            return out[:12]
+        except Exception:
+            return []
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    tasks = {"regime": _regime, "greeks": _greeks, "positions": _positions, "calendar": _calendar}
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {pool.submit(fn): name for name, fn in tasks.items()}
         for future in as_completed(futures):
             name = futures[future]
@@ -132,6 +191,8 @@ def _fetch_all_data(settings: Settings) -> dict[str, Any]:
                     results["state"] = result
                 elif name == "greeks":
                     results["greeks"] = result
+                elif name == "calendar":
+                    results["calendar"] = result
                 elif name == "positions":
                     acct, positions = result
                     results["positions"] = positions
@@ -170,8 +231,22 @@ def _render_header(console: Console, state, account: dict) -> None:
         quad = state.macro_quadrant
         rc = _score_color(risk)
         risk_line = f"Risk: [{rc}]{risk:.0f}/100[/{rc}] ({cat})  Quadrant: {quad}"
+
+        # Composite regime headline
+        if state.composite:
+            from lox.cli_commands.shared.composite_display import (
+                _regime_style, _confidence_color,
+            )
+            from lox.regimes.composite import COMPOSITE_LABELS
+            c = state.composite
+            rs = _regime_style(c.regime)
+            cc = _confidence_color(c.confidence)
+            regime_line = f"Regime: [{rs}]{c.label}[/{rs}] [{cc}]({c.confidence:.0%} conf)[/{cc}]"
+        else:
+            regime_line = ""
     else:
         risk_line = "[yellow]Regime data unavailable[/yellow]"
+        regime_line = ""
 
     nav = account.get("equity", 0)
     pnl = account.get("pnl", 0)
@@ -179,9 +254,13 @@ def _render_header(console: Console, state, account: dict) -> None:
     mode = account.get("mode", "PAPER")
     pnl_c = "green" if pnl >= 0 else "red"
 
+    body = f"{risk_line}\n"
+    if regime_line:
+        body += f"{regime_line}\n"
+    body += f"NAV: ${nav:,.0f}  P&L: [{pnl_c}]${pnl:+,.0f} ({pnl_pct:+.1f}%)[/{pnl_c}]  [{mode}]"
+
     console.print(Panel(
-        f"{risk_line}\n"
-        f"NAV: ${nav:,.0f}  P&L: [{pnl_c}]${pnl:+,.0f} ({pnl_pct:+.1f}%)[/{pnl_c}]  [{mode}]",
+        body,
         title=f"[bold]LOX CAPITAL — PM MORNING REPORT[/bold]  [dim]{datetime.now().strftime('%b %-d %Y')}[/dim]",
         border_style="cyan",
         padding=(0, 2),
@@ -303,7 +382,7 @@ def _render_portfolio(console: Console, greeks, positions, account: dict) -> Non
             console.print(f"\n  [yellow]⚠ Theta burn ${abs(greeks.net_theta):.0f}/day vs ${nav:,.0f} NAV = {theta_bp:.0f}bp/day[/yellow]")
 
 
-def _build_pm_system_prompt(state, greeks, positions, account: dict) -> str:
+def _build_pm_system_prompt(state, greeks, positions, account: dict, calendar: list | None = None) -> str:
     """Build CIO-grade system prompt with all data injected."""
     today = datetime.now().strftime("%Y-%m-%d")
 
@@ -389,6 +468,46 @@ def _build_pm_system_prompt(state, greeks, positions, account: dict) -> str:
     overall = ""
     if state:
         overall = f"Risk: {state.overall_risk_score:.0f}/100 ({state.overall_category.upper()})  Quadrant: {state.macro_quadrant}"
+        if state.composite:
+            c = state.composite
+            overall += f"\nComposite Regime: {c.label} (confidence: {c.confidence:.0%})"
+            overall += f"\n  {c.description}"
+
+            # Top 3 transition probabilities
+            sorted_trans = sorted(c.transition_outlook.items(), key=lambda x: -x[1])
+            trans_str = ", ".join(f"{r}: {p:.0%}" for r, p in sorted_trans[:3])
+            overall += f"\n  Transition outlook (30d): {trans_str}"
+
+            # Playbook summary
+            pb = c.playbook
+            overall += (
+                f"\n  Canonical playbook: Equity={pb.equity_stance} Duration={pb.duration_stance} "
+                f"Credit={pb.credit_stance} Vol={pb.vol_stance} Cash={pb.cash_target_pct:.0f}% "
+                f"Gross={pb.gross_exposure}"
+            )
+
+            # Top swing factors
+            if c.swing_factors:
+                from lox.regimes.composite import COMPOSITE_LABELS
+                sf_lines = []
+                for sf in c.swing_factors[:3]:
+                    eta = f" (~{sf.days_to_flip:.0f}d)" if sf.days_to_flip else ""
+                    sf_lines.append(
+                        f"{sf.pillar.upper()} {sf.current_score:.0f}->{sf.target_score:.0f} "
+                        f"for {COMPOSITE_LABELS[sf.target_regime]}{eta}"
+                    )
+                overall += f"\n  Swing factors: {'; '.join(sf_lines)}"
+
+    # ── Economic Calendar ─────────────────────────────────────────────
+    cal_lines = []
+    if calendar:
+        for ev in calendar:
+            marker = "★" if ev.get("high_impact") else " "
+            est = f"est {ev['estimate']}" if ev.get("estimate") else ""
+            prev = f"prev {ev['previous']}" if ev.get("previous") else ""
+            detail = ", ".join(filter(None, [est, prev]))
+            cal_lines.append(f"  {marker} {ev['date']} {ev['time']}  {ev['event']}  {detail}")
+    calendar_block = "\n".join(cal_lines) if cal_lines else "  No major events in next 5 days"
 
     return f"""You are the CIO of a $1M startup hedge fund. This is the PM morning note. Your PM reads this before markets open and needs to know exactly what to DO today.
 Today: {today}
@@ -408,6 +527,9 @@ Today: {today}
 ## Portfolio & Greeks
 {portfolio_block}
 
+## Upcoming Data Releases (next 5 days, ★ = high impact)
+{calendar_block}
+
 ## OUTPUT FORMAT — follow this EXACTLY
 
 **WHAT MOVED** (2-3 sentences)
@@ -421,25 +543,39 @@ Go position by position through the book. For each position:
 For puts: they PROFIT when the underlying drops. Stress regimes are TAILWINDS for puts.
 For calls: they PROFIT when the underlying rises. Risk-on regimes are TAILWINDS for calls.
 
-**ACTION** (2-3 sentences)
-1-2 new trade ideas tied to the regime data. Be specific: ticker, direction, instrument type, and WHY the regime setup supports it. Reference the scenario trade expressions if any are active.
+**ACTION** (2-3 sentences per trade, max 2 trades)
+New trade ideas that the regime data is SCREAMING for. For each trade:
+- Ticker, direction, instrument (calls/puts/equity/spreads)
+- Entry trigger: the specific price level, score threshold, or event that activates this trade. Example: "Enter on VIX > 25 or if CPI prints hot on Wed"
+- Sizing: fraction of NAV (e.g., "1-2% of NAV", "starter 0.5%")
+- Strike/expiry logic if options: near-the-money vs OTM, front-month vs 45-60 DTE, and why
+- The EXACT regime score or metric that supports this trade — cite the number
+If a scenario is active, your trades should reference the scenario trade expressions. Do NOT just repeat the scenario trades generically — add the entry trigger, sizing, and strike reasoning.
 
-**RISK** (1 sentence)
-The single biggest risk to the book right now. What breaks the thesis.
+**RISK** (2 sentences)
+The single biggest risk to the book right now.
+- Name the specific event, level, or data print that would break the thesis (e.g., "SPX closes above 5,200" or "CPI prints below 3.0%")
+- Which position in the book is most exposed and what's the approximate downside
 
-**WATCHING** (1 sentence)
-The specific catalyst, data release, or technical level you're watching today.
+**WATCHING** (1-2 sentences)
+The specific catalyst you are watching TODAY or this week.
+- Name the exact event and date/time from the calendar above (e.g., "CPI Wed 8:30am — consensus 3.1%")
+- State the level or print that would change the view (e.g., "Core below 0.2% MoM flips us to duration-long")
+- Which positions are most sensitive to this event
+If no major events this week, name the technical level or flow dynamic you're monitoring instead.
 
 ## RULES
 - Cite EXACT numbers from the data. Not "elevated" — say "VIX at 23.8, z-score +1.4".
 - Every position in the book gets a verb. No position left unaddressed.
 - Theta burn: if >20bp/day of NAV, it's a problem. Flag it with the exact numbers.
 - Scenarios: if active, your trade ideas should align with or explicitly disagree with the scenario trades.
-- Max 350 words. No filler. No "it's worth noting" or "investors should consider".
+- NEVER use filler phrases: "it's worth noting", "investors should consider", "amidst rising", "given the current environment", "serves as a hedge". Write like a desk note, not a research report.
+- NEVER say "monitor" or "keep an eye on" — say exactly what level or print changes the view.
+- Max 450 words. Every sentence must contain a number, a ticker, or a verb.
 - Take a side. State conviction. Be wrong sometimes."""
 
 
-def _render_llm_briefing(console: Console, settings: Settings, state, greeks, positions, account: dict) -> None:
+def _render_llm_briefing(console: Console, settings: Settings, state, greeks, positions, account: dict, calendar: list | None = None) -> None:
     """Stream LLM CIO briefing."""
     if not getattr(settings, "openai_api_key", None):
         console.print("\n[yellow]Set OPENAI_API_KEY in .env to enable LLM briefing.[/yellow]")
@@ -447,7 +583,7 @@ def _render_llm_briefing(console: Console, settings: Settings, state, greeks, po
 
     console.print("\n[bold cyan][4] PM BRIEFING[/bold cyan]")
 
-    system_prompt = _build_pm_system_prompt(state, greeks, positions, account)
+    system_prompt = _build_pm_system_prompt(state, greeks, positions, account, calendar)
 
     try:
         from openai import OpenAI
@@ -465,7 +601,7 @@ def _render_llm_briefing(console: Console, settings: Settings, state, greeks, po
                 {"role": "user", "content": "Deliver the PM morning note."},
             ],
             temperature=0.5,
-            max_tokens=1500,
+            max_tokens=2000,
             stream=True,
         )
 
@@ -576,6 +712,7 @@ def register_pm(app: typer.Typer) -> None:
         greeks = data["greeks"]
         positions = data["positions"]
         account = data["account"]
+        calendar = data.get("calendar", [])
 
         # JSON mode
         if json_out:
@@ -590,7 +727,7 @@ def register_pm(app: typer.Typer) -> None:
 
         # LLM briefing
         if llm:
-            _render_llm_briefing(console, settings, state, greeks, positions, account)
+            _render_llm_briefing(console, settings, state, greeks, positions, account, calendar)
         else:
             console.print("\n[dim]Add --llm (default) for CIO briefing[/dim]")
 

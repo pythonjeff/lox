@@ -52,6 +52,15 @@ from lox.regimes.scenarios import (
     SCENARIOS,
 )
 
+from lox.regimes.composite import (
+    CompositeRegimeResult,
+    classify_composite_regime,
+    format_composite_for_llm,
+    COMPOSITE_REGIMES,
+    COMPOSITE_LABELS,
+    PLAYBOOKS,
+)
+
 from lox.regimes.transitions import (
     TransitionMatrix,
     get_transition_matrix,
@@ -99,6 +108,13 @@ __all__ = [
     "get_regime_scenario_weights",
     "get_default_risk_transition_matrix",
     "get_default_vol_transition_matrix",
+    # Composite Regime
+    "CompositeRegimeResult",
+    "classify_composite_regime",
+    "format_composite_for_llm",
+    "COMPOSITE_REGIMES",
+    "COMPOSITE_LABELS",
+    "PLAYBOOKS",
     # Leading Indicators (Edge Enhancement)
     "LeadingIndicatorSignals",
     "LEADING_INDICATORS",

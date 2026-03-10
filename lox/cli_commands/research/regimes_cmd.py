@@ -146,8 +146,17 @@ def _show_trend_dashboard(console: Console, state) -> None:
 
     # Header
     overall_color = _get_regime_color(state.overall_risk_score)
+
+    trend_composite_line = ""
+    if state.composite:
+        from lox.cli_commands.shared.composite_display import _regime_style, _confidence_color
+        c = state.composite
+        rs = _regime_style(c.regime)
+        cc = _confidence_color(c.confidence)
+        trend_composite_line = f"\n[bold]Regime:[/bold] [{rs}]{c.label}[/{rs}] [{cc}]({c.confidence:.0%} confidence)[/{cc}]"
+
     header_content = f"""[bold]REGIME TREND & MOMENTUM[/bold]  {state.overall_category.upper()}
-[dim]Risk Score: [{overall_color}]{state.overall_risk_score:.0f}/100[/{overall_color}][/dim]"""
+[dim]Risk Score: [{overall_color}]{state.overall_risk_score:.0f}/100[/{overall_color}][/dim]{trend_composite_line}"""
 
     console.print(Panel(
         header_content,
@@ -188,8 +197,18 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool, 
     # Header
     overall_color = _get_regime_color(state.overall_risk_score)
 
+    # Composite regime headline
+    composite_line = ""
+    if state.composite:
+        from lox.cli_commands.shared.composite_display import _regime_style, _confidence_color
+        from lox.regimes.composite import COMPOSITE_LABELS
+        c = state.composite
+        rs = _regime_style(c.regime)
+        cc = _confidence_color(c.confidence)
+        composite_line = f"\n[bold]Regime:[/bold] [{rs}]{c.label}[/{rs}] [{cc}]({c.confidence:.0%} confidence)[/{cc}]"
+
     header_content = f"""[bold]REGIME STATE[/bold]  {state.overall_category.upper()}  {state.macro_quadrant}
-[dim]Risk Score: [{overall_color}]{state.overall_risk_score:.0f}/100[/{overall_color}][/dim]"""
+[dim]Risk Score: [{overall_color}]{state.overall_risk_score:.0f}/100[/{overall_color}][/dim]{composite_line}"""
 
     console.print(Panel(
         header_content,
