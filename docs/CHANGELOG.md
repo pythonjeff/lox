@@ -2,6 +2,40 @@
 
 ---
 
+## v6 — Composite Regime + USD Regime (2026-03-10)
+
+### New: Composite Regime Classification
+- **Hedge-fund-style macro regime ID** — compresses 12 pillar scores into 5 named regimes via distance-based prototype matching
+- **5 regimes:** RISK-ON / GOLDILOCKS, REFLATION, STAGFLATION, RISK-OFF / DEFLATIONARY, TRANSITION / MIXED
+- **Confidence scoring** — softmax probability distribution with TRANSITION override for high-dispersion, low-conviction states
+- **Transition outlook** — projects pillar scores 21 days forward using velocity, reclassifies to estimate where the regime is heading
+- **Swing factors** — identifies which pillars are closest to flipping the regime, with velocity-based ETAs
+- **Canonical playbooks** — positioning guidance per regime (equity, duration, credit, commodity, vol stances + key trade expressions with tickers)
+- **CLI:** `lox regime composite` (full dashboard), `lox regime composite --json` (machine-readable)
+- **Integrated everywhere:** PM report header, LLM system prompt, `lox research regimes` overview, trend dashboard headers
+- New files: `lox/regimes/composite.py`, `lox/cli_commands/shared/composite_display.py`
+
+### New: USD Regime Command
+- **Dedicated USD strength analysis** — trade-weighted dollar regime with FX momentum, volatility, and cross-regime implications
+- **Dashboard:** Broad index level, 200d MA distance, z-score, 20d/60d/YoY momentum, realized FX volatility
+- **Cross-regime signals:** Growth-USD, commodity-USD divergence detection with context-aware interpretation
+- **Tail risks:** Dollar surge (EM funding stress, commodity crash) and dollar plunge (confidence crisis, imported inflation) warnings
+- **CLI:** `lox regime usd` with `--llm`, `--trades`, `--alert`, `--calendar`, `--features`, `--json`, `-t TICKER` flags
+- New file: `lox/cli_commands/regimes/usd_cmd.py`
+
+### PM Report Enhancements
+- Composite regime headline in PM report header (regime name + confidence + transition direction)
+- Composite regime context injected into LLM system prompt (probabilities, swing factors, playbook, transition outlook)
+- JSON output includes full composite regime object
+
+### Regime Engine Updates
+- `UnifiedRegimeState` now includes `composite` field (populated automatically after trends/dislocations)
+- Scenario count increased from 8 to 10 (added Trade War Escalation, Supply Chain Normalization)
+- Dislocation detector: 12 cross-pillar divergence rules (credit-vol, growth-credit, rates-growth, etc.)
+- Pillar count: 12 (Growth, Inflation, Volatility, Credit, Rates, Liquidity, Consumer, Fiscal, USD, Commodities, Earnings, Policy)
+
+---
+
 ## v5 — CLI Consolidation + PM Morning Report (2026-03-06)
 
 ### CLI Cleanup

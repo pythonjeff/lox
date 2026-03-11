@@ -10,7 +10,7 @@ Lox is organized around a streamlined CLI for daily PM workflows plus a web dash
 |------|---------|--------------|
 | **PM Report** | Daily CIO briefing | `lox pm` |
 | **Research** | Deep analysis + regime views | `lox research regimes`, `lox research ticker`, `lox research scenario` |
-| **Regime Drill-Down** | Per-pillar deep dives | `lox regime vol`, `lox regime credit`, etc. |
+| **Regime Drill-Down** | Per-pillar deep dives | `lox regime vol`, `lox regime credit`, `lox regime composite`, `lox regime usd`, etc. |
 | **Portfolio & Risk** | Health + Greeks | `lox status`, `lox risk`, `lox scan` |
 | **Accounting** | NAV, investors, reports | `lox nav`, `lox weekly`, `lox account` |
 | **Crypto** | Perps data + trading | `lox crypto data`, `lox crypto trade` |
@@ -25,9 +25,9 @@ lox/                          # Main package (installed via pip install -e .)
 |-- config.py                 # Settings / .env loader
 |-- cli_commands/             # Command implementations
 |   |-- core/                 # pm, status, account, nav, risk, weekly report
-|   |-- regimes/              # vol, fiscal, funding, rates, growth, inflation, credit, consumer, earnings, oil
+|   |-- regimes/              # vol, fiscal, funding, rates, growth, inflation, credit, consumer, earnings, oil, usd, composite
 |   |-- research/             # ticker, regimes (unified), portfolio, scenario, chat
-|   +-- shared/               # Shared display components (regime_display, regime_chat, scenario_display, trend_display)
+|   +-- shared/               # Shared display components (regime_display, regime_chat, scenario_display, trend_display, composite_display)
 |-- altdata/                  # External data clients (FMP, SEC, news, earnings)
 |-- data/                     # Market data fetchers (Alpaca, FRED, Polygon)
 |-- llm/                      # LLM analysis (analyst, regime summaries, sentiment)
@@ -35,6 +35,8 @@ lox/                          # Main package (installed via pip install -e .)
 |-- regimes/                  # Regime classification framework
 |   |-- pillars/              # Dashboard pillars (growth, inflation, liquidity, vol)
 |   |-- features.py           # Unified regime state builder
+|   |-- composite.py          # Composite regime classification (5 macro regimes)
+|   |-- inconsistencies.py    # Cross-pillar dislocation detector (12 rules)
 |   |-- scenarios.py          # Cross-regime macro scenarios
 |   |-- trend.py              # Regime trend/momentum
 |   |-- transitions.py        # Regime transition probabilities
@@ -91,6 +93,8 @@ tests/                        # pytest test suite
 | Component | Module | Purpose |
 |-----------|--------|---------|
 | **Regime Classification** | `lox/regimes/` | 12 regime domains with unified state builder |
+| **Composite Regime** | `lox/regimes/composite.py` | Distance-based regime ID: 5 macro regimes with confidence, playbooks, transition outlook |
+| **Dislocation Detector** | `lox/regimes/inconsistencies.py` | 12 cross-pillar divergence rules (credit-vol, growth-credit, rates-growth, etc.) |
 | **LLM Analyst** | `lox/llm/core/analyst.py` | Research briefs with news, scenario, and trade synthesis |
 | **Monte Carlo** | `lox/scenarios/engine.py` | Block-bootstrap MC with macro shock translation |
 | **Ticker Research** | `lox/cli_commands/research/ticker_cmd.py` | Fundamentals, technicals, SEC filings, LLM analysis |
@@ -106,11 +110,20 @@ tests/                        # pytest test suite
 2. **Regime classifier** (`regime.py`): Maps indicators to a named regime with label, score (0-100), and tags.
 3. **Features module** (`features.py`): Exports flat feature vectors for ML.
 
-CLI exposes 10 pillars directly (growth, inflation, volatility, credit, rates, funding, consumer, fiscal, earnings, oil). All 12 domains (including positioning, monetary, usd) contribute to the unified regime state and overall risk score.
+CLI exposes 12 pillars directly (growth, inflation, volatility, credit, rates, funding, consumer, fiscal, earnings, oil, usd, composite). All 12 domains contribute to the unified regime state, overall risk score, and composite regime classification.
 
-Score interpretation: 0 = strong risk-on signal, 100 = strong risk-off signal. The unified view derives a "Macro Quadrant" (Stagflation, Goldilocks, Reflation, Deflation Risk, or Mixed) from the Growth + Inflation scores.
+Score interpretation: 0 = strong risk-on signal, 100 = strong risk-off signal. The unified state builder (`lox/regimes/features.py`) computes all regimes and produces a single `UnifiedRegimeState` with an overall risk score.
 
-The unified state builder (`lox/regimes/features.py`) computes all regimes and produces a single `UnifiedRegimeState` with an overall risk score.
+### Composite Regime Classification
+
+The composite regime engine (`lox/regimes/composite.py`) compresses 12 pillar scores into 5 named macro regimes via distance-based prototype matching — the way a PM at a macro fund would frame the market environment:
+
+- **5 Regimes:** RISK-ON / GOLDILOCKS, REFLATION, STAGFLATION, RISK-OFF / DEFLATIONARY, TRANSITION / MIXED
+- **Method:** Weighted Euclidean distance between pillar score vectors and regime prototypes, converted to probabilities via softmax
+- **Confidence:** Softmax probability of the winning regime, with TRANSITION override for high-dispersion / low-conviction states
+- **Transition Outlook:** Projects pillar scores 21 days forward using velocity, reclassifies to estimate regime direction
+- **Swing Factors:** Identifies which pillars are closest to flipping the regime, with velocity-based ETAs
+- **Canonical Playbooks:** Positioning guidance per regime (equity, duration, credit, commodity, vol stances + key trade expressions)
 
 ### Monte Carlo Correlation Training
 

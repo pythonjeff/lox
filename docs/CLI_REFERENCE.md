@@ -13,13 +13,14 @@ lox                           # Help with examples
 |   +-- pm                    # Daily CIO briefing (macro + portfolio + LLM)
 |
 +-- Research
-|   +-- research regimes      # Unified regime overview (10 pillars)
+|   +-- research regimes      # Unified regime overview (12 pillars)
 |   +-- research ticker NVDA  # Deep ticker research
 |   +-- research portfolio    # Open position outlook
 |   +-- research scenario SPY # Monte Carlo macro shock sim
 |   +-- research chat         # Interactive research chat
 |
 +-- Regime Drill-Down
+|   +-- regime composite      # Composite regime ID (5 macro regimes + playbook)
 |   +-- regime growth         # Growth (payrolls, ISM, claims)
 |   +-- regime inflation      # Inflation (CPI, PCE, breakevens)
 |   +-- regime vol            # Volatility (VIX)
@@ -30,6 +31,7 @@ lox                           # Help with examples
 |   +-- regime fiscal         # Fiscal (deficits, TGA)
 |   +-- regime earnings       # Earnings (beat rate, revisions)
 |   +-- regime oil            # Commodities (oil, gold, copper)
+|   +-- regime usd            # USD strength (trade-weighted, FX vol)
 |
 +-- Portfolio & Risk
 |   +-- status                # Portfolio health
@@ -70,7 +72,7 @@ lox pm --no-llm       # Data sections only (macro + scenarios + portfolio)
 lox pm --json         # Machine-readable JSON output
 ```
 
-Sections: Macro Environment (10-pillar heatmap), Active Scenarios, Portfolio (NAV/Greeks/bleeders/winners/risk signals), LLM CIO Briefing.
+Sections: Macro Environment (12-pillar heatmap + composite regime headline), Active Scenarios, Portfolio (NAV/Greeks/bleeders/winners/risk signals), LLM CIO Briefing.
 
 ---
 
@@ -93,6 +95,10 @@ Sections: Macro Environment (10-pillar heatmap), Active Scenarios, Portfolio (NA
 ## Regime Commands
 
 ```bash
+# Composite regime (hedge-fund-style macro regime ID)
+lox regime composite              # Full dashboard: regime, confidence, playbook, swing factors
+lox regime composite --json       # Machine-readable JSON output
+
 # Core regimes (drive Monte Carlo adjustments)
 lox regime growth                 # Growth (payrolls, ISM, claims, industrial production)
 lox regime inflation              # Inflation (CPI, Core PCE, breakevens, PPI)
@@ -106,6 +112,7 @@ lox regime consumer               # Consumer (sentiment, spending, mortgage rate
 lox regime fiscal                 # Fiscal (deficits, TGA)
 lox regime earnings               # Earnings (S&P 500 beat rate, revisions)
 lox regime oil                    # Oil/commodities (energy, metals)
+lox regime usd                    # USD strength (trade-weighted dollar, FX vol, EM/commodity impact)
 
 # Add --llm to any command for LLM analysis
 lox regime vol --llm
@@ -141,10 +148,12 @@ lox regime credit --book
 ```bash
 # Morning: PM Report (2 min)
 lox pm                        # Full CIO briefing with LLM
+lox regime composite          # Composite regime + playbook
 
 # Drill-down (as needed)
 lox regime vol                # Volatility deep dive
 lox regime credit --book      # Credit + position exposure
+lox regime usd --llm          # USD regime + FX analysis
 lox research ticker NVDA      # Full research report
 
 # Options scanning

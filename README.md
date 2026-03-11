@@ -11,7 +11,7 @@ CLI + live web dashboard — built for a PM morning risk meeting workflow.
 
 ## What is Lox?
 
-Lox is a systematic macro research platform that scores 10 economic regime pillars (0–100), detects cross-regime scenarios, and translates regime state into portfolio-level risk signals. It combines a full-featured CLI for daily research workflows with a live web dashboard for real-time fund monitoring — designed to feel like a PM morning risk meeting, not a generic research report.
+Lox is a systematic macro research platform that scores 12 economic regime pillars (0–100), classifies the market into one of 5 composite macro regimes, and translates regime state into portfolio-level risk signals with canonical playbooks. It combines a full-featured CLI for daily research workflows with a live web dashboard for real-time fund monitoring — designed to feel like a PM morning risk meeting, not a generic research report.
 
 ---
 
@@ -55,9 +55,10 @@ Your daily hedge fund briefing in one command. Combines macro regime state, acti
 ```
 $ lox pm
 
-╭─ LOX CAPITAL — PM MORNING REPORT  Mar 6 2026 ────────────────────────╮
-│ Composite Risk: 56/100 (CAUTIOUS)    Quadrant: MIXED                  │
-│ NAV: $13,306    Day P&L: +$291 (+2.2%)    Inception: +$2,906 (+27.9%)│
+╭─ LOX CAPITAL — PM MORNING REPORT  Mar 10 2026 ───────────────────────╮
+│ Risk: 60/100 (CAUTIOUS)    Quadrant: MIXED                           │
+│ Regime: STAGFLATION (45% confidence) → RISK-OFF rising (26%)         │
+│ NAV: $12,356    P&L: +$1,956 (+18.8%)    [LIVE]                      │
 ╰───────────────────────────────────────────────────────────────────────╯
 
 [1] MACRO REGIME
@@ -101,7 +102,7 @@ lox pm --json         # Machine-readable JSON
 
 ## Regime Engine
 
-10-pillar macro regime system scoring 0–100 (higher = more stress). Each pillar uses a 3-layer classifier with weighted sub-scores, cross-signal confirmation, and sector/factor decomposition.
+12-pillar macro regime system scoring 0–100 (higher = more stress). Each pillar uses a 3-layer classifier with weighted sub-scores, cross-signal confirmation, and sector/factor decomposition.
 
 ```bash
 lox research regimes              # Overview with trend arrows + 7d deltas
@@ -110,7 +111,7 @@ lox research regimes --detail credit   # Deep dive on one pillar + trend panel
 lox research regimes --scenarios  # Active macro scenarios (conviction-ranked)
 ```
 
-**Pillars:** Growth, Inflation, Volatility, Credit, Rates, Liquidity, Consumer, Fiscal, USD, Commodities
+**Pillars:** Growth, Inflation, Volatility, Credit, Rates, Liquidity, Consumer, Fiscal, USD, Commodities, Earnings, Policy
 
 **Enrichments per pillar:**
 - `--llm` — LLM chat with regime context injected
@@ -120,7 +121,42 @@ lox research regimes --scenarios  # Active macro scenarios (conviction-ranked)
 - `--alert` — Silent unless regime is extreme (for cron monitoring)
 - `--calendar` — Upcoming catalysts
 
-**Scenarios:** 8 named macro scenarios (Stagflation, Credit Crunch, Goldilocks, Trade War, etc.) auto-evaluated against live regime state with HIGH/MEDIUM conviction scoring.
+**Scenarios:** 10 named macro scenarios (Stagflation Squeeze, Credit Crunch, Goldilocks Unwind, Trade War Escalation, Risk-Off Cascade, etc.) auto-evaluated against live regime state with HIGH/MEDIUM conviction scoring.
+
+---
+
+## Composite Regime
+
+Hedge-fund-style macro regime classification. Compresses 12 pillar scores into 5 named regimes using distance-based prototype matching — the way a PM at Citadel or Bridgewater would frame the market environment.
+
+```bash
+lox regime composite              # Full dashboard with transition outlook + playbook
+lox regime composite --json       # Machine-readable output
+```
+
+**5 Composite Regimes:** RISK-ON / GOLDILOCKS, REFLATION, STAGFLATION, RISK-OFF / DEFLATIONARY, TRANSITION / MIXED
+
+**What it shows:**
+- **Regime ID + confidence** — single headline for the morning meeting
+- **Regime probabilities** — softmax distribution across all 5 regimes
+- **Transition outlook** — where we're heading next month (velocity-projected)
+- **Swing factors** — which pillars are closest to flipping the regime, with ETAs
+- **Canonical playbook** — positioning guidance (equity, duration, credit, commodity, vol stances + key trade expressions)
+
+---
+
+## USD Regime
+
+Dedicated USD strength analysis with trade-weighted dollar regime, FX momentum, and cross-regime implications.
+
+```bash
+lox regime usd                    # Full dashboard
+lox regime usd --llm              # With LLM analysis
+lox regime usd --trades           # Trade ideas for current regime
+lox regime usd --alert            # Silent unless extreme (for cron)
+```
+
+**What it shows:** Broad index level, 200d MA distance, z-score, 20d/60d/YoY momentum, FX volatility, tail risks, cross-regime signals (growth-USD, commodity-USD divergences).
 
 ---
 
@@ -194,8 +230,12 @@ flowchart TB
         P8[Fiscal]
         P9[USD]
         P10[Commodities]
-        SC[Scenario Detector<br/>8 Named Scenarios]
+        P11[Earnings]
+        P12[Policy]
+        SC[Scenario Detector<br/>10 Named Scenarios]
         TR[Trend & Momentum<br/>Sparklines · Velocity · z-scores]
+        CR[Composite Regime<br/>5 Macro Regimes · Playbooks]
+        DL[Dislocation Detector<br/>12 Cross-Pillar Rules]
     end
 
     subgraph Output["Output Layer"]
@@ -206,8 +246,8 @@ flowchart TB
     end
 
     Data --> Engine
-    P1 & P2 & P3 & P4 & P5 & P6 & P7 & P8 & P9 & P10 --> URS
-    URS --> SC & TR
+    P1 & P2 & P3 & P4 & P5 & P6 & P7 & P8 & P9 & P10 & P11 & P12 --> URS
+    URS --> SC & TR & CR & DL
     Engine --> Output
 ```
 
