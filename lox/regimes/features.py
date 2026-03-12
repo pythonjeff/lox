@@ -39,7 +39,7 @@ REGIME_WEIGHTS = {
 
 # ── 12 domain names (ordered for display) ────────────────────────────────
 CORE_DOMAINS = ["growth", "inflation", "volatility", "credit", "rates", "liquidity"]
-EXTENDED_DOMAINS = ["consumer", "fiscal", "usd", "commodities", "earnings", "policy"]
+EXTENDED_DOMAINS = ["consumer", "fiscal", "usd", "commodities", "earnings", "policy", "positioning"]
 ALL_DOMAINS = CORE_DOMAINS + EXTENDED_DOMAINS
 
 
@@ -67,6 +67,7 @@ class UnifiedRegimeState:
     commodities: Optional[RegimeResult] = None
     earnings: Optional[RegimeResult] = None
     policy: Optional[RegimeResult] = None
+    positioning: Optional[RegimeResult] = None
 
     # Aggregate risk assessment
     overall_risk_score: float = 50.0
@@ -1067,6 +1068,31 @@ def build_unified_regime_state(
             logger.warning(f"Failed to build policy regime: {e}")
             return None
 
+    def _build_positioning():
+        try:
+            from lox.positioning.data import compute_positioning_inputs
+            from lox.positioning.regime import classify_positioning
+
+            inputs = compute_positioning_inputs(settings=settings, refresh=refresh)
+            if inputs.error:
+                logger.warning(f"Positioning data issue: {inputs.error}")
+                return None
+
+            return classify_positioning(
+                vix_term_slope=inputs.vix_term_slope,
+                put_call_ratio=inputs.put_call_ratio,
+                aaii_bull_pct=inputs.aaii_bull_pct,
+                cot_net_spec=inputs.cot_net_spec,
+                cot_z_score=inputs.cot_z_score,
+                gex_total=inputs.gex_total,
+                gex_flip_level=inputs.gex_flip_level,
+                skew_25d=inputs.skew_25d,
+                short_interest_pct=inputs.short_interest_pct,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to build positioning regime: {e}")
+            return None
+
     # ── Submit all builders to thread pool ─────────────────────────────────
     builders = {
         "growth": _build_growth,
@@ -1081,6 +1107,7 @@ def build_unified_regime_state(
         "commodities": _build_commodities,
         "earnings": _build_earnings,
         "policy": _build_policy,
+        "positioning": _build_positioning,
     }
 
     with ThreadPoolExecutor(max_workers=10, thread_name_prefix="regime") as pool:

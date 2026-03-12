@@ -11,6 +11,71 @@ from lox.config import Settings
 FMP_BASE_URL = "https://financialmodelingprep.com/api"
 
 
+def fetch_treasury_rates_live(
+    *,
+    settings: Settings,
+    cache_max_age: timedelta = timedelta(minutes=5),
+) -> dict[str, float] | None:
+    """
+    Fetch current US Treasury rates from FMP /api/v4/treasury.
+
+    Returns dict with keys matching FRED series naming:
+        UST_3M, UST_2Y, UST_5Y, UST_10Y, UST_30Y
+    Values are yields in percent (e.g. 4.15 = 4.15%).
+    Returns None if FMP key missing or request fails.
+    """
+    if not settings.fmp_api_key:
+        return None
+
+    key = "fmp_treasury_rates_live"
+    p = cache_path(key)
+    cached = read_cache(p, max_age=cache_max_age)
+    if isinstance(cached, dict) and "UST_10Y" in cached:
+        return cached
+
+    url = f"{FMP_BASE_URL}/v4/treasury"
+    import requests
+
+    try:
+        resp = requests.get(
+            url,
+            params={"apikey": settings.fmp_api_key},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        if not isinstance(data, list) or not data:
+            return None
+
+        row = data[0]
+        _FMP_TO_FRED = {
+            "month3": "UST_3M",
+            "year2": "UST_2Y",
+            "year5": "UST_5Y",
+            "year10": "UST_10Y",
+            "year20": "UST_20Y",
+            "year30": "UST_30Y",
+        }
+        result: dict[str, float] = {}
+        for fmp_key, fred_key in _FMP_TO_FRED.items():
+            val = row.get(fmp_key)
+            if val is not None:
+                try:
+                    result[fred_key] = float(val)
+                except (ValueError, TypeError):
+                    pass
+
+        if "date" in row:
+            result["_date"] = str(row["date"])
+
+        if result:
+            write_cache(p, result)
+        return result if "UST_10Y" in result else None
+    except Exception:
+        return None
+
+
 def fetch_realtime_quotes(
     *,
     settings: Settings,

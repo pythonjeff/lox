@@ -27,6 +27,7 @@ def register_research_commands(app: typer.Typer) -> None:
     from lox.cli_commands.research.chat_cmd import register as register_chat
     from lox.cli_commands.research.scenario_cmd import register as register_scenario
     from lox.cli_commands.research.scenario_track_cmd import register as register_scenario_track
+    from lox.cli_commands.research.factors_cmd import register as register_factors
 
     register_regimes(research_app)
     register_ticker(research_app)
@@ -34,5 +35,6 @@ def register_research_commands(app: typer.Typer) -> None:
     register_chat(research_app)
     register_scenario(research_app)
     register_scenario_track(research_app)
+    register_factors(research_app)
     
     app.add_typer(research_app, name="research")

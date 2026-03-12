@@ -276,6 +276,9 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool, 
         ("Fiscal", state.fiscal),
         ("USD", state.usd),
         ("Commodities", state.commodities),
+        ("Earnings", state.earnings),
+        ("Policy", state.policy),
+        ("Positioning", state.positioning),
     ]
     console.print(_build_pillar_table("Extended Pillars", extended))
     console.print()
@@ -325,6 +328,11 @@ def _show_regime_detail(console: Console, settings, state, pillar: str, include_
         "earnings": "earnings",
         "oil": "oil",
         "commodities": "oil",
+        "usd": "usd",
+        "dollar": "usd",
+        "policy": "policy",
+        "positioning": "positioning",
+        "flow": "positioning",
     }
 
     if pillar not in pillar_aliases:

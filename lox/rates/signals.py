@@ -30,6 +30,47 @@ def _num(col: pd.Series) -> pd.Series:
     return pd.to_numeric(col, errors="coerce")
 
 
+def _overlay_fmp_live(merged: pd.DataFrame, settings: Settings) -> pd.DataFrame:
+    """Append a live FMP Treasury row if it's newer than the latest FRED data."""
+    try:
+        from lox.altdata.fmp import fetch_treasury_rates_live
+        live = fetch_treasury_rates_live(settings=settings)
+        if not live or "UST_10Y" not in live:
+            return merged
+
+        fmp_date_str = live.pop("_date", None)
+        if not fmp_date_str:
+            fmp_date = pd.Timestamp.now().normalize()
+        else:
+            fmp_date = pd.to_datetime(fmp_date_str)
+
+        fred_max = merged["date"].max()
+        if fmp_date <= fred_max:
+            return merged
+
+        new_row = {"date": fmp_date}
+        last_fred = merged.iloc[-1]
+        for col in merged.columns:
+            if col != "date":
+                new_row[col] = last_fred[col]
+
+        for fmp_key, col in [
+            ("UST_3M", "UST_3M"), ("UST_2Y", "UST_2Y"), ("UST_5Y", "UST_5Y"),
+            ("UST_10Y", "UST_10Y"), ("UST_30Y", "UST_30Y"),
+        ]:
+            if fmp_key in live and col in merged.columns:
+                new_row[col] = live[fmp_key]
+
+        new_df = pd.DataFrame([new_row])
+        for col in merged.columns:
+            if col != "date":
+                new_df[col] = pd.to_numeric(new_df[col], errors="coerce")
+        merged = pd.concat([merged, new_df], ignore_index=True)
+    except Exception:
+        pass
+    return merged
+
+
 def build_rates_dataset(settings: Settings, start_date: str = "2011-01-01", refresh: bool = False) -> pd.DataFrame:
     if not settings.FRED_API_KEY:
         raise RuntimeError("Missing FRED_API_KEY in environment / .env")
@@ -55,6 +96,9 @@ def build_rates_dataset(settings: Settings, start_date: str = "2011-01-01", refr
         {"date": pd.date_range(start=pd.to_datetime(start_date), end=pd.to_datetime(max_date), freq="D")}
     )
     merged = merge_series_daily(base, frames, ffill=True)
+
+    # Overlay live FMP Treasury rates if FRED is stale
+    merged = _overlay_fmp_live(merged, settings)
 
     # ── Curve slopes (percent) ───────────────────────────────────────────
     _2y = _num(merged["UST_2Y"]) if "UST_2Y" in merged.columns else None

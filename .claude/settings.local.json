@@ -27,7 +27,12 @@
       "Bash(git add data/nav_flows.csv data/nav_investor_flows.csv)",
       "Bash(git push origin main)",
       "Bash(git push heroku main)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(lox research --help)",
+      "Bash(python3 -c \"from lox.positioning.data import compute_positioning_inputs; print\\(''data.py OK''\\)\")",
+      "Bash(.venv/bin/python -c \"from lox.positioning.data import compute_positioning_inputs; print\\(''data.py OK''\\)\")",
+      "Bash(.venv/bin/python -c \"from lox.positioning.regime import classify_positioning; print\\(''regime.py OK''\\)\")",
+      "Bash(.venv/bin/python -c \"from lox.cli_commands.regimes.positioning_cmd import positioning_snapshot; print\\(''cmd.py OK''\\)\")"
     ]
   }
 }
