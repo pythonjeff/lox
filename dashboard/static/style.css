@@ -792,6 +792,13 @@ body {
     font-size: 12px;
 }
 
+.pos-td-days, .pos-th-days {
+    text-align: right;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
 /* ── Expandable detail row ── */
 .pos-detail-row td {
     padding: 0 !important;

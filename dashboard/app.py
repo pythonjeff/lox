@@ -1010,6 +1010,20 @@ def get_positions_data(force_refresh: bool = False):
                 
                 total_liquidation_value += liquidation_value
                 
+                # Days open from Alpaca created_at
+                days_open = None
+                try:
+                    created_at = getattr(pd["raw"], "created_at", None)
+                    if created_at:
+                        from datetime import timezone as tz
+                        now_utc = datetime.now(tz.utc)
+                        if hasattr(created_at, 'tzinfo') and created_at.tzinfo:
+                            days_open = (now_utc - created_at).days
+                        else:
+                            days_open = (now_utc - created_at.replace(tzinfo=tz.utc)).days
+                except Exception:
+                    pass
+
                 # Build position dict
                 position_dict = {
                     "symbol": symbol,
@@ -1020,6 +1034,7 @@ def get_positions_data(force_refresh: bool = False):
                     "current_price": liquidation_price,
                     "opt_info": opt_info,
                     "bid_ask_mark": True,
+                    "days_open": days_open,
                 }
                 
                 # Use instant simple thesis in positions path (LLM thesis served separately via /api/position-thesis)

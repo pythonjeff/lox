@@ -222,6 +222,7 @@ function processPositionsData(data) {
             const costBasis = mv - (pos.pnl || 0);
             const pnlVal = pos.pnl || 0;
             const pnlPct = pos.pnl_pct || 0;
+            const daysOpen = pos.days_open !== null && pos.days_open !== undefined ? pos.days_open : '—';
 
             // Thesis & indicators for expandable detail
             const thesis = pos.thesis || '';
@@ -248,7 +249,7 @@ function processPositionsData(data) {
                 }
                 detailHtml = `
                     <tr class="pos-detail-row" id="detail-${safeId}" style="display:none;">
-                        <td colspan="7">
+                        <td colspan="8">
                             <div class="pos-detail-content">
                                 ${thesis ? `<div class="pos-detail-thesis" id="thesis-${safeId}">${escapeHtml(thesis)}</div>` : ''}
                                 ${indRows}
@@ -269,6 +270,7 @@ function processPositionsData(data) {
                     <td class="pos-td-mv">${formatCurrency(mv)}</td>
                     <td class="pos-td-pnl ${pnlClass}">${formatCurrency(pnlVal)}</td>
                     <td class="pos-td-pct ${pnlClass}">${formatPercent(pnlPct, 1)}</td>
+                    <td class="pos-td-days">${daysOpen}${typeof daysOpen === 'number' ? 'd' : ''}</td>
                 </tr>
                 ${detailHtml}`;
         }).join('');
@@ -284,6 +286,7 @@ function processPositionsData(data) {
                         <th class="pos-th-mv">Mkt Val</th>
                         <th class="pos-th-pnl">P&L</th>
                         <th class="pos-th-pct">%</th>
+                        <th class="pos-th-days">Days</th>
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
