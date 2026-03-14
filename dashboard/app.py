@@ -948,6 +948,27 @@ def get_positions_data(force_refresh: bool = False):
         total_pnl = nav_equity - original_capital
         regime_context = _get_regime_context(settings)
         
+        # Fetch earliest fill date per symbol for "days open" calculation
+        # Uses Account Activities API (FILL type) for accurate timestamps
+        open_dates = {}
+        try:
+            raw_fills = trading.get("/v2/account/activities/FILL") or []
+            if isinstance(raw_fills, dict):
+                raw_fills = [raw_fills]
+            # Build map: symbol → earliest fill timestamp
+            for f in raw_fills:
+                sym = f.get("symbol") if isinstance(f, dict) else getattr(f, "symbol", None)
+                cum_qty = f.get("cum_qty") if isinstance(f, dict) else getattr(f, "cum_qty", None)
+                ts = f.get("transaction_time") if isinstance(f, dict) else getattr(f, "transaction_time", None)
+                if sym and ts:
+                    from dateutil.parser import parse as parse_dt
+                    if isinstance(ts, str):
+                        ts = parse_dt(ts)
+                    if sym not in open_dates or ts < open_dates[sym]:
+                        open_dates[sym] = ts
+        except Exception:
+            pass
+
         # OPTIMIZATION: Pre-parse all positions and batch quote requests
         position_data = []
         option_symbols = []
@@ -1010,17 +1031,17 @@ def get_positions_data(force_refresh: bool = False):
                 
                 total_liquidation_value += liquidation_value
                 
-                # Days open from Alpaca created_at
+                # Days open from earliest fill date
                 days_open = None
                 try:
-                    created_at = getattr(pd["raw"], "created_at", None)
-                    if created_at:
+                    first_fill = open_dates.get(symbol)
+                    if first_fill:
                         from datetime import timezone as tz
                         now_utc = datetime.now(tz.utc)
-                        if hasattr(created_at, 'tzinfo') and created_at.tzinfo:
-                            days_open = (now_utc - created_at).days
+                        if hasattr(first_fill, 'tzinfo') and first_fill.tzinfo:
+                            days_open = (now_utc - first_fill).days
                         else:
-                            days_open = (now_utc - created_at.replace(tzinfo=tz.utc)).days
+                            days_open = (now_utc - first_fill.replace(tzinfo=tz.utc)).days
                 except Exception:
                     pass
 
