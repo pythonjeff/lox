@@ -24,7 +24,7 @@ _REGIME_DETAIL_TTL = 600  # 10 minutes — macro data changes daily at most
 
 REGIME_NAMES = [
     "growth", "inflation", "volatility", "credit", "rates", "liquidity",
-    "consumer", "fiscal", "usd", "commodities",
+    "consumer", "fiscal", "usd", "commodities", "earnings", "policy", "positioning",
 ]
 
 REGIME_DISPLAY_NAMES = {
@@ -38,6 +38,9 @@ REGIME_DISPLAY_NAMES = {
     "fiscal": "Fiscal",
     "usd": "USD",
     "commodities": "Commodities",
+    "earnings": "Earnings",
+    "policy": "Policy",
+    "positioning": "Positioning",
 }
 
 # Classification label → severity for color mapping.
@@ -92,6 +95,15 @@ REGIME_LABEL_SEVERITY = {
     "Neutral commodities backdrop": "low",
     "Commodity reflation (inflation pressure)": "elevated",
     "Energy shock (inflation impulse)": "high",
+    # Earnings (threshold-derived)
+    "Earnings Boom": "low", "Earnings Growth": "low", "Earnings Stable": "moderate",
+    "Earnings Deterioration": "elevated", "Earnings Recession": "high",
+    # Policy (threshold-derived)
+    "Policy Calm": "low", "Low Uncertainty": "low", "Moderate Uncertainty": "moderate",
+    "Elevated Uncertainty": "elevated", "Policy Stress": "high", "Policy Crisis": "high",
+    # Positioning (threshold-derived)
+    "Extreme Complacency": "elevated", "Complacent": "low", "Neutral": "low",
+    "Defensive": "moderate", "Panic": "elevated", "Capitulation": "high",
 }
 
 # Actual score thresholds per regime (only for continuous-scoring classifiers).
@@ -782,13 +794,28 @@ def get_regime_summary(settings, refresh=False):
         logger.error(f"Failed to build regime cache for summary: {e}")
         return {"error": str(e), "regimes": []}
 
-    return {
+    result = {
         "regimes": _build_all_regimes_summary(state),
         "overall_risk_score": state.overall_risk_score,
         "overall_category": state.overall_category,
         "macro_quadrant": state.macro_quadrant,
         "as_of": state.asof,
     }
+
+    # V2: Composite regime identification
+    composite = getattr(state, "composite", None)
+    if composite:
+        result["composite_regime"] = composite.regime
+        result["composite_label"] = getattr(composite, "label", composite.regime)
+        result["composite_confidence"] = round(composite.confidence, 2)
+        result["composite_description"] = getattr(composite, "description", "")
+    else:
+        result["composite_regime"] = None
+        result["composite_label"] = "LOADING"
+        result["composite_confidence"] = 0
+        result["composite_description"] = ""
+
+    return result
 
 
 def get_regime_detail(settings, regime_name, refresh=False):

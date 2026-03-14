@@ -489,9 +489,11 @@ def _register_commands() -> None:
     from lox.cli_commands.core.weekly_report_cmd import register as register_weekly_report
     from lox.cli_commands.core.investor_report_cmd import register as register_investor_report
     from lox.cli_commands.core.closed_trades_cmd import register as register_closed_trades
+    from lox.cli_commands.core.suggest_cmd import register as register_suggest
 
     register_core(app)
     register_pm(app)
+    register_suggest(app)
     register_closed_trades(app)
     register_nav(nav_app)
     register_account(app)

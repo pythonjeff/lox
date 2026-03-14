@@ -53,6 +53,7 @@ const connectionState = {
     lastTradesUpdate: null,
     positionsRetries: 0,
     tradesRetries: 0,
+    regimeRetries: 0,
     maxRetries: 5,
     baseDelay: 5000,      // 5s initial retry
     connected: false,
@@ -143,25 +144,23 @@ function processPositionsData(data) {
         heroReturn.className = 'hero-value ' + (val >= 0 ? 'positive' : 'negative');
     }
 
-    // HERO: Benchmark comparison
-    const heroBenchmark = document.getElementById('hero-benchmark');
-    let benchParts = [];
-    if (data.sp500_return !== undefined && data.sp500_return !== null) {
-        benchParts.push(`<span class="bench-item">S&P 500: ${formatPercent(data.sp500_return)}</span>`);
+    // HERO: Benchmark comparison cards
+    const sp500El = document.getElementById('bench-sp500');
+    const macroEl = document.getElementById('bench-macro-hf');
+    const alphaEl = document.getElementById('bench-alpha');
+    if (sp500El && data.sp500_return !== undefined && data.sp500_return !== null) {
+        sp500El.textContent = formatPercent(data.sp500_return);
+        sp500El.className = 'bench-value ' + (data.sp500_return >= 0 ? 'positive' : 'negative');
     }
-    if (data.macro_hf_return !== undefined && data.macro_hf_return !== null) {
-        benchParts.push(`<span class="bench-item">Macro Hedge Fund Index: ${formatPercent(data.macro_hf_return)}</span>`);
+    if (macroEl && data.macro_hf_return !== undefined && data.macro_hf_return !== null) {
+        macroEl.textContent = formatPercent(data.macro_hf_return);
+        macroEl.className = 'bench-value ' + (data.macro_hf_return >= 0 ? 'positive' : 'negative');
     }
-    if (benchParts.length) {
-        heroBenchmark.innerHTML = benchParts.join('<span class="bench-sep">·</span>');
+    if (alphaEl && data.alpha_sp500 !== undefined && data.alpha_sp500 !== null) {
+        alphaEl.textContent = formatPercent(data.alpha_sp500);
+        alphaEl.className = 'bench-value ' + (data.alpha_sp500 >= 0 ? 'positive' : 'negative');
     }
 
-    // HERO: AUM and investor count
-    const heroAum = document.getElementById('hero-aum');
-    if (heroAum && data.aum !== undefined) {
-        const investorCount = data.investor_count || 0;
-        heroAum.innerHTML = `<span class="aum-badge">${investorCount} investors</span> · <span class="aum-value">${formatCurrency(data.aum)} seed capital</span>`;
-    }
 
     // METRICS: NAV
     const navEl = document.getElementById('nav-value');
@@ -576,6 +575,204 @@ function renderPerformanceMetrics(metrics, tradeCount, winRate) {
 }
 
 // ============================================
+// V3: REGIME SUMMARY (Data Strip + Heatmap)
+// ============================================
+
+function processRegimeSummary(data) {
+    if (data.error && !data.regimes) {
+        console.error('[Regime] Summary error:', data.error);
+        return;
+    }
+
+    // ── DATA STRIP: Show it ──
+    const strip = document.getElementById('data-strip');
+    if (strip) strip.style.display = 'flex';
+
+    // ── Composite Regime Badge ──
+    const badge = document.getElementById('composite-badge');
+    if (badge && data.composite_regime) {
+        const regime = data.composite_regime;
+        const label = data.composite_label || regime;
+        const conf = data.composite_confidence || 0;
+        badge.textContent = label;
+        badge.className = 'composite-badge composite-' + regime.toLowerCase().replace(/_/g, '-');
+        badge.title = `${(conf * 100).toFixed(0)}% confidence`;
+    }
+
+    // ── Risk Gauge ──
+    const riskVal = document.getElementById('risk-gauge-value');
+    if (riskVal && data.overall_risk_score !== undefined) {
+        const score = Math.round(data.overall_risk_score);
+        riskVal.textContent = score;
+        const gaugeEl = document.getElementById('risk-gauge');
+        if (gaugeEl) {
+            gaugeEl.classList.remove('risk-high', 'risk-moderate', 'risk-low');
+            if (score >= 65) gaugeEl.classList.add('risk-high');
+            else if (score >= 35) gaugeEl.classList.add('risk-moderate');
+            else gaugeEl.classList.add('risk-low');
+        }
+    }
+
+    // ── Market Pulse (inline in strip) ──
+    if (data.market_pulse) {
+        const p = data.market_pulse;
+        _setStripVal('pulse-vix', p.vix, '', p.vix >= 20 ? 'pulse-warn' : '');
+        _setStripVal('pulse-10y', p.ten_y, '%', '');
+        _setStripVal('pulse-hy', p.hy_oas, 'bp', p.hy_oas >= 400 ? 'pulse-warn' : '');
+        _setStripVal('pulse-dxy', p.dxy, '', '');
+    }
+
+    // ── REGIME HEATMAP ──
+    const hmSection = document.getElementById('regime-heatmap-section');
+    const hm = document.getElementById('regime-heatmap');
+    if (hmSection && hm && data.regimes && data.regimes.length > 0) {
+        hmSection.style.display = 'block';
+        hm.innerHTML = data.regimes.map(r => {
+            const sev = r.severity || 'moderate';
+            const scoreText = r.score !== null && r.score !== undefined ? Math.round(r.score) : '—';
+            const abbr = _abbreviate(r.domain);
+            return `<a href="/regimes/${r.name}" class="hm-cell hm-${sev}" title="${r.domain}: ${r.classification} (${scoreText})">
+                <span class="hm-abbr">${abbr}</span>
+                <span class="hm-score">${scoreText}</span>
+            </a>`;
+        }).join('');
+    }
+}
+
+function _setStripVal(elementId, value, unit, extraClass) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const valEl = el.querySelector('.strip-val');
+    if (!valEl || value === null || value === undefined) return;
+    const decimals = unit === '%' ? 2 : unit === 'bp' ? 0 : 1;
+    valEl.textContent = Number(value).toFixed(decimals) + (unit ? unit : '');
+    valEl.className = 'strip-val' + (extraClass ? ' ' + extraClass : '');
+}
+
+function _abbreviate(domain) {
+    const abbrs = {
+        'Growth': 'GRW', 'Inflation': 'INF', 'Volatility': 'VOL',
+        'Credit': 'CRD', 'Rates': 'RTS', 'Liquidity': 'LIQ',
+        'Consumer': 'CON', 'Fiscal': 'FSC', 'USD': 'USD',
+        'Commodities': 'CMD', 'Earnings': 'ERN', 'Policy': 'POL',
+        'Positioning': 'POS',
+    };
+    return abbrs[domain] || domain.substring(0, 3).toUpperCase();
+}
+
+
+// ============================================
+// V3: EQUITY CURVE (Chart.js — tight)
+// ============================================
+
+let equityCurveChart = null;
+
+function processNavHistory(data, liveTwrPct) {
+    const section = document.getElementById('equity-curve-section');
+    const canvas = document.getElementById('equity-curve-chart');
+    if (!section || !canvas || !data.series || data.series.length < 2) return;
+
+    section.style.display = 'block';
+
+    // Append live intraday point if available and newer than last snapshot
+    const series = data.series.slice();
+    if (liveTwrPct !== undefined && liveTwrPct !== null) {
+        const today = new Date().toISOString().slice(0, 10);
+        const lastDate = series[series.length - 1].date;
+        if (today > lastDate) {
+            series.push({ date: today, twr_cum_pct: liveTwrPct });
+        } else if (today === lastDate) {
+            series[series.length - 1].twr_cum_pct = liveTwrPct;
+        }
+    }
+
+    const labels = series.map(p => {
+        const d = new Date(p.date + 'T12:00:00');
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    });
+    const values = series.map(p => p.twr_cum_pct);
+
+    const lastVal = values[values.length - 1];
+
+    // Update chart subtitle with latest TWR
+    const subtitleEl = document.getElementById('chart-latest');
+    if (subtitleEl) {
+        subtitleEl.textContent = (lastVal >= 0 ? '+' : '') + lastVal.toFixed(2) + '%';
+        subtitleEl.className = 'chart-subtitle ' + (lastVal >= 0 ? 'positive' : 'negative');
+    }
+
+    const lineColor = lastVal >= 0 ? 'rgba(0, 168, 107, 1)' : 'rgba(230, 57, 70, 1)';
+    const fillColor = lastVal >= 0 ? 'rgba(0, 168, 107, 0.08)' : 'rgba(230, 57, 70, 0.08)';
+
+    if (equityCurveChart) equityCurveChart.destroy();
+
+    equityCurveChart = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: values,
+                borderColor: lineColor,
+                backgroundColor: fillColor,
+                fill: true,
+                tension: 0.25,
+                pointRadius: 0,
+                pointHoverRadius: 3,
+                pointHoverBackgroundColor: lineColor,
+                borderWidth: 1.5,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: { padding: { left: 0, right: 4, top: 4, bottom: 0 } },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#0f172a',
+                    titleFont: { family: 'Inter', size: 10 },
+                    bodyFont: { family: 'Inter', size: 11, weight: '600' },
+                    padding: { x: 8, y: 4 },
+                    cornerRadius: 2,
+                    callbacks: {
+                        label: function(ctx) {
+                            const v = ctx.parsed.y;
+                            return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    border: { display: false },
+                    ticks: {
+                        font: { size: 9, family: 'Inter' },
+                        color: '#aaa',
+                        maxTicksLimit: 6,
+                        padding: 2,
+                    }
+                },
+                y: {
+                    grid: { color: 'rgba(0,0,0,0.04)', drawBorder: false },
+                    border: { display: false },
+                    ticks: {
+                        font: { size: 9, family: 'Inter' },
+                        color: '#aaa',
+                        padding: 4,
+                        callback: function(value) {
+                            return (value >= 0 ? '+' : '') + value.toFixed(0) + '%';
+                        }
+                    }
+                }
+            },
+            interaction: { intersect: false, mode: 'index' },
+        }
+    });
+}
+
+
+// ============================================
 // INIT & REFRESH
 // ============================================
 
@@ -587,13 +784,17 @@ async function initDashboardParallel() {
         fetch('/api/positions').then(r => r.json()).catch(e => ({ error: e.message, positions: [] })),
         fetch('/api/closed-trades').then(r => r.json()).catch(e => ({ error: e.message, trades: [] })),
         fetch('/api/position-thesis').then(r => r.json()).catch(e => ({ error: e.message })),
+        fetch('/api/regime-summary').then(r => r.json()).catch(e => ({ error: e.message, regimes: [] })),
+        fetch('/api/nav-history').then(r => r.json()).catch(e => ({ error: e.message, series: [] })),
     ];
 
     try {
-        const [positionsData, tradesData, thesisData] = await Promise.all(fetches);
+        const [positionsData, tradesData, thesisData, regimeData, navData] = await Promise.all(fetches);
 
         processPositionsData(positionsData);
         processClosedTradesData(tradesData);
+        processRegimeSummary(regimeData);
+        processNavHistory(navData, positionsData.return_pct);
 
         if (thesisData && thesisData.theses) {
             Object.entries(thesisData.theses).forEach(([symbol, thesis]) => {
@@ -628,6 +829,11 @@ setInterval(() => {
 setInterval(() => {
     fetchWithRetry('/api/closed-trades', 'tradesRetries', processClosedTradesData);
 }, 180000);
+
+// V2: Regime summary: refresh every 5 minutes
+setInterval(() => {
+    fetchWithRetry('/api/regime-summary', 'regimeRetries', processRegimeSummary);
+}, 300000);
 
 // Staleness watchdog: check every 15 seconds if data has gone stale
 setInterval(updateStalenessCheck, 15000);

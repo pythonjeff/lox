@@ -643,27 +643,41 @@ def _get_regime_context(settings):
         hy_oas = get_hy_oas(settings)
         vix = get_vix(settings)
         yield_10y = get_10y_yield(settings)
-        
+
         # Determine regime
         vix_val = vix.get("value") if vix else None
         hy_val = hy_oas.get("value") if hy_oas else None
         regime_label = get_regime_label(vix_val, hy_val)
-        
+
+        # DXY (Dollar Index) for market pulse
+        dxy_val = None
+        try:
+            import requests as _req
+            url = "https://financialmodelingprep.com/api/v3/quote/DX-Y.NYB"
+            resp = _req.get(url, params={"apikey": settings.FMP_API_KEY}, timeout=10)
+            resp.raise_for_status()
+            dxy_data = resp.json()
+            if isinstance(dxy_data, list) and dxy_data and dxy_data[0].get("price"):
+                dxy_val = float(dxy_data[0]["price"])
+        except Exception as e:
+            print(f"[RegimeCtx] DXY fetch error: {e}")
+
         result = {
             "vix": f"{vix_val:.1f}" if vix_val else "N/A",
             "hy_oas_bps": f"{hy_val:.0f}" if hy_val else "N/A",
             "yield_10y": f"{yield_10y.get('value'):.2f}%" if yield_10y and yield_10y.get('value') else "N/A",
+            "dxy": f"{dxy_val:.1f}" if dxy_val else "N/A",
             "regime": regime_label,
         }
-        
+
         with REGIME_CTX_CACHE_LOCK:
             REGIME_CTX_CACHE["data"] = result
             REGIME_CTX_CACHE["timestamp"] = datetime.now(timezone.utc)
-        
+
         return result
     except Exception as e:
         print(f"[Positions] Could not fetch regime context: {e}")
-        return {"vix": "N/A", "hy_oas_bps": "N/A", "yield_10y": "N/A", "regime": "UNKNOWN"}
+        return {"vix": "N/A", "hy_oas_bps": "N/A", "yield_10y": "N/A", "dxy": "N/A", "regime": "UNKNOWN"}
 
 
 def _position_indicator_key(position_dict):
@@ -1771,10 +1785,31 @@ def api_regime_detail(regime_name):
 
 @app.route('/api/regime-summary')
 def api_regime_summary():
-    """Lightweight summary of all regime scores/labels for the main dashboard."""
+    """Lightweight summary of all regime scores/labels for the main dashboard.
+
+    V2: Also returns composite regime, market pulse (VIX/10Y/HY/DXY).
+    """
     try:
         settings = load_settings()
         data = get_regime_summary(settings)
+
+        # V2: Enrich with market pulse from cached regime context
+        try:
+            ctx = _get_regime_context(settings)
+            pulse = {}
+            if ctx.get("vix") and ctx["vix"] != "N/A":
+                pulse["vix"] = float(ctx["vix"])
+            if ctx.get("yield_10y") and ctx["yield_10y"] != "N/A":
+                pulse["ten_y"] = float(str(ctx["yield_10y"]).replace("%", ""))
+            if ctx.get("hy_oas_bps") and ctx["hy_oas_bps"] != "N/A":
+                pulse["hy_oas"] = float(ctx["hy_oas_bps"])
+            if ctx.get("dxy") and ctx["dxy"] != "N/A":
+                pulse["dxy"] = float(ctx["dxy"])
+            data["market_pulse"] = pulse
+        except Exception as e:
+            print(f"[RegimeSummary] Market pulse enrichment error: {e}")
+            data["market_pulse"] = {}
+
         response = jsonify(data)
         response.headers['Cache-Control'] = 'public, max-age=300'
         return response
@@ -1782,6 +1817,30 @@ def api_regime_summary():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e), "regimes": []}), 500
+
+
+@app.route('/api/nav-history')
+def api_nav_history():
+    """NAV TWR history for equity curve chart (public)."""
+    try:
+        snapshots = read_nav_sheet()
+        # Deduplicate: keep last entry per calendar date
+        by_date = {}
+        for snap in snapshots:
+            date_str = str(snap.ts)[:10]  # Extract YYYY-MM-DD
+            by_date[date_str] = {
+                "date": date_str,
+                "twr_cum_pct": round(snap.twr_cum * 100, 2),
+                "equity": round(snap.equity, 2),
+            }
+        series = [by_date[d] for d in sorted(by_date.keys())]
+        response = jsonify({"series": series, "count": len(series)})
+        response.headers['Cache-Control'] = 'public, max-age=300'
+        return response
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "series": []})
 
 
 @app.route('/api/investors')

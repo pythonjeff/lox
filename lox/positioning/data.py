@@ -469,7 +469,7 @@ def _fetch_options_chain(settings: Settings, ticker: str) -> list[Any]:
         from lox.data.alpaca import make_clients, fetch_option_chain, to_candidates
 
         _, data_client = make_clients(settings)
-        chain = fetch_option_chain(data_client, ticker)
+        chain = fetch_option_chain(data_client, ticker, feed=settings.alpaca_options_feed)
         candidates = list(to_candidates(chain, ticker))
 
         # Alpaca doesn't provide opt_type or OI — infer type from delta

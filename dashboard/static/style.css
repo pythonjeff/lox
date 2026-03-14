@@ -1,21 +1,21 @@
-/* LOX FUND Dashboard v2 - Resume Grade (Streamlined) */
+/* LOX FUND Dashboard v3 - Bloomberg Terminal (Dense & Clean) */
 
 :root {
-    --bg-page: #f8f9fa;
+    --bg-page: #f4f5f7;
     --bg-container: #ffffff;
-    --bg-muted: #f5f5f5;
-    --border: #e5e5e5;
+    --bg-muted: #f0f1f3;
+    --border: #e0e2e6;
     --accent: #0066ff;
     --accent-light: rgba(0, 102, 255, 0.08);
     --text-primary: #1a1a1a;
-    --text-secondary: #666666;
-    --text-muted: #999999;
+    --text-secondary: #555555;
+    --text-muted: #8a8f98;
     --green: #00a86b;
-    --green-bg: rgba(0, 168, 107, 0.08);
+    --green-bg: rgba(0, 168, 107, 0.06);
     --red: #e63946;
-    --red-bg: rgba(230, 57, 70, 0.08);
-    --yellow: #f5a623;
-    --hero-bg: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
+    --red-bg: rgba(230, 57, 70, 0.06);
+    --yellow: #d4940a;
+    --hero-bg: #0f172a;
 }
 
 /* Reset */
@@ -36,9 +36,9 @@ body {
 
 /* Container */
 .container {
-    max-width: 800px;
+    max-width: 820px;
     margin: 0 auto;
-    padding: 24px;
+    padding: 12px 16px;
     min-height: 100vh;
 }
 
@@ -49,8 +49,8 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 16px 0;
-    margin-bottom: 32px;
+    padding: 10px 0;
+    margin-bottom: 0;
     position: relative;
 }
 
@@ -79,17 +79,18 @@ body {
 }
 
 .logo-text {
-    font-size: 28px;
+    font-size: 20px;
     font-weight: 700;
-    letter-spacing: -1px;
+    letter-spacing: -0.5px;
     color: var(--text-primary);
 }
 
 .logo-fund {
-    font-size: 14px;
+    font-size: 11px;
     font-weight: 600;
-    color: var(--text-secondary);
-    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
 }
 
 .header-right {
@@ -133,18 +134,18 @@ body {
 
 .btn-my-account {
     font-family: inherit;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--accent);
     background: none;
     border: 1px solid var(--accent);
-    border-radius: 6px;
-    padding: 4px 10px;
+    border-radius: 2px;
+    padding: 3px 8px;
     cursor: pointer;
     text-decoration: none;
-    transition: background 0.15s, color 0.15s;
+    transition: background 0.1s, color 0.1s;
 }
 
 .btn-my-account:hover {
@@ -159,17 +160,17 @@ body {
 
 .btn-logout {
     font-family: inherit;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--text-muted);
     background: none;
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 4px 10px;
+    border-radius: 2px;
+    padding: 3px 8px;
     cursor: pointer;
-    transition: color 0.15s, border-color 0.15s;
+    transition: color 0.1s, border-color 0.1s;
 }
 
 .btn-logout:hover {
@@ -189,13 +190,13 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 12px;
-    padding: 14px 24px;
-    margin-bottom: 24px;
+    gap: 10px;
+    padding: 8px 16px;
+    margin-bottom: 8px;
     background: var(--hero-bg);
-    border-radius: 8px;
+    border-radius: 0;
     color: white;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 500;
 }
 
@@ -216,148 +217,336 @@ body {
 }
 
 /* ============================================
-   HERO ZONE - Fund Return + AUM
+   DATA STRIP — Single dense regime + market row
    ============================================ */
-.hero-zone {
+.data-strip {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 6px 12px;
+    margin: 0 0 1px;
     background: var(--hero-bg);
-    border-radius: 12px;
-    padding: 28px 28px 24px;
-    text-align: center;
-    margin-bottom: 16px;
-    position: relative;
-    overflow: hidden;
+    color: rgba(255,255,255,0.7);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
 }
 
-.hero-zone::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, var(--accent), transparent);
-    opacity: 0.6;
+.strip-sep {
+    width: 1px;
+    height: 16px;
+    background: rgba(255,255,255,0.15);
+    margin: 0 10px;
+    flex-shrink: 0;
 }
 
-.hero-label {
-    font-size: 10px;
+.strip-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 8px;
+    white-space: nowrap;
+}
+
+.strip-label {
+    font-size: 9px;
     font-weight: 600;
-    letter-spacing: 2px;
-    color: rgba(255,255,255,0.45);
+    letter-spacing: 0.5px;
+    color: rgba(255,255,255,0.4);
     text-transform: uppercase;
+}
+
+.strip-val {
+    font-weight: 600;
+    color: rgba(255,255,255,0.85);
+    font-size: 12px;
+}
+
+.strip-val.pulse-warn { color: var(--yellow); }
+
+.strip-risk .strip-val { font-weight: 700; }
+.strip-risk.risk-low .strip-val { color: #4ade80; }
+.strip-risk.risk-moderate .strip-val { color: #fbbf24; }
+.strip-risk.risk-high .strip-val { color: #f87171; }
+
+.composite-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    background: rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.6);
+}
+
+.composite-risk-on     { background: rgba(0, 168, 107, 0.25); color: #4ade80; }
+.composite-reflation   { background: rgba(245, 166, 35, 0.25); color: #fbbf24; }
+.composite-stagflation { background: rgba(230, 57, 70, 0.25); color: #f87171; }
+.composite-risk-off    { background: rgba(230, 57, 70, 0.25); color: #f87171; }
+.composite-transition  { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
+
+/* ============================================
+   HERO + METRICS (combined dense block)
+   ============================================ */
+.hero-metrics {
+    background: var(--hero-bg);
+    padding: 12px 16px 8px;
     margin-bottom: 8px;
+}
+
+.hero-lead {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 6px;
 }
 
 .hero-value {
-    font-size: 48px;
+    font-size: 36px;
     font-weight: 700;
     color: white;
-    letter-spacing: -2px;
+    letter-spacing: -1.5px;
     line-height: 1;
-    margin-bottom: 8px;
+    font-variant-numeric: tabular-nums;
 }
 
 .hero-value.positive { color: #4ade80; }
 .hero-value.negative { color: #f87171; }
 
-.hero-benchmark {
-    font-size: 14px;
+.hero-sub {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.hero-label {
+    font-size: 9px;
     font-weight: 600;
-    color: rgba(255,255,255,0.65);
-    margin-bottom: 8px;
-}
-
-.hero-benchmark .bench-item {
-    white-space: nowrap;
-}
-
-.hero-benchmark .bench-sep {
-    margin: 0 8px;
-    opacity: 0.4;
-}
-
-/* AUM Badge */
-.hero-aum {
-    font-size: 13px;
-    color: rgba(255,255,255,0.55);
-    margin-bottom: 6px;
-}
-
-.aum-badge {
-    display: inline-block;
-    background: rgba(255,255,255,0.08);
-    padding: 3px 10px;
-    border-radius: 10px;
-    font-weight: 600;
-    font-size: 12px;
-    color: rgba(255,255,255,0.75);
-}
-
-.aum-value {
-    font-weight: 700;
-    color: rgba(255,255,255,0.9);
+    letter-spacing: 1px;
+    color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
 }
 
 .hero-context {
-    font-size: 11px;
-    color: rgba(255,255,255,0.35);
+    font-size: 9px;
+    color: rgba(255,255,255,0.2);
 }
 
-/* ============================================
-   METRICS ROW
-   ============================================ */
-.metrics-row {
+.hero-stats {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: var(--bg-container);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 16px 28px;
-    margin-bottom: 16px;
+    gap: 0;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding-top: 8px;
+    margin-bottom: 4px;
 }
+
+.hero-stats .metric-item {
+    flex: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+}
+
+.hero-stats .metric-label {
+    font-size: 8px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.3);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.hero-stats .metric-value {
+    font-size: 15px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.85);
+    font-variant-numeric: tabular-nums;
+}
+
+.hero-stats .metric-value.positive { color: #4ade80; }
+.hero-stats .metric-value.negative { color: #f87171; }
+
+.hero-benchmarks {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.bench-tag {
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.bench-label {
+    font-weight: 600;
+    color: rgba(255,255,255,0.3);
+}
+
+.bench-value {
+    font-weight: 600;
+    color: rgba(255,255,255,0.5);
+}
+
+.bench-value.positive { color: #4ade80; }
+.bench-value.negative { color: #f87171; }
 
 .metric-item {
     flex: 1;
-    text-align: center;
-}
-
-.metric-divider {
-    width: 1px;
-    height: 40px;
-    background: var(--border);
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 6px;
 }
 
 .metric-label {
-    font-size: 11px;
+    font-size: 9px;
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
 }
-
-.info-tip {
-    font-size: 10px;
-    color: var(--accent);
-    cursor: help;
-    opacity: 0.6;
-}
-
-.info-tip:hover { opacity: 1; }
 
 .metric-value {
-    font-size: 24px;
+    font-size: 18px;
     font-weight: 700;
     color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
 }
 
 .metric-value.positive { color: var(--green); }
 .metric-value.negative { color: var(--red); }
+
+/* ============================================
+   REGIME STRIP — Compact heatmap
+   ============================================ */
+.regime-strip {
+    margin: 8px 0;
+}
+
+.regime-heatmap {
+    display: flex;
+    gap: 1px;
+    overflow-x: auto;
+}
+
+.hm-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 0;
+    flex: 1;
+    min-width: 50px;
+    text-decoration: none;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: background 0.1s;
+}
+
+.hm-cell:hover {
+    background: var(--bg-muted);
+}
+
+.hm-abbr {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    opacity: 0.7;
+    line-height: 1;
+    margin-bottom: 1px;
+}
+
+.hm-score {
+    font-size: 15px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+}
+
+/* Severity: colored bottom border + text */
+.hm-low {
+    color: var(--green);
+    border-bottom-color: var(--green);
+}
+
+.hm-moderate {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.hm-elevated {
+    color: var(--yellow);
+    border-bottom-color: var(--yellow);
+}
+
+.hm-high {
+    color: var(--red);
+    border-bottom-color: var(--red);
+}
+
+/* ============================================
+   EQUITY CURVE
+   ============================================ */
+.equity-curve-section {
+    padding: 4px 0;
+    margin-bottom: 4px;
+}
+
+.chart-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 2px;
+}
+
+.chart-title {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.chart-subtitle {
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.chart-subtitle.positive { color: var(--green); }
+.chart-subtitle.negative { color: var(--red); }
+
+.equity-curve-container {
+    position: relative;
+    height: 160px;
+}
+
+/* ============================================
+   V3: RESPONSIVE — Data Strip + Regime
+   ============================================ */
+@media (max-width: 600px) {
+    .data-strip {
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 6px 8px;
+    }
+    .strip-sep { display: none; }
+    .strip-item { padding: 2px 6px; }
+    .hero-value { font-size: 28px; }
+    .hero-lead { gap: 6px; }
+    .hero-stats .metric-value { font-size: 13px; }
+    .regime-heatmap { flex-wrap: wrap; }
+    .hm-cell { min-width: 42px; flex: 0 0 calc(25% - 1px); }
+    .equity-curve-container { height: 140px; }
+}
+
+@media (max-width: 380px) {
+    .hm-cell { flex: 0 0 calc(33.33% - 1px); }
+}
 
 /* ============================================
    ACCORDION
@@ -365,33 +554,30 @@ body {
 .accordion {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    margin-bottom: 48px;
+    gap: 0;
+    margin-bottom: 24px;
 }
 
 .accordion-section {
     background: var(--bg-container);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 0;
     overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    transition: box-shadow 0.2s, border-color 0.2s;
+    margin-top: -1px;
 }
 
-.accordion-section:hover {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-    border-color: #d0d0d0;
-}
+.accordion-section:first-child { border-radius: 3px 3px 0 0; }
+.accordion-section:last-child { border-radius: 0 0 3px 3px; }
 
 .accordion-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 18px 20px;
+    padding: 10px 14px;
     cursor: pointer;
     list-style: none;
-    transition: background 0.15s;
-    min-height: 60px;
+    transition: background 0.1s;
+    min-height: 40px;
 }
 
 .accordion-header:hover {
@@ -404,12 +590,14 @@ body {
 }
 
 .accordion-title {
-    font-size: 15px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--text-primary);
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
 }
 
 .accordion-title::before {
@@ -439,10 +627,11 @@ body {
 }
 
 .badge-pnl {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
-    padding: 4px 10px;
-    border-radius: 6px;
+    padding: 2px 6px;
+    border-radius: 2px;
+    font-variant-numeric: tabular-nums;
 }
 
 .badge-pnl.positive { 
@@ -462,12 +651,12 @@ body {
 }
 
 .regime-badge {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
-    padding: 4px 12px;
-    border-radius: 12px;
+    padding: 2px 6px;
+    border-radius: 2px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
 }
 
 .regime-badge.risk-on {
@@ -486,7 +675,7 @@ body {
 }
 
 .accordion-content {
-    padding: 0 20px 20px;
+    padding: 0 14px 14px;
     border-top: 1px solid var(--border);
 }
 
@@ -666,12 +855,12 @@ body {
 .regime-metrics {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 8px;
+    gap: 6px;
     background: var(--bg-muted);
-    border-radius: 10px;
-    padding: 16px 12px;
-    margin-top: 16px;
-    margin-bottom: 12px;
+    border-radius: 3px;
+    padding: 10px 8px;
+    margin-top: 10px;
+    margin-bottom: 8px;
 }
 
 .regime-metric {
@@ -719,14 +908,13 @@ body {
     display: block;
     text-decoration: none;
     background: var(--bg-muted);
-    border-radius: 8px;
-    padding: 12px 14px;
-    transition: background 0.15s, transform 0.12s;
+    border-radius: 3px;
+    padding: 8px 10px;
+    transition: background 0.1s;
     cursor: pointer;
 }
 .rg-grid-card:hover {
     background: rgba(100,116,139,0.12);
-    transform: translateY(-1px);
 }
 .rg-grid-header {
     display: flex;
@@ -773,14 +961,14 @@ body {
 .sample-disclosure {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    margin-top: 16px;
-    margin-bottom: 12px;
-    background: rgba(245, 166, 35, 0.1);
-    border: 1px solid rgba(245, 166, 35, 0.3);
-    border-radius: 8px;
-    font-size: 12px;
+    gap: 8px;
+    padding: 6px 10px;
+    margin-top: 10px;
+    margin-bottom: 8px;
+    background: rgba(245, 166, 35, 0.08);
+    border-left: 2px solid var(--yellow);
+    border-radius: 0;
+    font-size: 11px;
 }
 
 .disclosure-icon {
@@ -818,9 +1006,9 @@ body {
     align-items: center;
     justify-content: center;
     background: var(--hero-bg);
-    border-radius: 12px;
-    padding: 20px 28px;
-    min-width: 110px;
+    border-radius: 3px;
+    padding: 12px 20px;
+    min-width: 80px;
 }
 
 .perf-grade-label {
@@ -833,25 +1021,25 @@ body {
 }
 
 .perf-grade {
-    font-size: 42px;
+    font-size: 32px;
     font-weight: 800;
     color: white;
     line-height: 1;
 }
 
-.perf-grade-box.grade-a { background: linear-gradient(145deg, #059669 0%, #10b981 100%); }
-.perf-grade-box.grade-b { background: linear-gradient(145deg, #0284c7 0%, #0ea5e9 100%); }
-.perf-grade-box.grade-c { background: linear-gradient(145deg, #d97706 0%, #f59e0b 100%); }
-.perf-grade-box.grade-d { background: linear-gradient(145deg, #dc2626 0%, #ef4444 100%); }
-.perf-grade-box.grade-f { background: linear-gradient(145deg, #7f1d1d 0%, #991b1b 100%); }
+.perf-grade-box.grade-a { background: #059669; }
+.perf-grade-box.grade-b { background: #0284c7; }
+.perf-grade-box.grade-c { background: #d97706; }
+.perf-grade-box.grade-d { background: #dc2626; }
+.perf-grade-box.grade-f { background: #7f1d1d; }
 
 .perf-core-stats {
     display: flex;
     flex: 1;
     gap: 8px;
     background: var(--bg-muted);
-    border-radius: 12px;
-    padding: 16px;
+    border-radius: 3px;
+    padding: 10px;
 }
 
 .perf-stat {
@@ -870,11 +1058,12 @@ body {
 }
 
 .perf-stat-value {
-    font-size: 22px;
+    font-size: 18px;
     font-weight: 700;
     color: var(--text-primary);
     line-height: 1.2;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
+    font-variant-numeric: tabular-nums;
 }
 
 .perf-stat-value.positive { color: var(--green); }
@@ -897,8 +1086,8 @@ body {
 
 .perf-card {
     background: var(--bg-muted);
-    border-radius: 10px;
-    padding: 14px;
+    border-radius: 3px;
+    padding: 10px;
 }
 
 .perf-card-title {
@@ -937,12 +1126,12 @@ body {
 .perf-secondary {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
-    padding: 12px 16px;
-    margin-top: 12px;
+    gap: 12px;
+    padding: 8px 10px;
+    margin-top: 8px;
     background: var(--bg-muted);
-    border-radius: 8px;
-    font-size: 12px;
+    border-radius: 3px;
+    font-size: 11px;
 }
 
 .perf-secondary-item {
@@ -974,13 +1163,13 @@ body {
     transform: translateX(-50%);
     background: var(--text-primary);
     color: white;
-    padding: 6px 10px;
-    border-radius: 6px;
-    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 2px;
+    font-size: 10px;
     font-weight: 500;
     white-space: nowrap;
     z-index: 100;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
 }
 
 /* ============================================
@@ -1074,22 +1263,12 @@ body {
    ============================================ */
 .edge-card {
     background: var(--hero-bg);
-    border-radius: 12px;
-    padding: 20px;
-    margin-top: 16px;
-    margin-bottom: 12px;
+    border-radius: 3px;
+    padding: 14px;
+    margin-top: 12px;
+    margin-bottom: 8px;
     position: relative;
     overflow: hidden;
-}
-
-.edge-card::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--accent), var(--green), transparent);
 }
 
 .edge-card-header {
@@ -1149,14 +1328,14 @@ body {
    SECTION LABELS (shared)
    ============================================ */
 .section-label {
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-top: 20px;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
+    letter-spacing: 0.8px;
+    margin-top: 12px;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
     border-bottom: 1px solid var(--border);
 }
 
@@ -1169,9 +1348,9 @@ body {
 
 .regime-chart-wrap {
     background: var(--bg-muted);
-    border-radius: 10px;
-    padding: 16px 12px;
-    height: 240px;
+    border-radius: 3px;
+    padding: 10px 8px;
+    height: 200px;
 }
 
 .regime-chart-legend {
@@ -1258,10 +1437,10 @@ body {
    ============================================ */
 .footer {
     text-align: center;
-    padding: 24px 0;
+    padding: 12px 0;
     border-top: 1px solid var(--border);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: 10px;
 }
 
 .footer-brand {
@@ -1280,67 +1459,38 @@ body {
    ============================================ */
 @media (max-width: 640px) {
     .container {
-        padding: 16px;
+        padding: 8px;
     }
-    
-    .hero-zone {
-        padding: 22px 18px 18px;
+
+    .hero-metrics {
+        padding: 8px 10px 6px;
     }
-    
+
     .hero-value {
-        font-size: 40px;
+        font-size: 28px;
     }
-    
-    .hero-benchmark {
-        font-size: 13px;
-        flex-wrap: wrap;
-        justify-content: center;
+
+    .hero-bench {
+        font-size: 9px;
     }
-    
-    .hero-benchmark .alpha {
-        margin-left: 0;
-        margin-top: 6px;
-    }
-    
-    .metrics-row {
-        flex-direction: column;
-        gap: 12px;
-        padding: 16px;
-    }
-    
-    .metric-divider {
-        width: 100%;
-        height: 1px;
-    }
-    
-    .metric-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        width: 100%;
-    }
-    
-    .metric-label {
-        margin-bottom: 0;
-    }
-    
+
     .accordion-header {
-        padding: 14px 16px;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-    
-    .accordion-badges {
+        padding: 8px 10px;
         flex-wrap: wrap;
         gap: 6px;
     }
-    
+
+    .accordion-badges {
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
     .badge-pnl,
     .regime-badge {
-        font-size: 11px;
-        padding: 3px 8px;
+        font-size: 10px;
+        padding: 2px 6px;
     }
-    
+
     .pos-table {
         font-size: 12px;
     }

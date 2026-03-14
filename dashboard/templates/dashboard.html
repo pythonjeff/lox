@@ -24,8 +24,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=5">
-    <!-- Chart.js (kept for potential future use) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=13">
+    <!-- Chart.js for equity curve & future charts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -98,30 +98,66 @@
             </div>
         </header>
 
-        <!-- HERO ZONE: Fund Return -->
-        <section class="hero-zone">
-            <div class="hero-label">FUND TWR</div>
-            <div class="hero-value" id="hero-return">—</div>
-            <div class="hero-benchmark" id="hero-benchmark">—</div>
-            <div class="hero-aum" id="hero-aum">—</div>
-            <div class="hero-context">Since Jan 9, 2026</div>
+        <!-- DATA STRIP: Regime + Market Data (single dense row) -->
+        <section class="data-strip" id="data-strip" style="display:none;">
+            <span class="composite-badge" id="composite-badge">—</span>
+            <span class="strip-sep"></span>
+            <span class="strip-item" id="pulse-vix"><span class="strip-label">VIX</span><span class="strip-val">—</span></span>
+            <span class="strip-item" id="pulse-10y"><span class="strip-label">10Y</span><span class="strip-val">—</span></span>
+            <span class="strip-item" id="pulse-hy"><span class="strip-label">HY</span><span class="strip-val">—</span></span>
+            <span class="strip-item" id="pulse-dxy"><span class="strip-label">DXY</span><span class="strip-val">—</span></span>
+            <span class="strip-sep"></span>
+            <span class="strip-item strip-risk" id="risk-gauge"><span class="strip-label">RISK</span><span class="strip-val" id="risk-gauge-value">—</span></span>
         </section>
 
-        <!-- Metrics Row -->
-        <section class="metrics-row">
-            <div class="metric-item">
-                <div class="metric-label">NAV<span class="info-tip" title="Net asset value (longs at bid, shorts at ask)">ⓘ</span></div>
-                <div class="metric-value" id="nav-value">—</div>
+        <!-- HERO + METRICS: Single dense block -->
+        <section class="hero-metrics">
+            <div class="hero-lead">
+                <div class="hero-value" id="hero-return">—</div>
+                <div class="hero-sub">
+                    <span class="hero-label">TWR</span>
+                    <span class="hero-context">Since Jan 9 '26</span>
+                </div>
+                <div class="hero-benchmarks" id="hero-benchmark">
+                    <span class="bench-tag"><span class="bench-label">S&P</span> <span class="bench-value" id="bench-sp500">—</span></span>
+                    <span class="bench-tag"><span class="bench-label">MHF</span> <span class="bench-value" id="bench-macro-hf">—</span></span>
+                    <span class="bench-tag"><span class="bench-label">α</span> <span class="bench-value" id="bench-alpha">—</span></span>
+                </div>
             </div>
-            <div class="metric-divider"></div>
-            <div class="metric-item">
-                <div class="metric-label">Unrealized P&L</div>
-                <div class="metric-value" id="total-pnl">—</div>
+            <div class="hero-stats">
+                <div class="metric-item">
+                    <div class="metric-label">NAV</div>
+                    <div class="metric-value" id="nav-value">—</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">P&L</div>
+                    <div class="metric-value" id="total-pnl">—</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Cash</div>
+                    <div class="metric-value" id="cash-value">—</div>
+                </div>
             </div>
-            <div class="metric-divider"></div>
-            <div class="metric-item">
-                <div class="metric-label">Cash</div>
-                <div class="metric-value" id="cash-value">—</div>
+        </section>
+
+        <!-- REGIME HEATMAP: Compact inline strip -->
+        <section class="regime-strip" id="regime-heatmap-section" style="display:none;">
+            <div class="chart-header">
+                <span class="chart-title">REGIMES</span>
+            </div>
+            <div class="regime-heatmap" id="regime-heatmap">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <!-- EQUITY CURVE -->
+        <section class="equity-curve-section" id="equity-curve-section" style="display:none;">
+            <div class="chart-header">
+                <span class="chart-title">FUND RETURN</span>
+                <span class="chart-subtitle" id="chart-latest">—</span>
+            </div>
+            <div class="equity-curve-container">
+                <canvas id="equity-curve-chart" height="160"></canvas>
             </div>
         </section>
 
@@ -288,7 +324,7 @@
         </footer>
     </div>
 
-    <script src="{{ url_for('static', filename='dashboard.js') }}?v=5"></script>
+    <script src="{{ url_for('static', filename='dashboard.js') }}?v=13"></script>
     <script>
     // Hamburger menu toggle
     (function() {

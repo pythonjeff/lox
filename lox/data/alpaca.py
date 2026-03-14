@@ -69,6 +69,10 @@ def fetch_option_chain(data_client: Any, ticker: str, *, feed: str | None = None
     return data_client.get_option_chain(request_params=req)
 
 def to_candidates(chain: dict[str, Any], ticker: str) -> Iterable[OptionCandidate]:
+    from lox.utils.occ import parse_occ_option_symbol
+
+    today = date.today()
+
     # Alpaca returns mapping: symbol -> snapshot-like object.
     for sym, snap in chain.items():
         greeks = getattr(snap, "greeks", None)
@@ -88,13 +92,22 @@ def to_candidates(chain: dict[str, Any], ticker: str) -> Iterable[OptionCandidat
         oi = _first_attr(snap, [("open_interest",), ("oi",)])
         vol = _first_attr(snap, [("volume",), ("daily_bar", "volume")])
 
-        # leave expiry/strike/type to selector via OCC parsing
+        opt_type = ""
+        expiry = date(1970, 1, 1)
+        strike = 0.0
+        dte_days = 0
+        try:
+            expiry, opt_type, strike = parse_occ_option_symbol(sym, ticker)
+            dte_days = max(0, (expiry - today).days)
+        except Exception:
+            pass
+
         yield OptionCandidate(
             symbol=sym,
-            opt_type="",
-            expiry=date(1970, 1, 1),
-            strike=0.0,
-            dte_days=0,
+            opt_type=opt_type,
+            expiry=expiry,
+            strike=strike,
+            dte_days=dte_days,
             delta=float(delta) if delta is not None else None,
             gamma=float(gamma) if gamma is not None else None,
             theta=float(theta) if theta is not None else None,

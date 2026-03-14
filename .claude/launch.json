@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "dashboard",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "/Users/jeffreylarson/sites/ai-options-trader-starter/.venv/bin/python",
       "runtimeArgs": ["-m", "flask", "--app", "dashboard.app", "run", "--port", "5001"],
       "port": 5001
     }
