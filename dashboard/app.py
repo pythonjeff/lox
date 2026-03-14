@@ -955,10 +955,17 @@ def get_positions_data(force_refresh: bool = False):
             raw_fills = trading.get("/v2/account/activities/FILL") or []
             if isinstance(raw_fills, dict):
                 raw_fills = [raw_fills]
+            fill_list = raw_fills if isinstance(raw_fills, list) else []
+            print(f"[Days Open] Got {len(fill_list)} FILL activities, type={type(fill_list[0]) if fill_list else 'empty'}")
+            if fill_list:
+                sample = fill_list[0]
+                if isinstance(sample, dict):
+                    print(f"[Days Open] Sample keys: {list(sample.keys())}")
+                else:
+                    print(f"[Days Open] Sample attrs: {[a for a in dir(sample) if not a.startswith('_')]}")
             # Build map: symbol → earliest fill timestamp
-            for f in raw_fills:
+            for f in fill_list:
                 sym = f.get("symbol") if isinstance(f, dict) else getattr(f, "symbol", None)
-                cum_qty = f.get("cum_qty") if isinstance(f, dict) else getattr(f, "cum_qty", None)
                 ts = f.get("transaction_time") if isinstance(f, dict) else getattr(f, "transaction_time", None)
                 if sym and ts:
                     from dateutil.parser import parse as parse_dt
@@ -966,8 +973,11 @@ def get_positions_data(force_refresh: bool = False):
                         ts = parse_dt(ts)
                     if sym not in open_dates or ts < open_dates[sym]:
                         open_dates[sym] = ts
-        except Exception:
-            pass
+            print(f"[Days Open] Mapped {len(open_dates)} symbols: {list(open_dates.keys())[:5]}")
+        except Exception as e:
+            print(f"[Days Open] Error: {e}")
+            import traceback
+            traceback.print_exc()
 
         # OPTIMIZATION: Pre-parse all positions and batch quote requests
         position_data = []
@@ -1042,8 +1052,10 @@ def get_positions_data(force_refresh: bool = False):
                             days_open = (now_utc - first_fill).days
                         else:
                             days_open = (now_utc - first_fill.replace(tzinfo=tz.utc)).days
-                except Exception:
-                    pass
+                    else:
+                        print(f"[Days Open] No fill found for symbol: {symbol}")
+                except Exception as e:
+                    print(f"[Days Open] Error computing days for {symbol}: {e}")
 
                 # Build position dict
                 position_dict = {
