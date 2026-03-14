@@ -353,13 +353,13 @@
                 <button class="hamburger-btn" id="hamburger-btn" aria-label="Menu">
                     <span></span><span></span><span></span>
                 </button>
-                <a href="{{ url_for('index') }}" class="logo-group">
+                <a href="{{ url_for('pages.index') }}" class="logo-group">
                     <span class="logo-text">LOX</span>
                     <span class="logo-fund">FUND</span>
                 </a>
             </div>
             <div class="header-right">
-                <a href="{{ url_for('index') }}" class="btn-back">Dashboard</a>
+                <a href="{{ url_for('pages.index') }}" class="btn-back">Dashboard</a>
                 <form method="POST" action="{{ url_for('auth.logout') }}" class="logout-form" style="display:inline;">
                     <button type="submit" class="btn-logout">Sign Out</button>
                 </form>

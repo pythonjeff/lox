@@ -91,7 +91,7 @@
                 <span class="live-indicator"><span class="live-dot" id="live-dot"></span><span id="live-label">LIVE</span></span>
                 <span class="header-timestamp" id="header-timestamp">—</span>
                 {% if current_user.is_authenticated %}
-                <a href="{{ url_for('my_account') }}" class="btn-my-account" title="My Account">My Account</a>
+                <a href="{{ url_for('pages.my_account') }}" class="btn-my-account" title="My Account">My Account</a>
                 {% else %}
                 <a href="{{ url_for('auth.login') }}" class="btn-my-account" title="Investor Login">Investor Login</a>
                 {% endif %}
