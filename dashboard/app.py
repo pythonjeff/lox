@@ -1042,9 +1042,12 @@ def get_positions_data(force_refresh: bool = False):
                 total_liquidation_value += liquidation_value
                 
                 # Days open from earliest fill date
+                # Try full OCC symbol first, then underlying for options
                 days_open = None
                 try:
                     first_fill = open_dates.get(symbol)
+                    if not first_fill and opt_info:
+                        first_fill = open_dates.get(opt_info.get("underlying", ""))
                     if first_fill:
                         from datetime import timezone as tz
                         now_utc = datetime.now(tz.utc)
