@@ -71,7 +71,7 @@ def fetch_options_chain_polygon(
     """
     api_key = settings.massive_api_key
     if not api_key:
-        logger.warning("MASSIVE_API_KEY not set - cannot fetch Polygon options data")
+        logger.debug("MASSIVE_API_KEY not set - skipping Polygon options data")
         return []
     
     url = f"{POLYGON_BASE}/v3/snapshot/options/{ticker}"

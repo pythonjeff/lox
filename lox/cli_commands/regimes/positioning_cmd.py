@@ -331,9 +331,7 @@ def positioning_snapshot(
         trend=trend,
     ))
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # Panel 2: Dealer Gamma Exposure (GEX)
-    # ═══════════════════════════════════════════════════════════════════════
+    # ── Dealer Gamma Exposure (GEX) ────────────────────────────────────────
     if inputs.gex_total is not None:
         console.print()
         gex_lines: list[str] = []
@@ -356,16 +354,10 @@ def positioning_snapshot(
         else:
             gex_lines.append("  [red]Dealers deeply short gamma — mechanical selling, tail risk elevated[/red]")
 
-        panel = Panel.fit(
-            "\n".join(gex_lines),
-            title="[bold]Dealer Gamma Exposure (GEX)[/bold]",
-            border_style="cyan",
-        )
-        console.print(panel)
+        console.print("\n[bold]Dealer Gamma Exposure (GEX)[/bold]")
+        console.print("\n".join(gex_lines))
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # Panel 3: COT Speculative Positioning
-    # ═══════════════════════════════════════════════════════════════════════
+    # ── COT Speculative Positioning ────────────────────────────────────────
     if inputs.cot_net_spec:
         console.print()
         cot_table = Table(box=None, padding=(0, 2))
@@ -398,16 +390,10 @@ def positioning_snapshot(
                 f"[dim]{ctx}[/dim]",
             )
 
-        panel = Panel.fit(
-            cot_table,
-            title="[bold]CFTC COT — Net Speculative Positioning[/bold]",
-            border_style="cyan",
-        )
-        console.print(panel)
+        console.print("\n[bold]CFTC COT — Net Speculative Positioning[/bold]")
+        console.print(cot_table)
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # Panel 4: Short Interest
-    # ═══════════════════════════════════════════════════════════════════════
+    # ── Short Interest ─────────────────────────────────────────────────────
     if inputs.short_interest_pct:
         console.print()
         si_lines: list[str] = []
@@ -423,16 +409,10 @@ def positioning_snapshot(
                 ctx = "[dim]low — no crowded shorts[/dim]"
             si_lines.append(f"  {tk:6s}  SI: {si:.1f}%  {ctx}")
 
-        panel = Panel.fit(
-            "\n".join(si_lines),
-            title="[bold]Short Interest[/bold]",
-            border_style="cyan",
-        )
-        console.print(panel)
+        console.print("\n[bold]Short Interest[/bold]")
+        console.print("\n".join(si_lines))
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # Panel 5: Tail Risks / Headwinds / Tailwinds
-    # ═══════════════════════════════════════════════════════════════════════
+    # ── Tail Risks / Headwinds / Tailwinds ─────────────────────────────────
     winds = _build_winds(inputs, regime)
     if winds:
         console.print()

@@ -405,6 +405,119 @@ def normalize_earnings_calendar(rows: list[dict[str, Any]]) -> list[EarningsEven
     return out
 
 
+def fetch_batch_quotes_full(
+    *,
+    settings: Settings,
+    tickers: list[str],
+    cache_max_age: timedelta = timedelta(minutes=5),
+) -> list[dict[str, Any]]:
+    """Batch-fetch full FMP quote data (price, volume, avgVolume, changesPercentage, etc.).
+
+    Batches in groups of 500 to stay within FMP URL limits.
+    Returns list of raw quote dicts with keys: symbol, price, changesPercentage,
+    volume, avgVolume, dayHigh, dayLow, previousClose, marketCap, name, etc.
+    """
+    if not settings.fmp_api_key or not tickers:
+        return []
+
+    clean = list(dict.fromkeys(t.strip().upper() for t in tickers if t.strip()))
+    if not clean:
+        return []
+
+    # Check cache (hash-based key for large ticker lists)
+    import hashlib
+    h = hashlib.md5(",".join(sorted(clean)).encode()).hexdigest()[:12]
+    key = f"fmp_batch_quotes_full_{h}_{len(clean)}"
+    p = cache_path(key)
+    cached = read_cache(p, max_age=cache_max_age)
+    if isinstance(cached, list) and cached:
+        return cached
+
+    import requests
+
+    all_quotes: list[dict[str, Any]] = []
+    batch_size = 500
+    for i in range(0, len(clean), batch_size):
+        batch = clean[i : i + batch_size]
+        symbols_str = ",".join(batch)
+        try:
+            resp = requests.get(
+                f"{FMP_BASE_URL}/v3/quote/{symbols_str}",
+                params={"apikey": settings.fmp_api_key},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list):
+                all_quotes.extend(d for d in data if isinstance(d, dict))
+        except Exception:
+            continue
+
+    if all_quotes:
+        write_cache(p, all_quotes)
+    return all_quotes
+
+
+def fetch_batch_profiles(
+    *,
+    settings: Settings,
+    tickers: list[str],
+    cache_max_age: timedelta = timedelta(days=7),
+) -> dict[str, CompanyProfile]:
+    """Batch-fetch company profiles (sector, industry, name) for many tickers.
+
+    Uses per-ticker cache (7d TTL) to avoid re-fetching known profiles.
+    Batches uncached tickers in groups of 50 via FMP /v3/profile/{csv}.
+    """
+    if not settings.fmp_api_key or not tickers:
+        return {}
+
+    clean = list(dict.fromkeys(t.strip().upper() for t in tickers if t.strip()))
+    result: dict[str, CompanyProfile] = {}
+    uncached: list[str] = []
+
+    # Check per-ticker cache first
+    for t in clean:
+        k = f"fmp_profile_{t}"
+        cp = cache_path(k)
+        cached = read_cache(cp, max_age=cache_max_age)
+        if isinstance(cached, list) and cached and isinstance(cached[0], dict):
+            result[t] = _profile_from_row(t, cached[0])
+        else:
+            uncached.append(t)
+
+    if not uncached:
+        return result
+
+    import requests
+
+    batch_size = 50
+    for i in range(0, len(uncached), batch_size):
+        batch = uncached[i : i + batch_size]
+        symbols_str = ",".join(batch)
+        try:
+            resp = requests.get(
+                f"{FMP_BASE_URL}/v3/profile/{symbols_str}",
+                params={"apikey": settings.fmp_api_key},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list):
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    sym = str(item.get("symbol") or "").strip().upper()
+                    if sym:
+                        # Cache per-ticker
+                        write_cache(cache_path(f"fmp_profile_{sym}"), [item])
+                        result[sym] = _profile_from_row(sym, item)
+        except Exception:
+            continue
+
+    return result
+
+
 def build_ticker_dossier(
     *,
     settings: Settings,

@@ -32,7 +32,8 @@
       "Bash(python3 -c \"from lox.positioning.data import compute_positioning_inputs; print\\(''data.py OK''\\)\")",
       "Bash(.venv/bin/python -c \"from lox.positioning.data import compute_positioning_inputs; print\\(''data.py OK''\\)\")",
       "Bash(.venv/bin/python -c \"from lox.positioning.regime import classify_positioning; print\\(''regime.py OK''\\)\")",
-      "Bash(.venv/bin/python -c \"from lox.cli_commands.regimes.positioning_cmd import positioning_snapshot; print\\(''cmd.py OK''\\)\")"
+      "Bash(.venv/bin/python -c \"from lox.cli_commands.regimes.positioning_cmd import positioning_snapshot; print\\(''cmd.py OK''\\)\")",
+      "mcp__Claude_Preview__preview_start"
     ]
   }
 }

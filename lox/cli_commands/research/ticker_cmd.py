@@ -18,6 +18,8 @@ from lox.cli_commands.research.ticker.data import (
     fetch_price_data,
     fetch_fundamentals,
     fetch_atm_implied_vol,
+    fetch_futures_depth,
+    FUTURES_ETF_MAP,
 )
 from lox.cli_commands.research.ticker.compute import compute_technicals
 from lox.cli_commands.research.ticker.display import (
@@ -26,6 +28,7 @@ from lox.cli_commands.research.ticker.display import (
     show_key_risks_summary,
     show_peer_comparison,
     show_etf_flows,
+    show_futures_depth,
     show_refinancing_wall,
     show_technicals,
     show_hy_default_context,
@@ -103,6 +106,25 @@ def register(app: typer.Typer) -> None:
         # ETF Flow analysis (only for ETFs)
         if is_etf and price_data.get("historical"):
             show_etf_flows(console, price_data, fundamentals)
+
+        # E-mini Futures Depth (index ETFs with corresponding CME futures)
+        if symbol in FUTURES_ETF_MAP:
+            profile = fundamentals.get("profile", {})
+            etf_price = (price_data.get("quote", {}).get("price")
+                         or profile.get("price"))
+            last_div = profile.get("lastDiv")
+            div_yield_pct = None
+            if last_div and etf_price:
+                try:
+                    div_yield_pct = float(last_div) / float(etf_price) * 100
+                except (TypeError, ValueError, ZeroDivisionError):
+                    pass
+            futures_data = fetch_futures_depth(
+                settings, symbol, etf_price, div_yield_pct,
+                technicals=technicals,
+            )
+            if futures_data:
+                show_futures_depth(console, futures_data)
 
         # Bond ETF: Refinancing wall + HY credit stress
         if is_etf:

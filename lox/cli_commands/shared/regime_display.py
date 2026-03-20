@@ -40,47 +40,52 @@ def render_regime_panel(
     metrics: list[dict[str, Any]],
     sub_scores: list[dict[str, Any]] | None = None,
     trend: Any | None = None,
-) -> Panel:
+) -> Any:
     """
-    Render a standardized regime panel for CLI output.
+    Render a standardized regime display for CLI output.
 
-    Args:
-        domain: Display name, e.g. "Fiscal", "Volatility".
-        asof: As-of date string (e.g. ISO date).
-        regime_label: Regime name, e.g. "STRESS BUILDING".
-        score: 0-100 composite score (None = omit score bar).
-        percentile: 0-100 historical percentile (None = omit from bar line).
-        description: 1-2 sentence regime explanation.
-        metrics: List of {"name": str, "value": str, "context": str} for main table.
-        sub_scores: Optional list of {"name": str, "score": float, "percentile": float | None} for breakdown table.
-        trend: Optional RegimeTrend object to show trend/momentum inline.
+    Returns a Group containing a compact header Panel (regime label, score,
+    trend) followed by borderless detail tables (description, metrics,
+    sub-scores).  All regime commands use ``from rich import print`` so the
+    Group renders correctly with no caller changes.
     """
     from rich.console import Group
     from rich.text import Text
 
-    parts: list[Any] = []
-    parts.append(Text.from_markup(f"As of: {asof}\n"))
+    # ── Compact header panel (verdict) ───────────────────────────────────
+    header_parts: list[Any] = []
     if score is not None:
         color = score_color(score)
         pct_suffix = f"  {percentile:.0f}th %ile" if percentile is not None else ""
-        parts.append(Text.from_markup(
+        header_parts.append(Text.from_markup(
             f"[bold]{regime_label}[/bold]   "
             f"Score: [{color}]{score:.0f}/100[/{color}]   "
-            f"{render_score_bar(score)}{pct_suffix}\n\n"
+            f"{render_score_bar(score)}{pct_suffix}"
         ))
     else:
-        parts.append(Text.from_markup(f"[bold]{regime_label}[/bold]\n\n"))
+        header_parts.append(Text.from_markup(f"[bold]{regime_label}[/bold]"))
 
-    # ── Trend/momentum line (if available) ────────────────────────────────
     if trend is not None:
-        _render_trend_line(parts, trend)
+        markup = _trend_markup(trend)
+        header_parts.append(Text.from_markup(f"\n{markup}"))
+
+    panel = Panel.fit(
+        Group(*header_parts),
+        title=f"{domain} Regime",
+        subtitle=f"[dim]As of: {asof}[/dim]",
+        border_style="cyan",
+    )
+
+    # ── Detail sections (outside the panel border) ───────────────────────
+    all_parts: list[Any] = [panel]
 
     if description:
-        parts.append(Text.from_markup(f"{description}\n\n"))
+        all_parts.append(Text.from_markup(f"\n{description}"))
+
     if metrics:
         has_change = any(m.get("change") for m in metrics)
-        mt = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 2))
-        mt.add_column("Metric", style="cyan")
+        mt = Table(show_header=True, header_style="bold dim", box=None, padding=(0, 2))
+        mt.add_column("Metric", style="bold")
         mt.add_column("Value", justify="right")
         if has_change:
             mt.add_column("Chg", justify="right", min_width=10)
@@ -91,13 +96,13 @@ def render_regime_panel(
                 row.append(str(m.get("change", "")))
             row.append(str(m.get("context", "")))
             mt.add_row(*row)
-        parts.append(mt)
+        all_parts.append(Text(""))
+        all_parts.append(mt)
+
     if sub_scores:
-        parts.append(Text.from_markup("\n"))
-        st = Table(show_header=True, header_style="bold magenta", box=None, padding=(0, 2))
-        st.add_column("Pillar", style="magenta")
+        st = Table(show_header=True, header_style="bold dim", box=None, padding=(0, 2))
+        st.add_column("Pillar", style="bold")
         st.add_column("Score", justify="right")
-        # Show weight if any sub_score has it; otherwise show percentile
         has_weight = any(s.get("weight") is not None for s in sub_scores)
         if has_weight:
             st.add_column("Weight", justify="right", style="dim")
@@ -118,29 +123,22 @@ def render_regime_panel(
                     sc_str,
                     f"{pct:.0f}%" if pct is not None else "—",
                 )
-        parts.append(st)
+        all_parts.append(Text(""))
+        all_parts.append(st)
 
-    return Panel.fit(
-        Group(*parts),
-        title=f"{domain} Regime",
-        border_style="cyan",
-    )
+    return Group(*all_parts)
 
 
-def _render_trend_line(parts: list, trend: Any) -> None:
-    """Inject a compact trend summary line into the panel parts."""
-    from rich.text import Text
-
+def _trend_markup(trend: Any) -> str:
+    """Return Rich markup string for a trend/momentum summary line."""
     tc = trend.trend_color
     arrow = trend.trend_arrow
 
-    # Previous state
     prev_str = ""
     if trend.prev_label and trend.prev_label != trend.current_label:
         prev_c = score_color(trend.prev_score) if trend.prev_score is not None else "dim"
         prev_str = f"  Prev: [{prev_c}]{trend.prev_label}[/{prev_c}]"
 
-    # Deltas
     deltas = []
     for label, val in [("1d", trend.score_chg_1d), ("7d", trend.score_chg_7d), ("30d", trend.score_chg_30d)]:
         if val is not None:
@@ -152,7 +150,6 @@ def _render_trend_line(parts: list, trend: Any) -> None:
                 deltas.append(f"[{c}]{label} {sign}{val:.1f}[/{c}]")
     delta_str = "  ".join(deltas)
 
-    # Momentum
     momo_str = ""
     if trend.momentum_z is not None:
         sign = "+" if trend.momentum_z > 0 else ""
@@ -164,12 +161,15 @@ def _render_trend_line(parts: list, trend: Any) -> None:
             mc = "dim"
         momo_str = f"  Momo: [{mc}]{sign}{trend.momentum_z:.1f}σ[/{mc}]"
 
-    # Days
     days_str = f"  [{tc}]{trend.days_in_regime}d in regime[/{tc}]"
 
-    parts.append(Text.from_markup(
-        f"[{tc}]{arrow} {trend.trend_label}[/{tc}]{prev_str}  {delta_str}{momo_str}{days_str}\n\n"
-    ))
+    return f"[{tc}]{arrow} {trend.trend_label}[/{tc}]{prev_str}  {delta_str}{momo_str}{days_str}"
+
+
+def _render_trend_line(parts: list, trend: Any) -> None:
+    """Inject a compact trend summary line into a parts list (legacy helper)."""
+    from rich.text import Text
+    parts.append(Text.from_markup(_trend_markup(trend) + "\n\n"))
 
 
 def print_llm_regime_analysis(

@@ -155,6 +155,213 @@ def fetch_atm_implied_vol(settings, symbol: str, current_price: float | None) ->
         return None
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# E-mini futures depth — maps index ETFs to their CME futures
+# ─────────────────────────────────────────────────────────────────────────────
+
+FUTURES_ETF_MAP: dict[str, dict] = {
+    "SPY": {"root": "ES", "name": "E-mini S&P 500", "multiplier": 50},
+    "VOO": {"root": "ES", "name": "E-mini S&P 500", "multiplier": 50},
+    "IVV": {"root": "ES", "name": "E-mini S&P 500", "multiplier": 50},
+    "QQQ": {"root": "NQ", "name": "E-mini Nasdaq 100", "multiplier": 20},
+    "TQQQ": {"root": "NQ", "name": "E-mini Nasdaq 100", "multiplier": 20},
+    "IWM": {"root": "RTY", "name": "E-mini Russell 2000", "multiplier": 50},
+    "DIA": {"root": "YM", "name": "E-mini Dow", "multiplier": 5},
+}
+
+_MONTH_CODES = {3: "H", 6: "M", 9: "U", 12: "Z"}
+
+
+def _next_quarterly_expiry(from_date):
+    """Next CME quarterly futures expiry (3rd Friday of Mar/Jun/Sep/Dec)."""
+    from datetime import date, timedelta
+
+    for year_offset in range(2):
+        for month in (3, 6, 9, 12):
+            year = from_date.year + year_offset
+            first_day = date(year, month, 1)
+            days_to_fri = (4 - first_day.weekday()) % 7
+            third_friday = first_day + timedelta(days=days_to_fri + 14)
+            if third_friday > from_date:
+                return third_friday
+    return from_date
+
+
+def fetch_futures_depth(
+    settings,
+    symbol: str,
+    etf_price: float | None,
+    div_yield_pct: float | None,
+    technicals: dict | None = None,
+) -> dict | None:
+    """Fetch E-mini futures depth: health assessment, COT, and cost-of-carry basis.
+
+    Combines VIX-based depth proxy, roll window detection, COT crowding,
+    and technical context into a composite depth health rating.
+    """
+    if symbol not in FUTURES_ETF_MAP:
+        return None
+
+    from datetime import date, timedelta
+
+    technicals = technicals or {}
+    futures_info = FUTURES_ETF_MAP[symbol]
+    root = futures_info["root"]
+    today = date.today()
+
+    # Front and back quarterly contracts
+    front_expiry = _next_quarterly_expiry(today)
+    front_dte = (front_expiry - today).days
+    front_code = _MONTH_CODES.get(front_expiry.month, "?")
+    front_sym = f"{root}{front_code}{front_expiry.year % 100}"
+
+    back_expiry = _next_quarterly_expiry(front_expiry + timedelta(days=1))
+    back_dte = (back_expiry - today).days
+    back_code = _MONTH_CODES.get(back_expiry.month, "?")
+    back_sym = f"{root}{back_code}{back_expiry.year % 100}"
+
+    # Active month shifts to back contract during roll window
+    in_roll = front_dte <= 8
+    active_contract = back_sym if in_roll else front_sym
+    active_dte = back_dte if in_roll else front_dte
+
+    result: dict = {
+        "name": futures_info["name"],
+        "root": root,
+        "multiplier": futures_info["multiplier"],
+        "front_contract": front_sym,
+        "front_dte": front_dte,
+        "back_contract": back_sym,
+        "back_dte": back_dte,
+        "active_contract": active_contract,
+        "active_dte": active_dte,
+        "in_roll": in_roll,
+    }
+
+    # ── VIX from FRED (depth proxy: ES book depth inversely tracks VIX) ──
+    vix = None
+    vix_pctile = None
+    risk_free_rate = None
+
+    if settings.FRED_API_KEY:
+        try:
+            from lox.data.fred import FredClient
+            import numpy as np
+
+            fred = FredClient(api_key=settings.FRED_API_KEY)
+
+            # VIX
+            vdf = fred.fetch_series("VIXCLS", start_date="2024-01-01")
+            if vdf is not None and not vdf.empty:
+                vdf = vdf.dropna(subset=["value"])
+                vix = float(vdf.iloc[-1]["value"])
+                result["vix"] = vix
+                result["vix_date"] = str(vdf.iloc[-1]["date"])[:10]
+                # 1-year percentile
+                last_252 = vdf.tail(252)["value"].astype(float).values
+                if len(last_252) >= 50:
+                    vix_pctile = float(np.sum(last_252 <= vix) / len(last_252) * 100)
+                    result["vix_pctile"] = vix_pctile
+
+            # Fed funds rate for basis
+            fdf = fred.fetch_series("DFF", start_date="2025-01-01")
+            if fdf is not None and not fdf.empty:
+                risk_free_rate = float(fdf.dropna(subset=["value"]).iloc[-1]["value"]) / 100
+                result["risk_free_rate"] = risk_free_rate
+        except Exception:
+            logger.debug("Failed to fetch FRED data for futures depth", exc_info=True)
+
+    # ── Cost-of-carry basis ──────────────────────────────────────────────
+    div_yield = (div_yield_pct or 0) / 100
+    result["div_yield"] = div_yield
+
+    if etf_price and etf_price > 0 and risk_free_rate is not None:
+        carry = risk_free_rate - div_yield
+        result["net_carry_ann"] = carry
+        result["front_basis_bps"] = carry * (front_dte / 365) * 10000
+        result["back_basis_bps"] = carry * (back_dte / 365) * 10000
+        result["front_fair_value"] = etf_price * (1 + carry * front_dte / 365)
+        result["back_fair_value"] = etf_price * (1 + carry * back_dte / 365)
+
+    # ── CFTC COT speculative positioning ─────────────────────────────────
+    if settings.fmp_api_key:
+        try:
+            from lox.positioning.data import fetch_cot_data
+
+            cot_net, cot_z, cot_dates = fetch_cot_data(settings, symbols=[root])
+            result["cot_net_spec"] = cot_net.get(root)
+            result["cot_z_score"] = cot_z.get(root)
+            result["cot_date"] = cot_dates.get(root)
+        except Exception:
+            logger.debug("Failed to fetch COT data for %s", root, exc_info=True)
+
+    # ── Depth health assessment ──────────────────────────────────────────
+    # ES top-of-book depth inversely correlates with VIX (well-documented).
+    # We combine VIX level, roll window, HV, COT crowding, and technical
+    # weakness into a composite health rating.
+    flags: list[tuple[str, str]] = []  # (severity, message)
+
+    if vix is not None:
+        if vix >= 30:
+            flags.append(("critical", f"VIX at {vix:.1f} — order books severely thin"))
+        elif vix >= 25:
+            flags.append(("warning", f"VIX at {vix:.1f} — books thinning sharply"))
+        elif vix >= 20:
+            flags.append(("caution", f"VIX at {vix:.1f} — depth modestly reduced"))
+        if vix_pctile is not None and vix_pctile >= 80:
+            flags.append(("caution", f"VIX at {vix_pctile:.0f}th percentile (1y) — elevated regime"))
+
+    if in_roll:
+        flags.append(("warning", f"{front_sym} expires in {front_dte}d — roll window, front-month liquidity draining"))
+
+    hv = technicals.get("volatility_30d") or technicals.get("volatility")
+    if hv is not None:
+        if hv > 30:
+            flags.append(("warning", f"HV {hv:.0f}% ann. — market makers widen quotes"))
+        elif hv > 20:
+            flags.append(("caution", f"HV {hv:.0f}% ann. — above-average realized vol"))
+
+    cot_z = result.get("cot_z_score")
+    if cot_z is not None and abs(cot_z) > 1.5:
+        crowd_dir = "long" if cot_z > 0 else "short"
+        flags.append(("caution", f"Specs crowded {crowd_dir} (z={cot_z:+.1f}) — unwind risk if triggered"))
+
+    rsi = technicals.get("rsi")
+    if rsi is not None and rsi < 30:
+        flags.append(("caution", "RSI oversold — forced selling / margin call risk elevates fragility"))
+
+    trend_label = technicals.get("trend_label") or ""
+    if "Below all" in trend_label:
+        flags.append(("caution", "Below all major MAs — trend followers adding pressure"))
+    elif "Below 50 SMA" in trend_label:
+        flags.append(("caution", "Below 50 SMA — intermediate trend weak"))
+
+    vol_vs_avg = technicals.get("vol_vs_avg")
+    if vol_vs_avg is not None and vol_vs_avg < 0.7:
+        flags.append(("caution", f"Volume {vol_vs_avg:.1f}x avg — thin participation"))
+
+    # Composite health rating
+    n_critical = sum(1 for s, _ in flags if s == "critical")
+    n_warning = sum(1 for s, _ in flags if s == "warning")
+    n_caution = sum(1 for s, _ in flags if s == "caution")
+
+    if n_critical > 0:
+        health = "CRITICAL"
+    elif n_warning >= 2 or (n_warning >= 1 and n_caution >= 2):
+        health = "FRAGILE"
+    elif n_warning >= 1 or n_caution >= 3:
+        health = "THINNING"
+    elif n_caution >= 1:
+        health = "ADEQUATE"
+    else:
+        health = "HEALTHY"
+
+    result["depth_health"] = health
+    result["depth_flags"] = flags
+
+    return result
+
+
 def fetch_peers(settings, symbol: str) -> list[str]:
     """Fetch peer symbols from FMP (same sector, similar cap). Returns up to 5 symbols."""
     try:

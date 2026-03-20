@@ -450,29 +450,51 @@ def _render_regime_cross_ref(console: Console, profile: PortfolioFactorProfile, 
         alignment_score = 0
         for factor in FACTOR_NAMES:
             beta = profile.portfolio_betas.get(factor, 0.0)
-            signal, desc = expectations.get(factor, ("NEUTRAL", ""))
+            factor_signal, desc = expectations.get(factor, ("NEUTRAL", ""))
 
-            if signal == "TAILWIND":
-                sig_color = "green"
-                icon = "\u2713"
-                if beta > 0.1:
-                    alignment_score += 1
-            elif signal == "HEADWIND":
-                sig_color = "red" if abs(beta) > 0.1 else "yellow"
-                icon = "\u26a0"
-                if abs(beta) > 0.1:
-                    alignment_score -= 1
-            else:
+            # The factor signal says what the FACTOR does in this regime.
+            # Your LOADING SIGN determines if that's good or bad for YOUR book.
+            # Short equity (beta < 0) + equity underperforms (HEADWIND) = TAILWIND for you.
+            if factor_signal == "NEUTRAL" or abs(beta) < 0.05:
+                book_signal = "NEUTRAL"
                 sig_color = "dim"
                 icon = "\u2014"
+            else:
+                # Factor tailwind + positive loading = book tailwind
+                # Factor headwind + negative loading = book tailwind (you're short!)
+                # Factor tailwind + negative loading = book headwind
+                # Factor headwind + positive loading = book headwind
+                factor_is_positive = factor_signal == "TAILWIND"
+                loading_is_positive = beta > 0
+
+                if factor_is_positive == loading_is_positive:
+                    # Aligned: long into tailwind, or short into headwind
+                    book_signal = "TAILWIND"
+                    sig_color = "green"
+                    icon = "\u2713"
+                    alignment_score += 1
+                else:
+                    # Misaligned: long into headwind, or short into tailwind
+                    book_signal = "HEADWIND"
+                    sig_color = "red"
+                    icon = "\u26a0"
+                    alignment_score -= 1
+
+            # Build implication that reflects book direction
+            if book_signal != "NEUTRAL" and beta < -0.05 and factor_signal == "HEADWIND":
+                implication = f"{desc}; [bold green]benefits your short[/bold green]"
+            elif book_signal != "NEUTRAL" and beta < -0.05 and factor_signal == "TAILWIND":
+                implication = f"{desc}; [bold red]hurts your short[/bold red]"
+            else:
+                implication = f"[dim]{desc}[/dim]"
 
             beta_color = _beta_color(beta)
 
             table.add_row(
                 f"[bold]{factor}[/bold]",
                 f"[{beta_color}]{beta:+.3f}[/{beta_color}]",
-                f"[{sig_color}]{icon} {signal}[/{sig_color}]",
-                f"[dim]{desc}[/dim]",
+                f"[{sig_color}]{icon} {book_signal}[/{sig_color}]",
+                implication,
             )
 
         console.print(table)

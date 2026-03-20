@@ -569,6 +569,147 @@ def show_etf_flows(console: Console, price_data: dict, fundamentals: dict):
         console.print(f"  {verdict_text}")
 
 
+def show_futures_depth(console: Console, futures_data: dict):
+    """Display E-mini futures depth: health assessment, VIX proxy, COT, and basis."""
+    name = futures_data.get("name", "Futures")
+    health = futures_data.get("depth_health", "N/A")
+    flags = futures_data.get("depth_flags", [])
+
+    # ── Health verdict (top-line, like fund flows verdict) ────────────────
+    health_styles = {
+        "CRITICAL": ("bold red", "Order books severely impaired — gap risk elevated"),
+        "FRAGILE": ("red", "Depth degraded — susceptible to air pockets & dislocations"),
+        "THINNING": ("yellow", "Books modestly thin — larger-than-normal impact per trade"),
+        "ADEQUATE": ("dim", "Depth acceptable — normal trading conditions"),
+        "HEALTHY": ("green", "Books deep — low market impact, tight spreads"),
+    }
+    h_style, h_note = health_styles.get(health, ("dim", ""))
+
+    health_text = Text()
+    health_text.append("DEPTH: ", style="bold")
+    health_text.append(health, style=h_style)
+    console.print()
+    console.print(Panel(health_text, title=f"[bold]{name}[/bold]", subtitle=f"[dim]{h_note}[/dim]", border_style=h_style.replace("bold ", "")))
+
+    # ── Flags (warnings/cautions) ────────────────────────────────────────
+    if flags:
+        flag_text = Text()
+        severity_icons = {"critical": "🔴", "warning": "🟡", "caution": "⚪"}
+        for severity, msg in flags:
+            icon = severity_icons.get(severity, "·")
+            sev_color = "red" if severity == "critical" else "yellow" if severity == "warning" else "dim"
+            flag_text.append(f"  {icon} ", style=sev_color)
+            flag_text.append(f"{msg}\n", style=sev_color)
+        console.print(flag_text)
+
+    # ── Depth metrics table ──────────────────────────────────────────────
+    table = Table(box=None, padding=(0, 2), show_header=True, header_style="bold dim")
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+
+    # VIX / depth proxy
+    vix = futures_data.get("vix")
+    vix_pctile = futures_data.get("vix_pctile")
+    if vix is not None:
+        vc = "green" if vix < 15 else "yellow" if vix < 25 else "red"
+        pctile_str = f"{vix_pctile:.0f}th pctile" if vix_pctile is not None else ""
+        table.add_row(
+            "VIX (depth proxy)",
+            f"[{vc}]{vix:.1f}[/{vc}]",
+            "VIX Rank (1y)",
+            f"[{vc}]{pctile_str}[/{vc}]" if pctile_str else "N/A",
+        )
+
+    # Contract info with roll awareness
+    in_roll = futures_data.get("in_roll", False)
+    front = futures_data.get("front_contract", "?")
+    back = futures_data.get("back_contract", "?")
+    front_dte = futures_data.get("front_dte")
+    back_dte = futures_data.get("back_dte")
+    active = futures_data.get("active_contract", front)
+
+    if in_roll:
+        table.add_row(
+            "Active Month",
+            f"[bold]{back}[/bold] ({back_dte}d)",
+            "Expiring",
+            f"[red]{front} ({front_dte}d)[/red]",
+        )
+    else:
+        table.add_row(
+            "Front Month",
+            f"[bold]{front}[/bold] ({front_dte}d)",
+            "Back Month",
+            f"{back} ({back_dte}d)",
+        )
+
+    # COT positioning
+    cot_net = futures_data.get("cot_net_spec")
+    cot_z = futures_data.get("cot_z_score")
+    cot_date = futures_data.get("cot_date")
+
+    if cot_net is not None:
+        net_c = "green" if cot_net > 0 else "red" if cot_net < 0 else "dim"
+        if cot_z is not None:
+            if cot_z > 1.5:
+                z_label = "[red]Crowded Long[/red]"
+            elif cot_z > 0.5:
+                z_label = "[yellow]Mod. Long[/yellow]"
+            elif cot_z < -1.5:
+                z_label = "[green]Crowded Short[/green]"
+            elif cot_z < -0.5:
+                z_label = "[yellow]Mod. Short[/yellow]"
+            else:
+                z_label = "[dim]Neutral[/dim]"
+            zc = "red" if cot_z > 1.5 else "green" if cot_z < -1.5 else "yellow" if abs(cot_z) > 0.5 else "dim"
+            z_str = f"[{zc}]{cot_z:+.1f}[/{zc}] {z_label}"
+        else:
+            z_str = "N/A"
+
+        table.add_row(
+            "COT Net Spec",
+            f"[{net_c}]{cot_net:+,.0f}[/{net_c}]",
+            "Z-Score (52w)",
+            z_str,
+        )
+
+    # Basis / carry
+    front_bps = futures_data.get("front_basis_bps")
+    back_bps = futures_data.get("back_basis_bps")
+    fv = futures_data.get("front_fair_value")
+    back_fv = futures_data.get("back_fair_value")
+    rfr = futures_data.get("risk_free_rate")
+    dy = futures_data.get("div_yield", 0)
+    carry = futures_data.get("net_carry_ann")
+
+    if front_bps is not None:
+        fbc = "green" if front_bps >= 0 else "red"
+        bbc = "green" if back_bps >= 0 else "red"
+        table.add_row(
+            "Basis (Front)",
+            f"[{fbc}]{front_bps:+.0f}bps[/{fbc}] → ${fv:,.2f}" if fv else f"[{fbc}]{front_bps:+.0f}bps[/{fbc}]",
+            "Basis (Back)",
+            f"[{bbc}]{back_bps:+.0f}bps[/{bbc}] → ${back_fv:,.2f}" if back_fv else f"[{bbc}]{back_bps:+.0f}bps[/{bbc}]",
+        )
+
+    if carry is not None and rfr is not None:
+        cc = "green" if carry > 0 else "red" if carry < 0 else "yellow"
+        structure = "Contango" if carry > 0.001 else "Backwardation" if carry < -0.001 else "Flat"
+        table.add_row(
+            "Risk-Free / Div",
+            f"{rfr * 100:.2f}% / {dy * 100:.2f}%",
+            "Net Carry",
+            f"[{cc}]{carry * 100:+.2f}%[/{cc}] → {structure}",
+        )
+
+    if cot_date:
+        table.add_row("COT Date", f"[dim]{cot_date}[/dim]", "", "")
+
+    console.print(table)
+
+
 _HY_ETF_TICKERS = {"HYG", "JNK", "FALN", "SJNK", "HYS", "HYXE", "USHY", "SHYG"}
 
 # ICE BofA HY OAS healthy/stressed historical context
