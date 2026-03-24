@@ -7,7 +7,6 @@ from datetime import datetime, timezone, timedelta
 from dashboard.cache import (
     MC_CACHE, MC_CACHE_LOCK,
     INVESTORS_CACHE, INVESTORS_CACHE_LOCK, INVESTORS_CACHE_TTL,
-    NEWS_CACHE, NEWS_CACHE_LOCK, NEWS_CACHE_TTL,
     ADMIN_SECRET,
 )
 

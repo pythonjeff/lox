@@ -1,13 +1,15 @@
 """
 LOX FUND Dashboard
-Flask app for investor-facing P&L dashboard (updates every 5 minutes).
-Palmer analysis is server-cached and refreshes every 30 minutes automatically.
+Flask app for investor-facing P&L dashboard.
+
+Memory-optimized for Heroku Basic (512MB):
+- No background threads on startup
+- Regime/Palmer/MC data loaded lazily on request
+- Only 5 endpoints are used by the frontend
 """
 
 import os
 import sys
-import threading
-import time
 
 # Add parent directory to path to import lox modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -27,7 +29,6 @@ from dashboard.routes.pages import pages
 from dashboard.routes.positions_api import positions_api
 from dashboard.routes.regime_api import regime_api
 from dashboard.routes.market_api import market_api
-from dashboard.routes.lii_api import lii_api
 
 # ═══════════════════════════════════════════════════════════════
 # Flask app setup
@@ -64,93 +65,29 @@ def load_user(user_id: str):
 
 
 # ═══════════════════════════════════════════════════════════════
-# Blueprints
+# Blueprints (only what the frontend uses)
 # ═══════════════════════════════════════════════════════════════
 app.register_blueprint(auth_blueprint)
 app.register_blueprint(pages)
 app.register_blueprint(positions_api)
 app.register_blueprint(regime_api)
 app.register_blueprint(market_api)
-app.register_blueprint(lii_api)
 
 # Create tables on first run
 with app.app_context():
     db.create_all()
     print("[Dashboard] Database tables ready.")
 
-
-# ═══════════════════════════════════════════════════════════════
-# Background threads
-# ═══════════════════════════════════════════════════════════════
-_background_threads_started = False
+# No background threads — all data is loaded lazily on request.
+# This keeps memory under 512MB on Heroku Basic.
+print("[Dashboard] Ready (lazy-load mode, no background threads)")
 
 
+# Backward compat aliases (no-ops)
 def start_background_threads():
-    """Initialize caches and start background refresh threads."""
-    global _background_threads_started
-    if _background_threads_started:
-        return
-    _background_threads_started = True
+    pass
 
-    from dashboard.cache import PALMER_REFRESH_INTERVAL, MC_REFRESH_INTERVAL
-    from dashboard.palmer import refresh_palmer_cache, palmer_background_refresh
-    from dashboard.monte_carlo import refresh_mc_cache, mc_background_refresh
-
-    print(f"[Palmer] Starting background refresh (interval: {PALMER_REFRESH_INTERVAL}s)")
-    print(f"[MC] Starting background refresh (interval: {MC_REFRESH_INTERVAL}s = 1 hour)")
-    print(f"[Regimes] Starting background prefetch (interval: 540s = 9 min)")
-
-    # Initial refreshes
-    threading.Thread(target=lambda: refresh_palmer_cache(app=app), daemon=True).start()
-    threading.Thread(target=refresh_mc_cache, daemon=True).start()
-
-    # Regime cache warm + history backfill
-    def deferred_regime_init():
-        try:
-            from lox.config import load_settings
-            from dashboard.regime_utils import _build_regime_cache
-            settings = load_settings()
-            _build_regime_cache(settings, refresh=False)
-            print("[Regimes] Initial cache warmed")
-        except Exception as e:
-            print(f"[Regimes] Initial cache warm failed (non-fatal): {e}")
-        try:
-            from dashboard.regime_history import backfill_regime_history
-            backfill_regime_history(app)
-        except Exception as e:
-            print(f"[RegimeHistory] Backfill error (non-fatal): {e}")
-
-    threading.Thread(target=deferred_regime_init, daemon=True).start()
-
-    # Recurring refresh threads
-    threading.Thread(
-        target=lambda: palmer_background_refresh(app=app), daemon=True
-    ).start()
-    threading.Thread(target=mc_background_refresh, daemon=True).start()
-
-    def regime_background_refresh():
-        while True:
-            try:
-                time.sleep(540)
-                from lox.config import load_settings
-                from dashboard.regime_utils import _build_regime_cache
-                settings = load_settings()
-                _build_regime_cache(settings, refresh=False)
-                print("[Regimes] Background cache refreshed")
-            except Exception as e:
-                print(f"[Regimes] Background refresh error: {e}")
-                time.sleep(60)
-
-    threading.Thread(target=regime_background_refresh, daemon=True).start()
-
-
-# Backward compat alias
 start_palmer_background = start_background_threads
-
-# ═══════════════════════════════════════════════════════════════
-# Startup
-# ═══════════════════════════════════════════════════════════════
-start_background_threads()
 
 
 if __name__ == '__main__':

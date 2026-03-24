@@ -7,9 +7,12 @@ FMP commodity prices, Alpaca stock/option quotes (single + batch).
 import os
 import time
 
-from dashboard.cache import (
-    INDICATOR_SOURCE_CACHE, INDICATOR_SOURCE_CACHE_LOCK, INDICATOR_SOURCE_TTL,
-)
+import threading
+
+# Local cache for indicator source values (small, no need for central registry)
+INDICATOR_SOURCE_CACHE: dict = {}
+INDICATOR_SOURCE_CACHE_LOCK = threading.Lock()
+INDICATOR_SOURCE_TTL = 1800  # 30 minutes
 
 
 def fetch_fmp_commodity(symbol: str) -> float | None:
