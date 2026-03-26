@@ -1,6 +1,6 @@
 """HTML page routes for the LOX FUND Dashboard."""
 
-from flask import Blueprint, render_template, abort
+from flask import Blueprint, render_template
 from flask_login import login_required, current_user
 
 pages = Blueprint("pages", __name__)
@@ -55,14 +55,3 @@ def inspiration():
     return render_template('inspiration.html')
 
 
-@pages.route('/regimes/<regime_name>')
-def regime_page(regime_name):
-    from dashboard.regime_utils import REGIME_NAMES, REGIME_DISPLAY_NAMES
-    if regime_name not in REGIME_NAMES:
-        abort(404)
-    return render_template(
-        'regime.html',
-        regime_name=regime_name,
-        regimes=REGIME_NAMES,
-        regime_display_names=REGIME_DISPLAY_NAMES,
-    )

@@ -1,11 +1,9 @@
 """Position, thesis, and closed-trade API routes."""
 
-from flask import Blueprint, jsonify, request
-from flask_login import login_required
+from flask import Blueprint, jsonify
 from datetime import datetime, timezone
 
 from dashboard.cache import (
-    THESIS_CACHE, THESIS_CACHE_LOCK, THESIS_CACHE_TTL,
     TRADES_CACHE, TRADES_CACHE_LOCK, TRADES_CACHE_TTL,
 )
 
@@ -20,51 +18,6 @@ def api_positions():
     response = jsonify(data)
     response.headers['Cache-Control'] = 'no-cache'
     return response
-
-
-@positions_api.route('/api/position-thesis')
-@login_required
-def api_position_thesis():
-    """AI-generated position thesis (cached 1 hour)."""
-    with THESIS_CACHE_LOCK:
-        if THESIS_CACHE["data"] and THESIS_CACHE["timestamp"]:
-            cache_age = (datetime.now(timezone.utc) - THESIS_CACHE["timestamp"]).total_seconds()
-            if cache_age < THESIS_CACHE_TTL:
-                response = jsonify(THESIS_CACHE["data"])
-                response.headers['Cache-Control'] = 'public, max-age=3600'
-                return response
-
-    try:
-        from dashboard.positions import get_positions_data, get_regime_context, generate_position_theory
-        from lox.config import load_settings
-        positions_data = get_positions_data()
-        positions = positions_data.get("positions", [])
-        settings = load_settings()
-        regime_context = get_regime_context(settings)
-
-        theses = {}
-        for pos in positions:
-            symbol = pos.get("symbol", "")
-            if symbol:
-                theses[symbol] = generate_position_theory(pos, regime_context, settings)
-
-        result = {
-            "theses": theses,
-            "count": len(theses),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-        with THESIS_CACHE_LOCK:
-            THESIS_CACHE["data"] = result
-            THESIS_CACHE["timestamp"] = datetime.now(timezone.utc)
-
-        response = jsonify(result)
-        response.headers['Cache-Control'] = 'public, max-age=3600'
-        return response
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e), "theses": {}})
 
 
 @positions_api.route('/api/closed-trades')

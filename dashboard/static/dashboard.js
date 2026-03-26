@@ -1,4 +1,4 @@
-// LOX FUND Dashboard v3 - Reliable & Dynamic
+// LOX FUND Dashboard v4 - Performance-Only
 
 // ============================================
 // UTILITIES
@@ -53,7 +53,6 @@ const connectionState = {
     lastTradesUpdate: null,
     positionsRetries: 0,
     tradesRetries: 0,
-    regimeRetries: 0,
     maxRetries: 5,
     baseDelay: 5000,      // 5s initial retry
     connected: false,
@@ -128,7 +127,6 @@ async function fetchWithRetry(url, retryKey, processFunc) {
 function processPositionsData(data) {
     if (data.error) {
         console.error('Positions API Error:', data.error);
-        // Still process whatever data came back (may be stale cache fallback)
     }
 
     connectionState.lastPositionsUpdate = Date.now();
@@ -204,7 +202,6 @@ function processPositionsData(data) {
 
         const rows = sorted.map(pos => {
             const pnlClass = pos.pnl >= 0 ? 'positive' : 'negative';
-            const safeId = pos.symbol.replace(/[^a-zA-Z0-9]/g, '_');
 
             let ticker, typeLabel, expiry = '';
             if (pos.opt_info) {
@@ -224,42 +221,8 @@ function processPositionsData(data) {
             const pnlPct = pos.pnl_pct || 0;
             const daysOpen = pos.days_open !== null && pos.days_open !== undefined ? pos.days_open : '—';
 
-            // Thesis & indicators for expandable detail
-            const thesis = pos.thesis || '';
-            const indicators = pos.indicators || [];
-            const hasDetail = thesis || indicators.length > 0;
-
-            let detailHtml = '';
-            if (hasDetail) {
-                let indRows = '';
-                if (indicators.length > 0) {
-                    indRows = `
-                        <table class="pos-detail-indicators">
-                            <thead><tr><th>Indicator</th><th>Current</th><th>Target</th><th>Invalidation</th><th></th></tr></thead>
-                            <tbody>${indicators.map(ind => `
-                                <tr>
-                                    <td>${escapeHtml(ind.name || '')}</td>
-                                    <td>${escapeHtml(ind.current_value || '—')}</td>
-                                    <td>${escapeHtml(ind.target_value || '—')}</td>
-                                    <td>${escapeHtml(ind.invalidation_value || '—')}</td>
-                                    <td><span class="ind-dot ind-dot--${ind.status || 'neutral'}"></span></td>
-                                </tr>`).join('')}
-                            </tbody>
-                        </table>`;
-                }
-                detailHtml = `
-                    <tr class="pos-detail-row" id="detail-${safeId}" style="display:none;">
-                        <td colspan="8">
-                            <div class="pos-detail-content">
-                                ${thesis ? `<div class="pos-detail-thesis" id="thesis-${safeId}">${escapeHtml(thesis)}</div>` : ''}
-                                ${indRows}
-                            </div>
-                        </td>
-                    </tr>`;
-            }
-
             return `
-                <tr class="pos-row${hasDetail ? ' pos-row--expandable' : ''}" data-detail="detail-${safeId}">
+                <tr class="pos-row">
                     <td class="pos-td-ticker">
                         <span class="pos-ticker">${ticker}</span>
                         <span class="pos-type">${typeLabel}</span>
@@ -271,8 +234,7 @@ function processPositionsData(data) {
                     <td class="pos-td-pnl ${pnlClass}">${formatCurrency(pnlVal)}</td>
                     <td class="pos-td-pct ${pnlClass}">${formatPercent(pnlPct, 1)}</td>
                     <td class="pos-td-days">${daysOpen}${typeof daysOpen === 'number' ? 'd' : ''}</td>
-                </tr>
-                ${detailHtml}`;
+                </tr>`;
         }).join('');
 
         positionsList.innerHTML = `
@@ -291,50 +253,10 @@ function processPositionsData(data) {
                 </thead>
                 <tbody>${rows}</tbody>
             </table>`;
-
-        // Wire up expandable rows
-        positionsList.querySelectorAll('.pos-row--expandable').forEach(row => {
-            row.addEventListener('click', () => {
-                const detailId = row.getAttribute('data-detail');
-                const detail = document.getElementById(detailId);
-                if (!detail) return;
-                const isOpen = detail.style.display !== 'none';
-                detail.style.display = isOpen ? 'none' : 'table-row';
-                row.classList.toggle('pos-row--open', !isOpen);
-            });
-        });
-
-        // Lazily fetch AI-generated thesis
-        fetchPositionThesis(data.positions);
     }
 
     // Update footer
     document.getElementById('footer-time').textContent = `Updated ${formatTime()}`;
-}
-
-
-// ============================================
-// POSITION THESIS (AI Generated)
-// ============================================
-async function fetchPositionThesis(positions) {
-    try {
-        const response = await fetch('/api/position-thesis');
-        if (!response.ok) return;
-        const data = await response.json();
-
-        if (data.error || !data.theses) return;
-
-        // Update each position's thesis
-        Object.entries(data.theses).forEach(([symbol, thesis]) => {
-            const safeId = symbol.replace(/[^a-zA-Z0-9]/g, '_');
-            const el = document.getElementById(`thesis-${safeId}`);
-            if (el) {
-                el.textContent = thesis;
-            }
-        });
-    } catch (err) {
-        console.error('Thesis fetch error:', err);
-    }
 }
 
 
@@ -577,95 +499,9 @@ function renderPerformanceMetrics(metrics, tradeCount, winRate) {
     if (maxLossesEl) maxLossesEl.textContent = metrics.max_consec_losses;
 }
 
-// ============================================
-// V3: REGIME SUMMARY (Data Strip + Heatmap)
-// ============================================
-
-function processRegimeSummary(data) {
-    if (data.error && !data.regimes) {
-        console.error('[Regime] Summary error:', data.error);
-        return;
-    }
-
-    // ── DATA STRIP: Show it ──
-    const strip = document.getElementById('data-strip');
-    if (strip) strip.style.display = 'flex';
-
-    // ── Composite Regime Badge ──
-    const badge = document.getElementById('composite-badge');
-    if (badge && data.composite_regime) {
-        const regime = data.composite_regime;
-        const label = data.composite_label || regime;
-        const conf = data.composite_confidence || 0;
-        badge.textContent = label;
-        badge.className = 'composite-badge composite-' + regime.toLowerCase().replace(/_/g, '-');
-        badge.title = `${(conf * 100).toFixed(0)}% confidence`;
-    }
-
-    // ── Risk Gauge ──
-    const riskVal = document.getElementById('risk-gauge-value');
-    if (riskVal && data.overall_risk_score !== undefined) {
-        const score = Math.round(data.overall_risk_score);
-        riskVal.textContent = score;
-        const gaugeEl = document.getElementById('risk-gauge');
-        if (gaugeEl) {
-            gaugeEl.classList.remove('risk-high', 'risk-moderate', 'risk-low');
-            if (score >= 65) gaugeEl.classList.add('risk-high');
-            else if (score >= 35) gaugeEl.classList.add('risk-moderate');
-            else gaugeEl.classList.add('risk-low');
-        }
-    }
-
-    // ── Market Pulse (inline in strip) ──
-    if (data.market_pulse) {
-        const p = data.market_pulse;
-        _setStripVal('pulse-vix', p.vix, '', p.vix >= 20 ? 'pulse-warn' : '');
-        _setStripVal('pulse-10y', p.ten_y, '%', '');
-        _setStripVal('pulse-hy', p.hy_oas, 'bp', p.hy_oas >= 400 ? 'pulse-warn' : '');
-        _setStripVal('pulse-dxy', p.dxy, '', '');
-    }
-
-    // ── REGIME HEATMAP ──
-    const hmSection = document.getElementById('regime-heatmap-section');
-    const hm = document.getElementById('regime-heatmap');
-    if (hmSection && hm && data.regimes && data.regimes.length > 0) {
-        hmSection.style.display = 'block';
-        hm.innerHTML = data.regimes.map(r => {
-            const sev = r.severity || 'moderate';
-            const scoreText = r.score !== null && r.score !== undefined ? Math.round(r.score) : '—';
-            const abbr = _abbreviate(r.domain);
-            return `<a href="/regimes/${r.name}" class="hm-cell hm-${sev}" title="${r.domain}: ${r.classification} (${scoreText})">
-                <span class="hm-abbr">${abbr}</span>
-                <span class="hm-score">${scoreText}</span>
-            </a>`;
-        }).join('');
-    }
-}
-
-function _setStripVal(elementId, value, unit, extraClass) {
-    const el = document.getElementById(elementId);
-    if (!el) return;
-    const valEl = el.querySelector('.strip-val');
-    if (!valEl || value === null || value === undefined) return;
-    const decimals = unit === '%' ? 2 : unit === 'bp' ? 0 : 1;
-    valEl.textContent = Number(value).toFixed(decimals) + (unit ? unit : '');
-    valEl.className = 'strip-val' + (extraClass ? ' ' + extraClass : '');
-}
-
-function _abbreviate(domain) {
-    const abbrs = {
-        'Growth': 'GRW', 'Inflation': 'INF', 'Volatility': 'VOL',
-        'Credit': 'CRD', 'Rates': 'RTS', 'Liquidity': 'LIQ',
-        'Consumer': 'CON', 'Fiscal': 'FSC', 'USD': 'USD',
-        'Commodities': 'CMD', 'Earnings': 'ERN', 'Policy': 'POL',
-        'Positioning': 'POS',
-    };
-    return abbrs[domain] || domain.substring(0, 3).toUpperCase();
-}
-
 
 // ============================================
-// V3: EQUITY CURVE (Chart.js — tight)
+// EQUITY CURVE (Chart.js)
 // ============================================
 
 let equityCurveChart = null;
@@ -696,6 +532,30 @@ function processNavHistory(data, liveTwrPct) {
     const values = series.map(p => p.twr_cum_pct);
 
     const lastVal = values[values.length - 1];
+
+    // Compute all-time high TWR close (from historical snapshots only, not live)
+    const historicalValues = data.series.map(p => p.twr_cum_pct);
+    const athClose = Math.max(...historicalValues);
+
+    // Check if current (live) TWR is at or above ATH close
+    const isAtATH = lastVal >= athClose && lastVal > 0;
+    const heroReturn = document.getElementById('hero-return');
+    const athBadge = document.getElementById('ath-badge');
+    const athHighLabel = document.getElementById('ath-high-label');
+
+    if (isAtATH && heroReturn) {
+        heroReturn.classList.add('ath-star');
+        if (athBadge) athBadge.style.display = '';
+    } else {
+        if (heroReturn) heroReturn.classList.remove('ath-star');
+        if (athBadge) athBadge.style.display = 'none';
+    }
+
+    // Always show ATH close value
+    if (athHighLabel && athClose > 0) {
+        athHighLabel.textContent = 'ATH Close: +' + athClose.toFixed(2) + '%';
+        athHighLabel.style.display = '';
+    }
 
     // Update chart subtitle with latest TWR
     const subtitleEl = document.getElementById('chart-latest');
@@ -786,26 +646,15 @@ async function initDashboardParallel() {
     const fetches = [
         fetch('/api/positions').then(r => r.json()).catch(e => ({ error: e.message, positions: [] })),
         fetch('/api/closed-trades').then(r => r.json()).catch(e => ({ error: e.message, trades: [] })),
-        fetch('/api/position-thesis').then(r => r.json()).catch(e => ({ error: e.message })),
-        fetch('/api/regime-summary').then(r => r.json()).catch(e => ({ error: e.message, regimes: [] })),
         fetch('/api/nav-history').then(r => r.json()).catch(e => ({ error: e.message, series: [] })),
     ];
 
     try {
-        const [positionsData, tradesData, thesisData, regimeData, navData] = await Promise.all(fetches);
+        const [positionsData, tradesData, navData] = await Promise.all(fetches);
 
         processPositionsData(positionsData);
         processClosedTradesData(tradesData);
-        processRegimeSummary(regimeData);
         processNavHistory(navData, positionsData.return_pct);
-
-        if (thesisData && thesisData.theses) {
-            Object.entries(thesisData.theses).forEach(([symbol, thesis]) => {
-                const safeId = symbol.replace(/[^a-zA-Z0-9]/g, '_');
-                const el = document.getElementById(`thesis-${safeId}`);
-                if (el) el.textContent = thesis;
-            });
-        }
 
         const elapsed = (performance.now() - startTime).toFixed(0);
         console.log(`[Dashboard] Load complete in ${elapsed}ms`);
@@ -832,11 +681,6 @@ setInterval(() => {
 setInterval(() => {
     fetchWithRetry('/api/closed-trades', 'tradesRetries', processClosedTradesData);
 }, 180000);
-
-// V2: Regime summary: refresh every 5 minutes
-setInterval(() => {
-    fetchWithRetry('/api/regime-summary', 'regimeRetries', processRegimeSummary);
-}, 300000);
 
 // Staleness watchdog: check every 15 seconds if data has gone stale
 setInterval(updateStalenessCheck, 15000);

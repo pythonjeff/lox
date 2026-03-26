@@ -27,7 +27,6 @@ from dashboard.models import db, bcrypt, User
 from dashboard.auth import auth as auth_blueprint
 from dashboard.routes.pages import pages
 from dashboard.routes.positions_api import positions_api
-from dashboard.routes.regime_api import regime_api
 from dashboard.routes.market_api import market_api
 
 # ═══════════════════════════════════════════════════════════════
@@ -70,7 +69,6 @@ def load_user(user_id: str):
 app.register_blueprint(auth_blueprint)
 app.register_blueprint(pages)
 app.register_blueprint(positions_api)
-app.register_blueprint(regime_api)
 app.register_blueprint(market_api)
 
 # Create tables on first run

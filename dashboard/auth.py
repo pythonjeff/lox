@@ -20,7 +20,7 @@ def login():
     """Show login form / process login."""
     # Already authenticated — go to dashboard
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(url_for("pages.index"))
 
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
@@ -54,7 +54,7 @@ def login():
         next_page = request.args.get("next")
         if next_page and _is_safe_redirect(next_page):
             return redirect(next_page)
-        return redirect(url_for("my_account"))
+        return redirect(url_for("pages.my_account"))
 
     return render_template("login.html")
 
@@ -65,7 +65,7 @@ def login():
 def register():
     """Invite-only registration. Requires a valid invite token in ?invite=<token>."""
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(url_for("pages.index"))
 
     # --- Validate invite token ---
     token = request.args.get("invite") or request.form.get("invite", "")
@@ -148,7 +148,7 @@ def register():
         login_user(user, remember=True)
 
         flash(f"Welcome! Your account is linked to investor code {invite.investor_code}.", "success")
-        return redirect(url_for("my_account"))
+        return redirect(url_for("pages.my_account"))
 
     # GET — render form pre-filled with invite data
     return render_template("register.html", invite=invite)
