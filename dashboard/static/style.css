@@ -573,9 +573,6 @@ body {
     }
     .strip-sep { display: none; }
     .strip-item { padding: 2px 6px; }
-    .hero-value { font-size: 28px; }
-    .hero-lead { gap: 6px; }
-    .hero-stats .metric-value { font-size: 13px; }
     .regime-heatmap { flex-wrap: wrap; }
     .hm-cell { min-width: 42px; flex: 0 0 calc(25% - 1px); }
     .equity-curve-container { height: 140px; }
@@ -1507,14 +1504,45 @@ body {
     }
 
     .hero-metrics {
-        padding: 8px 10px 6px;
+        padding: 10px 12px 6px;
+    }
+
+    .hero-lead {
+        flex-wrap: wrap;
+        gap: 4px 10px;
     }
 
     .hero-value {
-        font-size: 28px;
+        font-size: 32px;
     }
 
-    .hero-bench {
+    .hero-sub {
+        flex-wrap: wrap;
+        gap: 4px 6px;
+    }
+
+    .hero-benchmarks {
+        width: 100%;
+        margin-left: 0;
+        margin-top: 4px;
+        gap: 10px;
+    }
+
+    .hero-stats .metric-value {
+        font-size: 14px;
+    }
+
+    .hero-stats .metric-label {
+        font-size: 7px;
+    }
+
+    .ath-badge {
+        font-size: 9px;
+        padding: 1px 4px;
+        margin-left: 4px;
+    }
+
+    .ath-high-label {
         font-size: 9px;
     }
 
@@ -1661,23 +1689,18 @@ body {
 /* Extra small screens */
 @media (max-width: 380px) {
     .hero-value {
-        font-size: 34px;
+        font-size: 28px;
     }
-    
+
     .metric-value {
         font-size: 20px;
     }
-    
+
     .logo-text {
         font-size: 24px;
     }
-    
+
     .header-timestamp {
-        display: none;
-    }
-    
-    .pos-table thead th.pos-th-cost,
-    .pos-table tbody td.pos-td-cost {
         display: none;
     }
 }
