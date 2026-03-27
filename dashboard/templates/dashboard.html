@@ -79,8 +79,19 @@
             </div>
         </header>
 
-        <!-- HERO + METRICS: Single dense block -->
+        <!-- HERO + METRICS -->
         <section class="hero-metrics">
+            <!-- Mobile: big NAV, P&L subtitle (hidden on desktop) -->
+            <div class="hero-mobile-lead">
+                <div class="hero-mobile-nav" id="hero-mobile-nav">—</div>
+                <div class="hero-mobile-pnl">
+                    <span class="hero-mobile-pnl-val" id="hero-mobile-pnl">—</span>
+                    <span class="hero-mobile-pnl-pct" id="hero-mobile-pnl-pct">(—)</span>
+                    <span class="hero-mobile-period">Since Jan 9 '26</span>
+                    <span class="ath-badge" id="ath-badge-mobile" style="display:none;">★ ATH</span>
+                </div>
+            </div>
+            <!-- Desktop: TWR% headline with benchmarks (hidden on mobile) -->
             <div class="hero-lead">
                 <div style="display:flex;align-items:baseline;">
                     <div class="hero-value" id="hero-return">—</div>

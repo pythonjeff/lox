@@ -290,6 +290,11 @@ body {
 /* ============================================
    HERO + METRICS (combined dense block)
    ============================================ */
+/* Mobile-first hero (hidden on desktop by default) */
+.hero-mobile-lead {
+    display: none;
+}
+
 .hero-metrics {
     background: var(--hero-bg);
     padding: 12px 16px 8px;
@@ -1503,47 +1508,79 @@ body {
         padding: 8px;
     }
 
+    /* ── Robinhood-style mobile hero ── */
     .hero-metrics {
-        padding: 10px 12px 6px;
+        background: var(--bg);
+        padding: 20px 16px 10px;
+        margin-bottom: 0;
+    }
+
+    /* Show mobile hero, hide desktop hero */
+    .hero-mobile-lead {
+        display: block;
+        margin-bottom: 6px;
     }
 
     .hero-lead {
-        flex-wrap: wrap;
-        gap: 4px 10px;
+        display: none;
     }
 
-    .hero-value {
-        font-size: 32px;
+    /* Big NAV number */
+    .hero-mobile-nav {
+        font-size: 38px;
+        font-weight: 700;
+        color: var(--text-primary);
+        letter-spacing: -1.5px;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
     }
 
-    .hero-sub {
-        flex-wrap: wrap;
-        gap: 4px 6px;
+    /* P&L subtitle line */
+    .hero-mobile-pnl {
+        display: flex;
+        align-items: baseline;
+        gap: 5px;
+        margin-top: 6px;
     }
 
-    .hero-benchmarks {
-        width: 100%;
-        margin-left: 0;
-        margin-top: 4px;
-        gap: 10px;
-    }
-
-    .hero-stats .metric-value {
+    .hero-mobile-pnl-val {
         font-size: 14px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+    .hero-mobile-pnl-val.positive { color: var(--green); }
+    .hero-mobile-pnl-val.negative { color: var(--red); }
+
+    .hero-mobile-pnl-pct {
+        font-size: 14px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+    .hero-mobile-pnl-pct.positive { color: var(--green); }
+    .hero-mobile-pnl-pct.negative { color: var(--red); }
+
+    .hero-mobile-period {
+        font-size: 13px;
+        color: var(--text-muted);
     }
 
-    .hero-stats .metric-label {
-        font-size: 7px;
+    /* Hide desktop NAV/P&L/Cash strip — data is in mobile hero */
+    .hero-stats {
+        display: none;
     }
 
-    .ath-badge {
-        font-size: 9px;
-        padding: 1px 4px;
-        margin-left: 4px;
+    /* Equity curve — full-width, prominent like RH */
+    .equity-curve-section {
+        padding: 0;
+        margin-bottom: 4px;
     }
 
-    .ath-high-label {
-        font-size: 9px;
+    .chart-header {
+        display: none;
+    }
+
+    .equity-curve-container {
+        height: 180px;
     }
 
     .accordion-header {
@@ -1688,12 +1725,8 @@ body {
 
 /* Extra small screens */
 @media (max-width: 380px) {
-    .hero-value {
-        font-size: 28px;
-    }
-
-    .metric-value {
-        font-size: 20px;
+    .hero-mobile-nav {
+        font-size: 32px;
     }
 
     .logo-text {

@@ -179,6 +179,29 @@ function processPositionsData(data) {
     const cashEl = document.getElementById('cash-value');
     cashEl.textContent = data.cash_available ? formatCurrency(data.cash_available) : '—';
 
+    // MOBILE HERO: Big NAV + P&L subtitle
+    const mobileNav = document.getElementById('hero-mobile-nav');
+    const mobilePnl = document.getElementById('hero-mobile-pnl');
+    const mobilePnlPct = document.getElementById('hero-mobile-pnl-pct');
+    const athBadgeMobile = document.getElementById('ath-badge-mobile');
+    if (mobileNav) {
+        mobileNav.textContent = data.nav_equity ? formatCurrency(data.nav_equity) : '—';
+    }
+    if (mobilePnl) {
+        const pnlSign = pnl >= 0 ? '+' : '';
+        mobilePnl.textContent = `${pnlSign}${formatCurrency(pnl)}`;
+        mobilePnl.className = 'hero-mobile-pnl-val ' + (pnl >= 0 ? 'positive' : 'negative');
+    }
+    if (mobilePnlPct && data.return_pct !== undefined) {
+        const rp = data.return_pct;
+        mobilePnlPct.textContent = `(${formatPercent(rp)})`;
+        mobilePnlPct.className = 'hero-mobile-pnl-pct ' + (rp >= 0 ? 'positive' : 'negative');
+    }
+    if (athBadgeMobile) {
+        const athDesktop = document.getElementById('ath-badge');
+        athBadgeMobile.style.display = athDesktop && athDesktop.style.display !== 'none' ? '' : 'none';
+    }
+
     // POSITIONS: Count badge
     const countEl = document.getElementById('positions-count');
     countEl.textContent = data.positions ? `${data.positions.length} POSITIONS` : '—';
@@ -543,12 +566,15 @@ function processNavHistory(data, liveTwrPct) {
     const athBadge = document.getElementById('ath-badge');
     const athHighLabel = document.getElementById('ath-high-label');
 
+    const athBadgeMob = document.getElementById('ath-badge-mobile');
     if (isAtATH && heroReturn) {
         heroReturn.classList.add('ath-star');
         if (athBadge) athBadge.style.display = '';
+        if (athBadgeMob) athBadgeMob.style.display = '';
     } else {
         if (heroReturn) heroReturn.classList.remove('ath-star');
         if (athBadge) athBadge.style.display = 'none';
+        if (athBadgeMob) athBadgeMob.style.display = 'none';
     }
 
     // Always show ATH close value
