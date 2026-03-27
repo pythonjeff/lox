@@ -151,7 +151,7 @@ def _get_closed_trades() -> list[dict]:
     
     # Inject synthetic sell-at-$0 for expired options (OPEXP activities + OCC date fallback)
     try:
-        _opexp_raw = trading.get("/v2/account/activities/OPEXP") or []
+        _opexp_raw = trading.get_activities(activity_types="OPEXP") or []
         if isinstance(_opexp_raw, dict):
             _opexp_raw = [_opexp_raw]
         for act in (_opexp_raw if isinstance(_opexp_raw, list) else []):

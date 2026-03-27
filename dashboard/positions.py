@@ -357,7 +357,7 @@ def get_positions_data(force_refresh: bool = False):
         from dateutil.parser import parse as _parse_dt
         fill_map = {}
         try:
-            raw_fills = trading.get("/v2/account/activities/FILL") or []
+            raw_fills = trading.get_activities(activity_types="FILL") or []
             if isinstance(raw_fills, dict):
                 raw_fills = [raw_fills]
             print(f"[Days Open] Got {len(raw_fills) if isinstance(raw_fills, list) else 'non-list'} raw fills")
