@@ -439,28 +439,36 @@ def get_positions_data(force_refresh: bool = False):
 
                 total_liquidation_value += liquidation_value
 
-                # Days open — walk back through fills until accumulated qty covers open position
+                # Days open — walk fills chronologically, track running position,
+                # reset clock whenever position goes flat (qty == 0).
+                # Reports days since the oldest fill of the current continuous hold.
                 days_open = None
                 try:
-                    open_qty = abs(qty)
-                    open_side = "buy" if qty > 0 else "sell"
                     fills = fill_map.get(symbol)
                     if not fills and opt_info:
                         fills = fill_map.get(opt_info.get("underlying", ""))
                     if fills:
-                        accum = 0.0
-                        oldest_ts = None
-                        for ts, fqty, side in fills:
-                            if side != open_side:
-                                continue
-                            accum += fqty
-                            oldest_ts = ts
-                            if accum >= open_qty:
-                                break
-                        if oldest_ts:
-                            if not oldest_ts.tzinfo:
-                                oldest_ts = oldest_ts.replace(tzinfo=timezone.utc)
-                            days_open = (datetime.now(timezone.utc) - oldest_ts).days
+                        # Sort oldest-first for chronological walk
+                        chrono = sorted(fills, key=lambda x: x[0])
+                        running = 0.0
+                        open_since = None
+                        for ts, fqty, side in chrono:
+                            if side == "buy":
+                                if running == 0.0:
+                                    open_since = ts  # new position started
+                                running += fqty
+                            elif side in ("sell", "sell_short"):
+                                if running == 0.0:
+                                    open_since = ts  # new short started
+                                running -= fqty
+                            # Position went flat → reset clock
+                            if abs(running) < 1e-9:
+                                running = 0.0
+                                open_since = None
+                        if open_since:
+                            if not open_since.tzinfo:
+                                open_since = open_since.replace(tzinfo=timezone.utc)
+                            days_open = (datetime.now(timezone.utc) - open_since).days
                 except Exception:
                     pass
 
