@@ -87,7 +87,7 @@ def register(app: typer.Typer) -> None:
         # Fetch OPEXP (option expiration) activities and inject synthetic sell-at-$0
         _opexp_activities = []
         try:
-            _opexp_raw = trading.get_activities(activity_types="OPEXP") or []
+            _opexp_raw = trading.get("/account/activities/OPEXP") or []
             if isinstance(_opexp_raw, dict):
                 _opexp_raw = [_opexp_raw]
             _opexp_activities = _opexp_raw if isinstance(_opexp_raw, list) else []

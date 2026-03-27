@@ -353,21 +353,31 @@ def get_positions_data(force_refresh: bool = False):
         regime_context = get_regime_context(settings)
 
         # Fetch FILL activities to compute "days open" per position.
-        # Builds fill_map: symbol -> [(timestamp, qty, side), ...]
+        # Paginate through all fills (max 100 per page) to build complete history.
         from dateutil.parser import parse as _parse_dt
         fill_map = {}
         try:
-            raw_fills = trading.get_activities(activity_types="FILL") or []
-            if isinstance(raw_fills, dict):
-                raw_fills = [raw_fills]
-            print(f"[Days Open] Got {len(raw_fills) if isinstance(raw_fills, list) else 'non-list'} raw fills")
-            if isinstance(raw_fills, list) and len(raw_fills) > 0:
-                sample = raw_fills[0]
-                if isinstance(sample, dict):
-                    print(f"[Days Open] Sample fill (dict): symbol={sample.get('symbol')}, side={sample.get('side')}, qty={sample.get('qty')}, time={sample.get('transaction_time')}")
-                else:
-                    print(f"[Days Open] Sample fill (obj type={type(sample).__name__}): symbol={getattr(sample, 'symbol', '?')}, side={getattr(sample, 'side', '?')}, qty={getattr(sample, 'qty', '?')}")
-            for f in (raw_fills if isinstance(raw_fills, list) else []):
+            all_fills = []
+            page_token = None
+            for _ in range(10):  # safety cap at ~1000 fills
+                params = {"page_size": 100, "direction": "desc"}
+                if page_token:
+                    params["page_token"] = page_token
+                page = trading.get("/account/activities/FILL", params) or []
+                if isinstance(page, dict):
+                    page = [page]
+                if not isinstance(page, list) or not page:
+                    break
+                all_fills.extend(page)
+                # Alpaca returns next page token via the last item's id
+                if len(page) < 100:
+                    break
+                page_token = page[-1].get("id") if isinstance(page[-1], dict) else getattr(page[-1], "id", None)
+                if not page_token:
+                    break
+            raw_fills = all_fills
+            print(f"[Days Open] Got {len(raw_fills)} fills across pages")
+            for f in raw_fills:
                 if isinstance(f, dict):
                     sym = f.get("symbol", "")
                     ts = f.get("transaction_time")
@@ -383,9 +393,7 @@ def get_positions_data(force_refresh: bool = False):
                 if isinstance(ts, str):
                     ts = _parse_dt(ts)
                 fill_map.setdefault(sym, []).append((ts, fqty, side))
-            for sym in fill_map:
-                fill_map[sym].sort(key=lambda x: x[0], reverse=True)
-            print(f"[Days Open] fill_map keys: {list(fill_map.keys())[:20]}")
+            print(f"[Days Open] fill_map has {len(fill_map)} symbols")
         except Exception as e:
             import traceback
             print(f"[Days Open] Error fetching fills: {e}")
@@ -455,11 +463,8 @@ def get_positions_data(force_refresh: bool = False):
                 days_open = None
                 try:
                     fills = fill_map.get(symbol)
-                    print(f"[Days Open] Position {symbol}: direct lookup={'found' if fills else 'miss'}")
                     if not fills and opt_info:
-                        underlying = opt_info.get("underlying", "")
-                        fills = fill_map.get(underlying)
-                        print(f"[Days Open] Position {symbol}: underlying lookup '{underlying}'={'found' if fills else 'miss'}")
+                        fills = fill_map.get(opt_info.get("underlying", ""))
                     if fills:
                         # Sort oldest-first for chronological walk
                         chrono = sorted(fills, key=lambda x: x[0])
