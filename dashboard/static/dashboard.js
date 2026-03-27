@@ -183,7 +183,6 @@ function processPositionsData(data) {
     const mobileNav = document.getElementById('hero-mobile-nav');
     const mobilePnl = document.getElementById('hero-mobile-pnl');
     const mobilePnlPct = document.getElementById('hero-mobile-pnl-pct');
-    const athBadgeMobile = document.getElementById('ath-badge-mobile');
     if (mobileNav) {
         mobileNav.textContent = data.nav_equity ? formatCurrency(data.nav_equity) : '—';
     }
@@ -196,10 +195,6 @@ function processPositionsData(data) {
         const rp = data.return_pct;
         mobilePnlPct.textContent = `(${formatPercent(rp)})`;
         mobilePnlPct.className = 'hero-mobile-pnl-pct ' + (rp >= 0 ? 'positive' : 'negative');
-    }
-    if (athBadgeMobile) {
-        const athDesktop = document.getElementById('ath-badge');
-        athBadgeMobile.style.display = athDesktop && athDesktop.style.display !== 'none' ? '' : 'none';
     }
 
     // POSITIONS: Count badge
@@ -555,33 +550,6 @@ function processNavHistory(data, liveTwrPct) {
     const values = series.map(p => p.twr_cum_pct);
 
     const lastVal = values[values.length - 1];
-
-    // Compute all-time high TWR close (from historical snapshots only, not live)
-    const historicalValues = data.series.map(p => p.twr_cum_pct);
-    const athClose = Math.max(...historicalValues);
-
-    // Check if current (live) TWR is at or above ATH close
-    const isAtATH = lastVal >= athClose && lastVal > 0;
-    const heroReturn = document.getElementById('hero-return');
-    const athBadge = document.getElementById('ath-badge');
-    const athHighLabel = document.getElementById('ath-high-label');
-
-    const athBadgeMob = document.getElementById('ath-badge-mobile');
-    if (isAtATH && heroReturn) {
-        heroReturn.classList.add('ath-star');
-        if (athBadge) athBadge.style.display = '';
-        if (athBadgeMob) athBadgeMob.style.display = '';
-    } else {
-        if (heroReturn) heroReturn.classList.remove('ath-star');
-        if (athBadge) athBadge.style.display = 'none';
-        if (athBadgeMob) athBadgeMob.style.display = 'none';
-    }
-
-    // Always show ATH close value
-    if (athHighLabel && athClose > 0) {
-        athHighLabel.textContent = 'ATH Close: +' + athClose.toFixed(2) + '%';
-        athHighLabel.style.display = '';
-    }
 
     // Update chart subtitle with latest TWR
     const subtitleEl = document.getElementById('chart-latest');
