@@ -353,13 +353,20 @@ def get_positions_data(force_refresh: bool = False):
         regime_context = get_regime_context(settings)
 
         # Fetch FILL activities to compute "days open" per position.
-        # Builds fill_map: symbol -> [(timestamp, qty, side), ...] sorted newest-first
+        # Builds fill_map: symbol -> [(timestamp, qty, side), ...]
         from dateutil.parser import parse as _parse_dt
         fill_map = {}
         try:
             raw_fills = trading.get("/v2/account/activities/FILL") or []
             if isinstance(raw_fills, dict):
                 raw_fills = [raw_fills]
+            print(f"[Days Open] Got {len(raw_fills) if isinstance(raw_fills, list) else 'non-list'} raw fills")
+            if isinstance(raw_fills, list) and len(raw_fills) > 0:
+                sample = raw_fills[0]
+                if isinstance(sample, dict):
+                    print(f"[Days Open] Sample fill (dict): symbol={sample.get('symbol')}, side={sample.get('side')}, qty={sample.get('qty')}, time={sample.get('transaction_time')}")
+                else:
+                    print(f"[Days Open] Sample fill (obj type={type(sample).__name__}): symbol={getattr(sample, 'symbol', '?')}, side={getattr(sample, 'side', '?')}, qty={getattr(sample, 'qty', '?')}")
             for f in (raw_fills if isinstance(raw_fills, list) else []):
                 if isinstance(f, dict):
                     sym = f.get("symbol", "")
@@ -378,8 +385,11 @@ def get_positions_data(force_refresh: bool = False):
                 fill_map.setdefault(sym, []).append((ts, fqty, side))
             for sym in fill_map:
                 fill_map[sym].sort(key=lambda x: x[0], reverse=True)
+            print(f"[Days Open] fill_map keys: {list(fill_map.keys())[:20]}")
         except Exception as e:
+            import traceback
             print(f"[Days Open] Error fetching fills: {e}")
+            traceback.print_exc()
             fill_map = {}
 
         # Pre-parse all positions and batch quote requests
@@ -445,8 +455,11 @@ def get_positions_data(force_refresh: bool = False):
                 days_open = None
                 try:
                     fills = fill_map.get(symbol)
+                    print(f"[Days Open] Position {symbol}: direct lookup={'found' if fills else 'miss'}")
                     if not fills and opt_info:
-                        fills = fill_map.get(opt_info.get("underlying", ""))
+                        underlying = opt_info.get("underlying", "")
+                        fills = fill_map.get(underlying)
+                        print(f"[Days Open] Position {symbol}: underlying lookup '{underlying}'={'found' if fills else 'miss'}")
                     if fills:
                         # Sort oldest-first for chronological walk
                         chrono = sorted(fills, key=lambda x: x[0])
