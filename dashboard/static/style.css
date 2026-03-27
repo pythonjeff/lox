@@ -315,6 +315,43 @@ body {
 .hero-value.positive { color: #4ade80; }
 .hero-value.negative { color: #f87171; }
 
+/* Subtle star rainbow effect for ATH */
+@keyframes mario-star-rainbow {
+    0%   { color: #f0a0a0; }
+    17%  { color: #f0c080; }
+    33%  { color: #e0e090; }
+    50%  { color: #80d0a0; }
+    67%  { color: #90c0d0; }
+    83%  { color: #b0a0d0; }
+    100% { color: #f0a0a0; }
+}
+
+.hero-value.ath-star {
+    animation: mario-star-rainbow 3s linear infinite;
+}
+
+.ath-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 8px;
+    vertical-align: middle;
+    color: #d4aa70;
+    border: 1px solid rgba(212,170,112,0.3);
+    background: rgba(212,170,112,0.08);
+}
+
+.ath-high-label {
+    font-size: 10px;
+    color: #888;
+    margin-left: 4px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+}
+
 .hero-sub {
     display: flex;
     align-items: baseline;
@@ -1502,8 +1539,20 @@ body {
         font-size: 12px;
     }
 
+    .pos-table thead th,
+    .pos-table tbody td {
+        padding: 8px 6px;
+    }
+
     .pos-ticker {
         font-size: 13px;
+    }
+
+    /* Hide low-priority columns on mobile */
+    .pos-td-cost, .pos-th-cost,
+    .pos-td-mv, .pos-th-mv,
+    .pos-td-expiry, .pos-th-expiry {
+        display: none;
     }
     
     .regime-metrics {
