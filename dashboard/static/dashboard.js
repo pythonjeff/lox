@@ -233,7 +233,7 @@ function processPositionsData(data) {
                     <td class="pos-td-mv">${formatCurrency(mv)}</td>
                     <td class="pos-td-pnl ${pnlClass}">${formatCurrency(pnlVal)}</td>
                     <td class="pos-td-pct ${pnlClass}">${formatPercent(pnlPct, 1)}</td>
-                    <td class="pos-td-days">${daysOpen}${typeof daysOpen === 'number' ? 'd' : ''}</td>
+                    <td class="pos-td-days">${daysOpen}</td>
                 </tr>`;
         }).join('');
 
@@ -248,7 +248,7 @@ function processPositionsData(data) {
                         <th class="pos-th-mv">Mkt Val</th>
                         <th class="pos-th-pnl">P&L</th>
                         <th class="pos-th-pct">%</th>
-                        <th class="pos-th-days">Days</th>
+                        <th class="pos-th-days">Days Open</th>
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
