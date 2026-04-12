@@ -1007,6 +1007,11 @@ def register(nav_app: typer.Typer) -> None:
         amount: float = typer.Argument(..., help="Signed USD amount. Deposit=positive, withdrawal=negative."),
         note: str = typer.Option("", "--note"),
         ts: str = typer.Option("", "--ts", help="Optional ISO timestamp (defaults to now UTC)."),
+        pricing_equity: float | None = typer.Option(
+            None,
+            "--pricing-equity",
+            help="Fund equity to use for NAV/unit (pre-unitization). Use when cash is already in Alpaca equity so live equity includes this deposit, or when back-pricing to a known AUM.",
+        ),
         flows_path: str = typer.Option("", "--flows-path", help="Override AOT_NAV_FLOWS (CSV)."),
         investor_flows_path: str = typer.Option("", "--investor-flows-path", help="Override AOT_NAV_INVESTOR_FLOWS (CSV)."),
     ):
@@ -1040,9 +1045,11 @@ def register(nav_app: typer.Typer) -> None:
         existing_flows = read_investor_flows(path=investor_flows_path or None)
         total_units = sum(float(f.units) for f in existing_flows) if existing_flows else 0.0
         
+        equity_for_nav = float(pricing_equity) if pricing_equity is not None else live_equity
+        
         # Calculate current NAV/unit
-        if total_units > 0 and live_equity > 0:
-            nav_per_unit = live_equity / total_units
+        if total_units > 0 and equity_for_nav > 0:
+            nav_per_unit = equity_for_nav / total_units
         else:
             # First deposit - start at $1.00 per unit
             nav_per_unit = 1.0
@@ -1062,10 +1069,11 @@ def register(nav_app: typer.Typer) -> None:
             path=investor_flows_path or None,
         )
         
+        pe_note = f"\n[bold]Pricing equity (NAV base):[/bold] ${equity_for_nav:,.2f}" if pricing_equity is not None else ""
         Console().print(
             Panel(
                 f"Logged contribution: {code.upper()} {amount:+.2f}\n"
-                f"[bold]Live equity:[/bold] ${live_equity:,.2f}\n"
+                f"[bold]Live equity:[/bold] ${live_equity:,.2f}{pe_note}\n"
                 f"[bold]NAV/unit:[/bold] ${nav_per_unit:.4f}\n"
                 f"[bold]Units purchased:[/bold] {units:,.2f}\n"
                 f"ts: {ts_use or '(now UTC)'}\n"
