@@ -449,8 +449,10 @@ def _fetch_vix_term(settings: Settings, refresh: bool = False) -> tuple[float | 
 def _fetch_options_chain(settings: Settings, ticker: str) -> list[Any]:
     """Fetch options chain for a ticker, returning list of OptionCandidate.
 
-    Prefers Polygon (has OI + opt_type), falls back to Alpaca (has greeks but no OI).
-    For Alpaca data, infers opt_type from delta sign.
+    Priority:
+      1. Polygon/Massive (MASSIVE_API_KEY) — OI + greeks from provider.
+      2. yfinance (free, no key) — OI + IV from Yahoo; gamma computed via Black-Scholes.
+      3. Alpaca — greeks only, no OI (GEX/PCR will be n/a).
     """
     # Try Polygon first — it has OI and opt_type which are critical for GEX/PCR
     try:
@@ -463,6 +465,18 @@ def _fetch_options_chain(settings: Settings, ticker: str) -> list[Any]:
                 return candidates
     except Exception as e:
         logger.debug(f"Polygon chain fetch failed for {ticker}: {e}")
+
+    # yfinance — free, no API key; OI + IV present, gamma computed via Black-Scholes
+    try:
+        from lox.data.yfinance_options import fetch_options_chain_yfinance
+        candidates = fetch_options_chain_yfinance(ticker)
+        if candidates:
+            has_oi = sum(1 for c in candidates if c.oi is not None and c.oi > 0)
+            if has_oi > 10:
+                logger.debug(f"yfinance chain for {ticker}: {len(candidates)} contracts, {has_oi} with OI")
+                return candidates
+    except Exception as e:
+        logger.debug(f"yfinance chain fetch failed for {ticker}: {e}")
 
     # Fallback to Alpaca — has greeks but no OI
     try:
