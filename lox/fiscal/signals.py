@@ -78,6 +78,16 @@ _AUCT_BTC_COLS = (
     "bid_to_cover",
     "btc_ratio",
 )
+_AUCT_INDIRECT_AMT_COLS = (
+    "indirect_bidder_accepted",
+    "indirect_bidder_amt",
+    "indirect_accepted",
+)
+_AUCT_DIRECT_AMT_COLS = (
+    "direct_bidder_accepted",
+    "direct_bidder_amt",
+    "direct_accepted",
+)
 
 # Candidate column names vary across FiscalData surfaces; handle defensively.
 _MSPD_DATE_COLS = ("record_date", "as_of_date", "report_date", "data_date")
@@ -487,6 +497,107 @@ def _compute_recent_auctions_list(
             "btc": round(float(r["_btc"]), 2) if pd.notna(r.get("_btc")) else None,
         })
     return rows
+
+
+def _compute_auction_demand_quality(
+    auctions: pd.DataFrame, n: int = 6,
+) -> dict[str, float | int | None]:
+    """
+    Decompose recent coupon auction demand into indirect / direct / dealer
+    bidder shares. Averaged across the last `n` coupon auctions, weighted
+    by total_accepted (so a tiny reopening doesn't swamp a benchmark sale).
+
+    Returns:
+        {
+            "indirect_bid_share": float | None,   # 0..100
+            "direct_bid_share": float | None,     # 0..100
+            "primary_dealer_pct": float | None,   # 0..100
+            "n": int,                             # auctions used
+        }
+
+    Notes on healthy baselines (post-GFC era, coupon issuance):
+      indirect ≈ 60-70%, direct ≈ 10-20%, primary dealers ≈ 15-25%.
+      A drop in indirect with a rise in dealer takedown is the classic
+      "demand quality decay" signature even when the headline tail is fine.
+    """
+    empty: dict[str, float | int | None] = {
+        "indirect_bid_share": None,
+        "direct_bid_share": None,
+        "primary_dealer_pct": None,
+        "n": 0,
+    }
+    if auctions is None or auctions.empty:
+        return empty
+
+    df = auctions.copy()
+    date_col = _first_existing_col(df, _AUCT_DATE_COLS)
+    typ_col = _first_existing_col(df, _AUCT_TYPE_COLS)
+    term_col = _first_existing_col(df, _AUCT_TERM_COLS)
+    indir_col = _first_existing_col(df, _AUCT_INDIRECT_AMT_COLS)
+    direct_col = _first_existing_col(df, _AUCT_DIRECT_AMT_COLS)
+    pd_amt_col = _first_existing_col(df, _AUCT_PD_ACCEPTED_AMT_COLS)
+    tot_col = _first_existing_col(df, _AUCT_TOTAL_ACCEPTED_COLS)
+    if date_col is None or tot_col is None:
+        return empty
+    if indir_col is None and direct_col is None and pd_amt_col is None:
+        return empty
+
+    df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+    df = df.dropna(subset=[date_col])
+    if typ_col is not None:
+        df[typ_col] = df[typ_col].astype(str)
+    if term_col is not None:
+        df[term_col] = df[term_col].astype(str)
+
+    # Coupon-only filter (matches existing helpers' semantics)
+    def _is_coupon(r: pd.Series) -> bool:
+        return _looks_like_coupon_auction(
+            security_type=str(r.get(typ_col)) if typ_col is not None else None,
+            security_term=str(r.get(term_col)) if term_col is not None else None,
+        )
+
+    df = df[df.apply(_is_coupon, axis=1)]
+    if df.empty:
+        return empty
+
+    # Coerce numerics; drop rows where total_accepted is missing/zero
+    for c in (indir_col, direct_col, pd_amt_col, tot_col):
+        if c is not None:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    df = df[df[tot_col].notna() & (df[tot_col] > 0.0)]
+    if df.empty:
+        return empty
+
+    df = df.sort_values(date_col, ascending=False).head(int(n))
+    if df.empty:
+        return empty
+
+    weights = df[tot_col].astype(float)
+    w_sum = float(weights.sum())
+    if w_sum <= 0.0:
+        return empty
+
+    def _wshare(amt_col: str | None) -> float | None:
+        if amt_col is None:
+            return None
+        amt = pd.to_numeric(df[amt_col], errors="coerce")
+        # Per-auction share, then weight by total_accepted across auctions.
+        # Equivalent to: sum(amt_i) / sum(total_i) * 100.
+        valid = amt.notna()
+        if not valid.any():
+            return None
+        num = float((amt[valid]).sum())
+        den = float((weights[valid]).sum())
+        if den <= 0.0:
+            return None
+        return 100.0 * num / den
+
+    return {
+        "indirect_bid_share": _wshare(indir_col),
+        "direct_bid_share": _wshare(direct_col),
+        "primary_dealer_pct": _wshare(pd_amt_col),
+        "n": int(len(df)),
+    }
 
 
 def _fetch_treasury_auction_results(*, start_date: str, refresh: bool) -> pd.DataFrame:
@@ -1231,6 +1342,7 @@ def build_fiscal_deficit_page_data(
         a_monthly = _compute_auction_tail_and_dealer_take(a)
         by_tenor = _compute_auction_detail_by_tenor(a)
         recent_list = _compute_recent_auctions_list(a, n=20)
+        demand_quality = _compute_auction_demand_quality(a, n=6)
         if not a_monthly.empty:
             last_a = a_monthly.dropna(how="all", subset=["AUCTION_TAIL_BPS", "DEALER_TAKE_PCT"]).iloc[-1]
             auctions = {
@@ -1239,10 +1351,13 @@ def build_fiscal_deficit_page_data(
                 "dealer_take_pct": float(last_a["DEALER_TAKE_PCT"]) if pd.notna(last_a["DEALER_TAKE_PCT"]) else None,
                 "by_tenor": by_tenor,
                 "recent": recent_list,
+                "demand_quality": demand_quality,
                 "notes": (
                     "Tail is proxied as (high_yield - median_yield) in bps — NOT true tail vs when-issued. "
                     "Dealer take is primary dealer takedown as % of total accepted. "
-                    "by_tenor splits front-end (2Y-5Y) vs back-end (7Y-30Y) over last 3 months."
+                    "by_tenor splits front-end (2Y-5Y) vs back-end (7Y-30Y) over last 3 months. "
+                    "demand_quality decomposes the last 6 coupon auctions into indirect/direct/dealer shares "
+                    "(weighted by total_accepted) — healthy baseline ~ indirect 60-70%, dealer 15-25%."
                 ),
             }
     except Exception:
@@ -1296,6 +1411,20 @@ def build_fiscal_state(settings: Settings, start_date: str = "2011-01-01", refre
 
     score = float(last["FISCAL_PRESSURE_SCORE"]) if pd.notna(last["FISCAL_PRESSURE_SCORE"]) else None
 
+    # Auction demand decomposition over last 6 coupon auctions.
+    # Cache hit: build_fiscal_dataset already populated the on-disk auction CSV.
+    demand_quality: dict[str, float | int | None] = {
+        "indirect_bid_share": None,
+        "direct_bid_share": None,
+        "primary_dealer_pct": None,
+        "n": 0,
+    }
+    try:
+        a = _fetch_treasury_auction_results(start_date=start_date, refresh=False)
+        demand_quality = _compute_auction_demand_quality(a, n=6)
+    except Exception:
+        pass
+
     inputs = FiscalInputs(
         deficit_12m=float(last["DEFICIT_12M"]) if pd.notna(last["DEFICIT_12M"]) else None,
         tga_level=float(last["TGA"]) if "TGA" in last and pd.notna(last["TGA"]) else None,
@@ -1315,6 +1444,19 @@ def build_fiscal_state(settings: Settings, start_date: str = "2011-01-01", refre
         auction_tail_bps=float(last["AUCTION_TAIL_BPS"]) if pd.notna(last["AUCTION_TAIL_BPS"]) else None,
         dealer_take_pct=float(last["DEALER_TAKE_PCT"]) if pd.notna(last["DEALER_TAKE_PCT"]) else None,
         bid_to_cover_avg=None,  # TODO: extract from FiscalData auction response when schema available
+        indirect_bid_share=(
+            float(demand_quality["indirect_bid_share"])
+            if isinstance(demand_quality.get("indirect_bid_share"), (int, float))
+            else None
+        ),
+        direct_bid_share=(
+            float(demand_quality["direct_bid_share"])
+            if isinstance(demand_quality.get("direct_bid_share"), (int, float))
+            else None
+        ),
+        auction_demand_window=(
+            int(demand_quality["n"]) if isinstance(demand_quality.get("n"), int) and demand_quality["n"] > 0 else None
+        ),
         deficit_pct_receipts=float(last["DEFICIT_PCT_RECEIPTS"]) if "DEFICIT_PCT_RECEIPTS" in last and pd.notna(last["DEFICIT_PCT_RECEIPTS"]) else None,
         foreign_holdings_pct=None,  # TODO: require total debt series for share
         foreign_holdings_chg_6m=float(last["FOREIGN_HOLDINGS_CHG_6M"]) if "FOREIGN_HOLDINGS_CHG_6M" in last and pd.notna(last["FOREIGN_HOLDINGS_CHG_6M"]) else None,

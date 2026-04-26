@@ -39,11 +39,14 @@ class FiscalSubScore:
 class FiscalScorecard:
     """Full fiscal regime scorecard: composite + breakdown."""
     fpi: float                                  # Fiscal Pressure Index 0-100
-    sub_scores: list[FiscalSubScore]            # 6 pillars
+    sub_scores: list[FiscalSubScore]            # 6 weighted pillars + display-only sub-scores
     regime_label: str                           # e.g. "Fiscal Contraction"
     regime_name: str                            # e.g. "fiscal_contraction"
     regime_description: str
     percentile_overall: float | None = None     # where FPI sits in history
+    # Divergence flags fired by the auction split (clearing vs demand-quality).
+    # Populated by score_fiscal_regime when the gap exceeds the threshold.
+    divergence_flags: dict[str, bool] = field(default_factory=dict)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -232,6 +235,111 @@ def _bond_market_stress_score(inputs: FiscalInputs) -> FiscalSubScore:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Auction split: clearing vs demand quality (display-only, weight=0.0)
+# ─────────────────────────────────────────────────────────────────────────────
+# These two sub-scores decompose what the existing "Auction Absorption" pillar
+# combines into one number. Both are surfaced (not weighted into FPI yet) so
+# downstream consumers can flag a *divergence*: a "clean" tail and bid-to-cover
+# masking a structural decay in the bidder mix is the canonical demand-quality
+# canary. Adding the two scores at weight=0.0 keeps FPI numerically identical
+# to the prior 6-pillar composite while exposing the new signal.
+
+# Healthy post-GFC baselines for coupon issuance (rough but workable):
+_BASELINE_INDIRECT_PCT = 65.0
+_BASELINE_DEALER_PCT = 20.0
+# 1-sigma scaling (pp). Tuned to make ±10pp shifts move ~1 z.
+_DEMAND_QUALITY_SIGMA = 10.0
+
+
+def _auction_clearing_score(inputs: FiscalInputs) -> FiscalSubScore:
+    """
+    How well did the most recent auctions *clear*?
+    Inputs: tail (z and raw) + bid-to-cover. Higher score = worse clearing.
+
+    This overlaps the legacy Auction Absorption sub-score by design — it isolates
+    the price-discovery half (tail/BTC) from the bidder-mix half (Demand Quality).
+    """
+    vals: list[float] = []
+    if inputs.z_auction_tail_bps is not None:
+        vals.append(inputs.z_auction_tail_bps)
+    if inputs.bid_to_cover_avg is not None:
+        # Lower BTC = worse clearing. Center 2.5, sigma 0.3.
+        btc_z = -(inputs.bid_to_cover_avg - 2.5) / 0.3
+        vals.append(btc_z)
+
+    score = _pctile_score(*vals)
+
+    # Floor on raw tail magnitude (matches the legacy absorption-floor pattern).
+    floor = 0.0
+    if inputs.auction_tail_bps is not None:
+        if inputs.auction_tail_bps >= 5.0:
+            floor = max(floor, 60.0)
+        elif inputs.auction_tail_bps >= 3.0:
+            floor = max(floor, 45.0)
+    score = max(score, floor)
+
+    return FiscalSubScore(
+        name="Auction Clearing",
+        score=score,
+        percentile=score,
+        components={
+            "z_auction_tail_bps": inputs.z_auction_tail_bps,
+            "auction_tail_bps_raw": inputs.auction_tail_bps,
+            "bid_to_cover_avg": inputs.bid_to_cover_avg,
+        },
+        weight=0.0,  # display-only for now; rebalance in a later phase
+    )
+
+
+def _auction_demand_quality_score(inputs: FiscalInputs) -> FiscalSubScore:
+    """
+    Who actually showed up to the auction?
+    Inputs: indirect / direct / dealer bidder shares (last 6 coupon auctions).
+
+    Construction: stress-z = (dealer - 20)/10  -  (indirect - 65)/10
+      → 0 at baseline (dealer 20%, indirect 65%)
+      → positive when dealers absorb more *or* indirects retreat
+      → score = norm.cdf(stress-z) * 100  (higher = worse demand quality)
+
+    Direct bidder share is recorded but not yet penalized — direct can absorb
+    a healthy chunk without signalling stress, unlike the dealer wall.
+
+    Returns a neutral 50 if no bidder data is available.
+    """
+    parts: list[float] = []
+    if inputs.dealer_take_pct is not None:
+        parts.append((inputs.dealer_take_pct - _BASELINE_DEALER_PCT) / _DEMAND_QUALITY_SIGMA)
+    if inputs.indirect_bid_share is not None:
+        parts.append(-(inputs.indirect_bid_share - _BASELINE_INDIRECT_PCT) / _DEMAND_QUALITY_SIGMA)
+
+    if not parts:
+        score = 50.0
+    else:
+        # Sum of component z-stresses (each is signed).
+        stress_z = float(np.sum(parts))
+        score = _pctile_score(stress_z)
+
+    return FiscalSubScore(
+        name="Auction Demand Quality",
+        score=score,
+        percentile=score,
+        components={
+            "indirect_bid_share": inputs.indirect_bid_share,
+            "direct_bid_share": inputs.direct_bid_share,
+            "primary_dealer_pct": inputs.dealer_take_pct,
+            "auction_demand_window": inputs.auction_demand_window,
+            "baseline_indirect": _BASELINE_INDIRECT_PCT,
+            "baseline_dealer": _BASELINE_DEALER_PCT,
+        },
+        weight=0.0,  # display-only for now; rebalance in a later phase
+    )
+
+
+# Threshold at which clearing vs demand-quality divergence is flagged.
+_AUCTION_DIVERGENCE_THRESHOLD = 40.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Regime label derivation
 # ─────────────────────────────────────────────────────────────────────────────
 # FPI thresholds → labels. Auction absorption override escalates by one notch.
@@ -281,7 +389,7 @@ def score_fiscal_regime(inputs: FiscalInputs) -> FiscalScorecard:
     - regime_label / regime_name: derived from FPI + overrides
     - regime_description: contextual explanation
     """
-    # Compute all 6 sub-scores
+    # Compute all 6 weighted sub-scores
     pillars = [
         _deficit_intensity_score(inputs),
         _deficit_momentum_score(inputs),
@@ -291,13 +399,33 @@ def score_fiscal_regime(inputs: FiscalInputs) -> FiscalScorecard:
         _bond_market_stress_score(inputs),
     ]
 
-    # Weighted composite
+    # Weighted composite (uses the 6 weighted pillars only)
     total_weight = sum(p.weight for p in pillars)
     fpi = sum(p.score * p.weight for p in pillars) / total_weight if total_weight > 0 else 50.0
 
     # Derive regime label
     auction_score = next((p.score for p in pillars if p.name == "Auction Absorption"), 50.0)
     regime_name, regime_label = _label_from_fpi(fpi, auction_score)
+
+    # Display-only sub-scores: split the auction signal into clearing vs
+    # demand-quality so divergence between them can be surfaced. Weight=0.0
+    # → no impact on FPI. Order matters: clearing first, then quality.
+    clearing = _auction_clearing_score(inputs)
+    quality = _auction_demand_quality_score(inputs)
+    pillars.append(clearing)
+    pillars.append(quality)
+
+    # Divergence flag: clearing looks fine while bidder mix is decaying
+    # (or vice versa). Only meaningful if both scores have real inputs —
+    # if demand-quality is the neutral 50 default, suppress the flag.
+    divergence_flags: dict[str, bool] = {}
+    has_quality_inputs = (
+        inputs.indirect_bid_share is not None or inputs.dealer_take_pct is not None
+    )
+    if has_quality_inputs:
+        divergence_flags["auction_clearing_vs_quality"] = (
+            abs(clearing.score - quality.score) > _AUCTION_DIVERGENCE_THRESHOLD
+        )
 
     # Build description
     high_pillars = sorted(
@@ -317,4 +445,5 @@ def score_fiscal_regime(inputs: FiscalInputs) -> FiscalScorecard:
         regime_name=regime_name,
         regime_description=desc,
         percentile_overall=None,  # requires historical FPI series; future enhancement
+        divergence_flags=divergence_flags,
     )

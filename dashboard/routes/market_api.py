@@ -41,6 +41,13 @@ def api_monte_carlo_force():
 def api_nav_history():
     """NAV TWR history for equity curve chart (public)."""
     try:
+        # Auto-snapshot: capture today's close if ready.
+        try:
+            from lox.nav.auto_snapshot import take_auto_snapshot
+            take_auto_snapshot()
+        except Exception:
+            pass
+
         from lox.nav.store import read_nav_sheet
         snapshots = read_nav_sheet()
         by_date = {}
@@ -52,6 +59,30 @@ def api_nav_history():
                 "equity": round(snap.equity, 2),
             }
         series = [by_date[d] for d in sorted(by_date.keys())]
+
+        # Append a live intraday point when today has no snapshot yet.
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if series and series[-1]["date"] != today_str:
+            try:
+                from dashboard.positions import get_live_twr, get_nav_equity
+                from lox.config import load_settings
+                from lox.data.alpaca import make_clients
+                settings = load_settings()
+                trading, _ = make_clients(settings)
+                account = trading.get_account()
+                live_eq = get_nav_equity(account)
+                if live_eq > 0:
+                    live_twr = get_live_twr(live_eq)
+                    if live_twr is not None:
+                        series.append({
+                            "date": today_str,
+                            "twr_cum_pct": round(live_twr, 2),
+                            "equity": round(live_eq, 2),
+                            "live": True,
+                        })
+            except Exception:
+                pass
+
         response = jsonify({"series": series, "count": len(series)})
         response.headers['Cache-Control'] = 'public, max-age=300'
         return response

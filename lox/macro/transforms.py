@@ -55,3 +55,55 @@ def zscore(series: pd.Series, window: int = 252) -> pd.Series:
     mu = series.rolling(window).mean()
     sd = series.rolling(window).std(ddof=0)
     return (series - mu) / sd
+
+
+def seasonal_zscore(
+    series: pd.Series,
+    min_years: int = 3,
+    bin_days: int = 21,
+) -> pd.Series:
+    """Z-score adjusted for calendar seasonality.
+
+    Bins dates into ~17 seasonal windows (each *bin_days* wide) and computes
+    z-scores using only data from prior calendar years in the same bin.
+    Strips patterns like spring planting premium and fall harvest pressure
+    so the signal reflects *unusual* moves for that time of year.
+    """
+    if not isinstance(series.index, pd.DatetimeIndex):
+        return pd.Series(np.nan, index=series.index)
+
+    result = pd.Series(np.nan, index=series.index)
+    s = series.dropna()
+    if s.empty:
+        return result
+
+    doy = s.index.dayofyear.values
+    years = s.index.year.values
+    vals = s.values
+    bins = ((doy - 1) // bin_days).astype(int)
+
+    unique_years = np.unique(years)
+    if len(unique_years) < min_years + 1:
+        return result
+
+    for b in np.unique(bins):
+        bin_mask = bins == b
+        bin_years = years[bin_mask]
+        bin_vals = vals[bin_mask]
+        bin_idx = s.index[bin_mask]
+
+        for yr in unique_years[min_years:]:
+            prior_vals = bin_vals[bin_years < yr]
+            prior_vals = prior_vals[~np.isnan(prior_vals)]
+            if len(prior_vals) < min_years:
+                continue
+
+            mu = np.mean(prior_vals)
+            sd = np.std(prior_vals, ddof=0)
+            if sd < 1e-10:
+                continue
+
+            yr_mask = bin_years == yr
+            result.loc[bin_idx[yr_mask]] = (bin_vals[yr_mask] - mu) / sd
+
+    return result

@@ -33,7 +33,16 @@
       "Bash(.venv/bin/python -c \"from lox.positioning.data import compute_positioning_inputs; print\\(''data.py OK''\\)\")",
       "Bash(.venv/bin/python -c \"from lox.positioning.regime import classify_positioning; print\\(''regime.py OK''\\)\")",
       "Bash(.venv/bin/python -c \"from lox.cli_commands.regimes.positioning_cmd import positioning_snapshot; print\\(''cmd.py OK''\\)\")",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(xargs ls *)",
+      "Bash(awk -F',' 'NR>1 && $40!=\"null\" && $57!=\"null\" && $87!=\"null\" {print $1\",\"$3\",\"$4\",\"$5\",\"$40\",\"$57\",\"$87\",\"$103; n++; if\\(n>=5\\) exit}' /Users/jeffreylarson/sites/ai-options-trader-starter/data/cache/fiscaldata/auctions_query.csv)",
+      "Bash(python -m pytest tests/test_fiscal_auction_split.py -v)",
+      "Bash(python -m pytest tests/test_fiscal_auction_metrics.py tests/test_fiscal_regime.py tests/test_fiscal_snapshot_regime.py -v)",
+      "Bash(python -m pytest tests/test_fiscal_auction_split.py tests/test_fiscal_regime.py tests/test_fiscal_snapshot_regime.py tests/test_fiscal_auction_metrics.py -q)",
+      "Bash(timeout 90 lox regime fiscal)",
+      "Bash(lox regime *)",
+      "Bash(find /Users/jeffreylarson/sites/ai-options-trader-starter/lox/agriculture -type f -name \"*.py\" 2>/dev/null | head -20)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://apps.fas.usda.gov/opendata/api/psd/commodityData?commodityCode=0440000&countryCode=US&marketYear=2024\" -H \"Accept: application/json\" 2>&1)"
     ]
   }
 }

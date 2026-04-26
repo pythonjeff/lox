@@ -22,25 +22,40 @@ from lox.utils.settings import safe_load_settings
 
 
 def _get_nav_summary() -> dict:
-    """Get NAV and fund summary data."""
+    """Get NAV and fund summary data (live equity from Alpaca)."""
     from lox.nav.store import read_nav_sheet
     from lox.nav.investors import read_investor_flows
-    
+    from lox.data.alpaca import make_clients
+
     rows = read_nav_sheet()
     flows = read_investor_flows()
-    
+
     if not rows:
         return {}
-    
+
     last = rows[-1]
-    
-    # Calculate totals from investor flows
+
+    # Live equity from Alpaca (fall back to last snapshot)
+    settings = safe_load_settings()
+    live_equity = None
+    live_cash = None
+    try:
+        trading, _ = make_clients(settings)
+        account = trading.get_account()
+        live_equity = float(getattr(account, 'equity', 0) or 0)
+        live_cash = float(getattr(account, 'cash', 0) or 0)
+    except Exception:
+        pass
+
+    equity = live_equity if live_equity and live_equity > 0 else float(last.equity)
+    cash = live_cash if live_cash is not None else float(last.cash)
+
     total_capital = sum(float(f.amount) for f in flows if float(f.amount) > 0)
     investor_codes = set(f.code for f in flows if float(f.amount) > 0)
-    
+
     return {
-        "equity": float(last.equity),
-        "cash": float(last.cash),
+        "equity": equity,
+        "cash": cash,
         "capital": total_capital,
         "twr_cum": float(last.twr_cum) if last.twr_cum else 0,
         "investor_count": len(investor_codes),
@@ -82,7 +97,7 @@ def _get_investor_ledger() -> list[dict]:
     
     # Calculate values and returns
     result = []
-    for inv in sorted(investors.values(), key=lambda x: x["units"], reverse=True):
+    for inv in investors.values():
         value = inv["units"] * nav_per_unit
         pnl = value - inv["deposits"]
         ret = (pnl / inv["deposits"] * 100) if inv["deposits"] > 0 else 0
@@ -97,6 +112,7 @@ def _get_investor_ledger() -> list[dict]:
             "return": ret,
         })
     
+    result.sort(key=lambda x: abs(x["pnl"]), reverse=True)
     return result
 
 

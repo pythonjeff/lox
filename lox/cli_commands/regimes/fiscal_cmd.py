@@ -610,15 +610,34 @@ def _run_fiscal_snapshot(
         fpi_label = scorecard.regime_label
         fpi_desc = scorecard.regime_description
 
-        # Sub-score breakdown for the panel
-        sub_scores = [
-            {
+        # ── Sub-score breakdown ────────────────────────────────────────────
+        # Two sections:
+        #   1. WEIGHTED — pillars that feed the FPI composite (sorted by
+        #      contribution descending, so the biggest movers sit at the top).
+        #   2. DIAGNOSTIC — display-only sub-scores (weight=0); shown with "—"
+        #      in the weight/contrib columns to signal they don't move FPI.
+        weighted = [s for s in scorecard.sub_scores if s.weight > 0.0]
+        diagnostic = [s for s in scorecard.sub_scores if s.weight == 0.0]
+        weighted_sorted = sorted(weighted, key=lambda s: s.score * s.weight, reverse=True)
+
+        sub_scores = []
+        for s in weighted_sorted:
+            sub_scores.append({
                 "name": s.name,
                 "score": round(s.score, 1),
                 "weight": f"{s.weight*100:.0f}%",
-            }
-            for s in scorecard.sub_scores
-        ]
+                "contrib": round(s.score * s.weight, 1),
+                "section": "weighted",
+            })
+        for s in diagnostic:
+            sub_scores.append({
+                "name": s.name,
+                "score": round(s.score, 1),
+                "weight": "—",
+                "contrib": None,
+                "section": "diagnostic",
+                "section_label": "Diagnostic",
+            })
 
         # Calibrated MC impact
         mc_params = calibrate_fiscal_mc(scorecard)
@@ -630,6 +649,7 @@ def _run_fiscal_snapshot(
         fpi_desc = regime.description
         sub_scores = None
         mc_impact = None
+        scorecard = None
 
     # Sectoral balance display values
     pb_disp = f"{float(private_balance_pct_gdp):+.1f}%" if isinstance(private_balance_pct_gdp, (int, float)) else "n/a"
@@ -779,10 +799,30 @@ def _run_fiscal_snapshot(
     else:
         metrics.append({"name": "All tenors", "value": f"{tail_disp}/{dealer_disp}", "context": ""})
 
-    # Append MC impact to description if available
+    # Append MC impact + divergence flags to description if available.
+    # The divergence flag is the canary for "clean clearing masking demand-quality decay" —
+    # it deserves a prominent spot above the MC line, not buried in a sub-score footnote.
     full_desc = fpi_desc
+    if scorecard is not None and scorecard.divergence_flags.get("auction_clearing_vs_quality"):
+        clearing = next((p for p in scorecard.sub_scores if p.name == "Auction Clearing"), None)
+        quality = next((p for p in scorecard.sub_scores if p.name == "Auction Demand Quality"), None)
+        if clearing is not None and quality is not None:
+            delta = abs(clearing.score - quality.score)
+            if quality.score > clearing.score:
+                msg = (
+                    f"[bold yellow]⚠ Divergence:[/bold yellow] auction clearing reads clean "
+                    f"({clearing.score:.0f}) but bidder mix is decaying ({quality.score:.0f}, Δ {delta:.0f}). "
+                    f"Watch for indirect retreat / dealer absorption pickup."
+                )
+            else:
+                msg = (
+                    f"[bold yellow]⚠ Divergence:[/bold yellow] tail/BTC stressed "
+                    f"({clearing.score:.0f}) while bidder mix still healthy ({quality.score:.0f}, Δ {delta:.0f}). "
+                    f"Likely concession-driven, not a demand event."
+                )
+            full_desc = f"{full_desc}\n{msg}"
     if mc_impact:
-        full_desc = f"{fpi_desc}\n[dim]MC impact: {mc_impact}[/dim]"
+        full_desc = f"{full_desc}\n[dim]MC impact: {mc_impact}[/dim]"
 
     from lox.regimes.trend import get_domain_trend
     trend = get_domain_trend("fiscal", fpi_score, fpi_label)

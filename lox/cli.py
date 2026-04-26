@@ -456,6 +456,34 @@ def regime_positioning(
         show_book_impact(domain="positioning")
 
 
+@regime_app.command("spy")
+def regime_spy(
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+):
+    """SPY options flow regime (GEX, put/call, skew) — single-fetch microstructure signal."""
+    from lox.cli_commands.regimes.spy_cmd import spy_snapshot
+    spy_snapshot(refresh=refresh, json_out=json_out, llm=llm)
+
+
+@regime_app.command("ag")
+def regime_agriculture(
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for analysis context"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh data downloads"),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+    delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
+    alert: bool = typer.Option(False, "--alert", help="Only output if regime is extreme (for cron/monitoring)"),
+):
+    """Agriculture & food inflation regime (crops, fertilizer, input costs)."""
+    from lox.cli_commands.regimes.agriculture_cmd import agriculture_snapshot
+    agriculture_snapshot(
+        llm=llm, ticker=ticker, refresh=refresh,
+        json_out=json_out, delta=delta, alert=alert,
+    )
+
+
 # Register unified / transitions directly on regime_app
 from lox.cli_commands.regimes.regimes_cmd import register as _register_regimes
 _register_regimes(regime_app)

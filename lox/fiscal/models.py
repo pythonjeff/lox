@@ -24,6 +24,11 @@ class FiscalInputs(BaseModel):
     dealer_take_pct: Optional[float] = None  # 0..100
     bid_to_cover_avg: Optional[float] = None  # recent auction avg bid-to-cover ratio
 
+    # Auction demand decomposition (recent N coupon auctions, weighted by total_accepted)
+    indirect_bid_share: Optional[float] = None  # 0..100, indirect bidders / total accepted
+    direct_bid_share: Optional[float] = None  # 0..100, direct bidders / total accepted
+    auction_demand_window: Optional[int] = None  # N auctions used in the rolling computation
+
     # Demand / sustainability (quant upgrade)
     deficit_pct_receipts: Optional[float] = None  # deficit / federal tax receipts
     foreign_holdings_pct: Optional[float] = None  # foreign share of marketable debt

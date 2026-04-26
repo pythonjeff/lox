@@ -341,6 +341,13 @@ def get_positions_data(force_refresh: bool = False):
                     print(f"[Positions] Serving from cache (age: {cache_age:.1f}s)")
                     return POSITIONS_CACHE["data"]
 
+    # Auto-snapshot: capture today's close if ready.
+    try:
+        from lox.nav.auto_snapshot import take_auto_snapshot
+        take_auto_snapshot()
+    except Exception:
+        pass
+
     try:
         settings = load_settings()
         trading, data_client = make_clients(settings)

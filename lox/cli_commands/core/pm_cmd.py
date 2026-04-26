@@ -102,8 +102,8 @@ PM_PILLARS = [
 
 
 def _fetch_all_data(settings: Settings) -> dict[str, Any]:
-    """Parallel fetch: regime state, portfolio greeks, raw positions, econ calendar."""
-    results: dict[str, Any] = {"state": None, "greeks": None, "positions": [], "account": {}, "calendar": []}
+    """Parallel fetch: regime state, portfolio greeks, raw positions, econ calendar, snapshot, headlines."""
+    results: dict[str, Any] = {"state": None, "greeks": None, "positions": [], "account": {}, "calendar": [], "snapshot": {}, "headlines": []}
 
     def _regime():
         from lox.regimes import build_unified_regime_state
@@ -179,9 +179,70 @@ def _fetch_all_data(settings: Settings) -> dict[str, Any]:
         except Exception:
             return []
 
-    tasks = {"regime": _regime, "greeks": _greeks, "positions": _positions, "calendar": _calendar}
+    def _snapshot():
+        """Fetch real-time market levels: treasury yields, credit spreads, VIX."""
+        snap: dict[str, Any] = {}
+        try:
+            from lox.altdata.fmp import fetch_treasury_rates_live
+            live = fetch_treasury_rates_live(settings=settings)
+            if live:
+                snap["ust_2y"] = live.get("UST_2Y")
+                snap["ust_5y"] = live.get("UST_5Y")
+                snap["ust_10y"] = live.get("UST_10Y")
+                snap["ust_30y"] = live.get("UST_30Y")
+                if snap.get("ust_2y") and snap.get("ust_10y"):
+                    snap["curve_2s10s"] = round((snap["ust_10y"] - snap["ust_2y"]) * 100, 1)
+        except Exception:
+            logger.debug("Snapshot: treasury rates failed", exc_info=True)
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
+        try:
+            from lox.data.fred import FredClient
+            fred = FredClient(api_key=settings.FRED_API_KEY)
+            for sid, key, scale in [
+                ("BAMLH0A0HYM2", "hy_oas", 100),
+                ("BAMLC0A0CM", "ig_oas", 100),
+            ]:
+                try:
+                    df = fred.fetch_series(sid, start_date="2023-01-01")
+                    if df is not None and not df.empty:
+                        snap[key] = round(float(df.sort_values("date")["value"].iloc[-1]) * scale, 0)
+                except Exception:
+                    pass
+
+            try:
+                vix_df = fred.fetch_series("VIXCLS", start_date="2023-01-01")
+                if vix_df is not None and not vix_df.empty:
+                    snap["vix"] = round(float(vix_df.sort_values("date")["value"].iloc[-1]), 1)
+            except Exception:
+                pass
+        except Exception:
+            logger.debug("Snapshot: FRED data failed", exc_info=True)
+
+        return snap
+
+    def _headlines():
+        """Fetch top macro headlines from FMP + Alpaca."""
+        try:
+            from lox.altdata.news import fetch_unified_news
+            articles = fetch_unified_news(
+                settings=settings,
+                symbols=["SPY", "TLT", "QQQ"],
+                keywords=["fed", "rates", "inflation", "tariff", "gdp", "recession", "treasury", "jobs"],
+                lookback_days=1,
+                limit=5,
+                include_content=False,
+            )
+            return [
+                {"title": a.title, "source": a.source, "published_at": a.published_at}
+                for a in articles[:5]
+            ]
+        except Exception:
+            logger.debug("Headlines fetch failed", exc_info=True)
+            return []
+
+    tasks = {"regime": _regime, "greeks": _greeks, "positions": _positions, "calendar": _calendar, "snapshot": _snapshot, "headlines": _headlines}
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
         futures = {pool.submit(fn): name for name, fn in tasks.items()}
         for future in as_completed(futures):
             name = futures[future]
@@ -193,6 +254,10 @@ def _fetch_all_data(settings: Settings) -> dict[str, Any]:
                     results["greeks"] = result
                 elif name == "calendar":
                     results["calendar"] = result
+                elif name == "snapshot":
+                    results["snapshot"] = result or {}
+                elif name == "headlines":
+                    results["headlines"] = result or []
                 elif name == "positions":
                     acct, positions = result
                     results["positions"] = positions
@@ -306,6 +371,182 @@ def _render_macro(console: Console, state) -> None:
     console.print(tbl)
 
 
+def _yield_color(val: float | None) -> str:
+    if val is None:
+        return "dim"
+    if val >= 4.5:
+        return "red"
+    if val <= 3.5:
+        return "green"
+    return "white"
+
+
+def _spread_color(val: float | None, warn: float) -> str:
+    if val is None:
+        return "dim"
+    if val >= warn:
+        return "red"
+    return "white"
+
+
+def _vix_color(val: float | None) -> str:
+    if val is None:
+        return "dim"
+    if val >= 25:
+        return "red"
+    if val >= 20:
+        return "yellow"
+    if val < 15:
+        return "green"
+    return "white"
+
+
+def _render_market_snapshot(console: Console, snapshot: dict, state=None) -> None:
+    if not snapshot:
+        return
+
+    console.print("\n[bold cyan][1a] MARKET SNAPSHOT[/bold cyan]")
+
+    tbl = Table(show_header=False, box=None, padding=(0, 2), expand=False)
+    tbl.add_column("Rates", min_width=18, no_wrap=True)
+    tbl.add_column("Credit", min_width=18, no_wrap=True)
+    tbl.add_column("Vol", min_width=18, no_wrap=True)
+
+    # Build rates column rows
+    rates_rows = []
+    for label, key in [("2Y", "ust_2y"), ("5Y", "ust_5y"), ("10Y", "ust_10y"), ("30Y", "ust_30y")]:
+        v = snapshot.get(key)
+        if v is not None:
+            c = _yield_color(v)
+            rates_rows.append(f"[bold]{label:>4}[/bold]  [{c}]{v:.2f}%[/{c}]")
+    s2s10 = snapshot.get("curve_2s10s")
+    if s2s10 is not None:
+        sign = "+" if s2s10 >= 0 else ""
+        sc = "green" if s2s10 > 0 else "red"
+        rates_rows.append(f"[bold]2s10s[/bold] [{sc}]{sign}{s2s10:.0f}bp[/{sc}]")
+
+    # Build credit column rows
+    credit_rows = []
+    hy = snapshot.get("hy_oas")
+    if hy is not None:
+        c = _spread_color(hy, 400)
+        credit_rows.append(f"[bold]HY OAS[/bold] [{c}]{hy:.0f}bp[/{c}]")
+    ig = snapshot.get("ig_oas")
+    if ig is not None:
+        c = _spread_color(ig, 120)
+        credit_rows.append(f"[bold]IG OAS[/bold] [{c}]{ig:.0f}bp[/{c}]")
+
+    # Build vol column rows
+    vol_rows = []
+    vix = snapshot.get("vix")
+    if vix is not None:
+        c = _vix_color(vix)
+        vol_rows.append(f"[bold]VIX[/bold]  [{c}]{vix:.1f}[/{c}]")
+    # Try to get term spread from regime state
+    if state and state.volatility and state.volatility.metrics:
+        term = state.volatility.metrics.get("Term Spread") or state.volatility.metrics.get("Term")
+        if term:
+            vol_rows.append(f"[bold]Term[/bold] {term}")
+
+    # Pad columns to same length
+    max_rows = max(len(rates_rows), len(credit_rows), len(vol_rows), 1)
+    while len(rates_rows) < max_rows:
+        rates_rows.append("")
+    while len(credit_rows) < max_rows:
+        credit_rows.append("")
+    while len(vol_rows) < max_rows:
+        vol_rows.append("")
+
+    for r, cr, v in zip(rates_rows, credit_rows, vol_rows):
+        tbl.add_row(r, cr, v)
+
+    console.print(tbl)
+
+
+def _render_today_calendar(console: Console, calendar: list) -> None:
+    if not calendar:
+        return
+
+    today_str = datetime.now().strftime("%a %b %-d")
+    today_events = [ev for ev in calendar if ev.get("date") == today_str]
+
+    if not today_events:
+        return
+
+    console.print("\n[bold cyan][1b] TODAY'S RELEASES[/bold cyan]")
+
+    for ev in today_events:
+        marker = "[bold yellow]*[/bold yellow]" if ev.get("high_impact") else " "
+        name = ev.get("event", "")[:40]
+        time_str = ev.get("time", "")
+
+        est = ev.get("estimate")
+        prev = ev.get("previous")
+        actual = ev.get("actual")
+
+        parts = []
+        if actual is not None:
+            parts.append(f"[bold]{actual}[/bold]")
+        else:
+            parts.append("[dim]--[/dim]")
+        if est is not None:
+            parts.append(f"est {est}")
+        if prev is not None:
+            parts.append(f"prev {prev}")
+
+        detail = "  ".join(parts)
+
+        # Surprise tag
+        tag = ""
+        if actual is not None and est is not None:
+            try:
+                a, e = float(actual), float(est)
+                if a > e:
+                    tag = " [red]HOT[/red]"
+                elif a < e:
+                    tag = " [green]COOL[/green]"
+                else:
+                    tag = " [dim]IN-LINE[/dim]"
+            except (ValueError, TypeError):
+                pass
+        elif actual is None:
+            tag = " [dim]PENDING[/dim]"
+
+        console.print(f"  {marker} {time_str:>10}  {name:<40}  {detail}{tag}")
+
+
+def _render_headlines(console: Console, headlines: list) -> None:
+    if not headlines:
+        return
+
+    console.print("\n[bold cyan][1c] MACRO HEADLINES[/bold cyan]")
+
+    for h in headlines[:5]:
+        source = (h.get("source") or "")[:12]
+        title = h.get("title", "")[:80]
+        # Compute relative time
+        pub = h.get("published_at", "")
+        age = ""
+        if pub:
+            try:
+                from datetime import timezone as _tz
+                dt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=_tz.utc)
+                diff = datetime.now(_tz.utc) - dt
+                hours = diff.total_seconds() / 3600
+                if hours < 1:
+                    age = f"{int(diff.total_seconds() / 60)}m"
+                elif hours < 24:
+                    age = f"{int(hours)}h"
+                else:
+                    age = f"{int(hours / 24)}d"
+            except Exception:
+                pass
+
+        console.print(f"  [dim]{source:<12} {age:>3}[/dim]  {title}")
+
+
 def _render_scenarios(console: Console, state) -> None:
     console.print("\n[bold cyan][2] SCENARIOS[/bold cyan]")
     if state is None or not state.active_scenarios:
@@ -382,7 +623,7 @@ def _render_portfolio(console: Console, greeks, positions, account: dict) -> Non
             console.print(f"\n  [yellow]⚠ Theta burn ${abs(greeks.net_theta):.0f}/day vs ${nav:,.0f} NAV = {theta_bp:.0f}bp/day[/yellow]")
 
 
-def _build_pm_system_prompt(state, greeks, positions, account: dict, calendar: list | None = None) -> str:
+def _build_pm_system_prompt(state, greeks, positions, account: dict, calendar: list | None = None, snapshot: dict | None = None, headlines: list | None = None) -> str:
     """Build CIO-grade system prompt with all data injected."""
     today = datetime.now().strftime("%Y-%m-%d")
 
@@ -405,6 +646,48 @@ def _build_pm_system_prompt(state, greeks, positions, account: dict, calendar: l
 
     macro_block = "\n".join(macro_lines) if macro_lines else "  Data unavailable"
     movers_block = "\n  ".join(movers) if movers else "None"
+
+    # ── Real-time market levels ────────────────────────────────────
+    snap_lines = []
+    if snapshot:
+        rates_parts = []
+        for label, key in [("2Y", "ust_2y"), ("5Y", "ust_5y"), ("10Y", "ust_10y"), ("30Y", "ust_30y")]:
+            v = snapshot.get(key)
+            if v is not None:
+                rates_parts.append(f"{label}={v:.2f}%")
+        s2s10 = snapshot.get("curve_2s10s")
+        if s2s10 is not None:
+            rates_parts.append(f"2s10s={s2s10:+.0f}bp")
+        if rates_parts:
+            snap_lines.append(f"  Rates: {' '.join(rates_parts)}")
+
+        credit_parts = []
+        if snapshot.get("hy_oas") is not None:
+            credit_parts.append(f"HY OAS={snapshot['hy_oas']:.0f}bp")
+        if snapshot.get("ig_oas") is not None:
+            credit_parts.append(f"IG OAS={snapshot['ig_oas']:.0f}bp")
+        if credit_parts:
+            snap_lines.append(f"  Credit: {' '.join(credit_parts)}")
+
+        vol_parts = []
+        if snapshot.get("vix") is not None:
+            vol_parts.append(f"VIX={snapshot['vix']:.1f}")
+        if state and state.volatility and state.volatility.metrics:
+            term = state.volatility.metrics.get("Term Spread") or state.volatility.metrics.get("Term")
+            if term:
+                vol_parts.append(f"Term={term}")
+        if vol_parts:
+            snap_lines.append(f"  Vol: {' '.join(vol_parts)}")
+    snapshot_block = "\n".join(snap_lines) if snap_lines else "  Data unavailable"
+
+    # ── Macro headlines ──────────────────────────────────────────────
+    headline_lines = []
+    if headlines:
+        for h in headlines[:5]:
+            source = (h.get("source") or "")[:15]
+            title = h.get("title", "")
+            headline_lines.append(f"  {source}: {title}")
+    headline_block = "\n".join(headline_lines) if headline_lines else "  No recent headlines"
 
     # ── Scenarios with full trade expressions ────────────────────────
     scenario_lines = []
@@ -518,8 +801,14 @@ Today: {today}
 ## Macro Environment (10 pillars, 0-100 score, higher = more stress)
 {macro_block}
 
+## Real-Time Market Levels (use these exact numbers in your response)
+{snapshot_block}
+
 ## 7-Day Movers (pillars that moved >5 points)
   {movers_block}
+
+## Macro Headlines (last 24h)
+{headline_block}
 
 ## Active Scenarios
 {scenario_block}
@@ -575,7 +864,7 @@ If no major events this week, name the technical level or flow dynamic you're mo
 - Take a side. State conviction. Be wrong sometimes."""
 
 
-def _render_llm_briefing(console: Console, settings: Settings, state, greeks, positions, account: dict, calendar: list | None = None) -> None:
+def _render_llm_briefing(console: Console, settings: Settings, state, greeks, positions, account: dict, calendar: list | None = None, snapshot: dict | None = None, headlines: list | None = None) -> None:
     """Stream LLM CIO briefing."""
     if not getattr(settings, "openai_api_key", None):
         console.print("\n[yellow]Set OPENAI_API_KEY in .env to enable LLM briefing.[/yellow]")
@@ -583,7 +872,7 @@ def _render_llm_briefing(console: Console, settings: Settings, state, greeks, po
 
     console.print("\n[bold cyan][4] PM BRIEFING[/bold cyan]")
 
-    system_prompt = _build_pm_system_prompt(state, greeks, positions, account, calendar)
+    system_prompt = _build_pm_system_prompt(state, greeks, positions, account, calendar, snapshot, headlines)
 
     try:
         from openai import OpenAI
@@ -619,11 +908,13 @@ def _render_llm_briefing(console: Console, settings: Settings, state, greeks, po
         console.print(f"\n[red]LLM briefing failed:[/red] {e}")
 
 
-def _to_json(state, greeks, positions, account: dict) -> dict:
+def _to_json(state, greeks, positions, account: dict, snapshot: dict | None = None, headlines: list | None = None) -> dict:
     """Machine-readable JSON output."""
     out: dict[str, Any] = {
         "asof": datetime.now().isoformat(),
         "account": account,
+        "market_snapshot": snapshot or {},
+        "headlines": headlines or [],
     }
 
     if state:
@@ -713,21 +1004,26 @@ def register_pm(app: typer.Typer) -> None:
         positions = data["positions"]
         account = data["account"]
         calendar = data.get("calendar", [])
+        snapshot = data.get("snapshot", {})
+        headlines = data.get("headlines", [])
 
         # JSON mode
         if json_out:
-            console.print_json(json.dumps(_to_json(state, greeks, positions, account), default=str))
+            console.print_json(json.dumps(_to_json(state, greeks, positions, account, snapshot, headlines), default=str))
             return
 
         # Render sections
         _render_header(console, state, account)
         _render_macro(console, state)
+        _render_market_snapshot(console, snapshot, state)
+        _render_today_calendar(console, calendar)
+        _render_headlines(console, headlines)
         _render_scenarios(console, state)
         _render_portfolio(console, greeks, positions, account)
 
         # LLM briefing
         if llm:
-            _render_llm_briefing(console, settings, state, greeks, positions, account, calendar)
+            _render_llm_briefing(console, settings, state, greeks, positions, account, calendar, snapshot, headlines)
         else:
             console.print("\n[dim]Add --llm (default) for CIO briefing[/dim]")
 

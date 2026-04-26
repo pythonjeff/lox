@@ -104,22 +104,47 @@ def render_regime_panel(
         st.add_column("Pillar", style="bold")
         st.add_column("Score", justify="right")
         has_weight = any(s.get("weight") is not None for s in sub_scores)
+        has_contrib = any(s.get("contrib") is not None for s in sub_scores)
         if has_weight:
             st.add_column("Weight", justify="right", style="dim")
+            if has_contrib:
+                st.add_column("Contrib", justify="right", style="dim")
             st.add_column("Bar", min_width=20)
         else:
             st.add_column("%ile", justify="right", style="dim")
+
+        prev_section: str | None = None
         for s in sub_scores:
+            # Optional section divider (e.g. weighted pillars vs diagnostic sub-scores).
+            # When `section` is provided and changes between rows, draw a labelled
+            # separator row so the reader can see the boundary at a glance.
+            section = s.get("section")
+            if section is not None and section != prev_section and prev_section is not None:
+                label = s.get("section_label", section)
+                # Render the divider as an empty row (visual whitespace) followed
+                # by a labelled row that sits in the Pillar column. Avoids the
+                # awkward column-width tug-of-war that wrapped long labels.
+                pad_cols = 4 if (has_weight and has_contrib) else (3 if has_weight else 2)
+                st.add_row(*(["" for _ in range(pad_cols + 1)]))
+                st.add_row(f"[dim italic]{label}[/dim italic]", *(["" for _ in range(pad_cols)]))
+            prev_section = section if section is not None else prev_section
+
             sc = s.get("score")
             sc_str = f"{sc:.0f}" if sc is not None else "—"
+            name = str(s.get("name", "—"))
             if has_weight:
                 wt = s.get("weight", "—")
                 bar = render_score_bar(float(sc), width=20) if sc is not None else ""
-                st.add_row(str(s.get("name", "—")), sc_str, str(wt), bar)
+                if has_contrib:
+                    cb = s.get("contrib")
+                    cb_str = f"{cb:.1f}" if isinstance(cb, (int, float)) else "—"
+                    st.add_row(name, sc_str, str(wt), cb_str, bar)
+                else:
+                    st.add_row(name, sc_str, str(wt), bar)
             else:
                 pct = s.get("percentile")
                 st.add_row(
-                    str(s.get("name", "—")),
+                    name,
                     sc_str,
                     f"{pct:.0f}%" if pct is not None else "—",
                 )

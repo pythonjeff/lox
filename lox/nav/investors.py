@@ -291,42 +291,38 @@ def compute_unitization(
     investor_flows_path: str | None = None,
 ) -> tuple[float, dict[str, float]]:
     """
-    Compute a unitized NAV ledger:
-    - Start nav_per_unit at 1.0
-    - When investor flow happens at time t: units = amount / nav_per_unit
-    - When a NAV snapshot happens at time t: nav_per_unit = equity / total_units (if total_units>0)
+    .. deprecated::
+        This function previously re-derived units from snapshot equity, which
+        cannot account for intra-snapshot equity changes.  Deposits are priced
+        using real-time brokerage equity at deposit time, so the authoritative
+        units are those stored in ``nav_investor_flows.csv``.
 
-    Returns: (latest_nav_per_unit, units_by_investor)
+        Use :func:`investor_report` instead — it reads stored units directly
+        and accepts a ``live_equity`` parameter for real-time NAV/unit.
+
+    Returns: (latest_nav_per_unit, units_by_investor) using stored ledger data.
     """
-    nav_rows = read_nav_sheet(path=nav_sheet_path)  # sorted
-    flows = read_investor_flows(path=investor_flows_path)  # sorted
+    import warnings
 
-    # Merge events chronologically.
-    events: list[tuple[datetime, str, object]] = []
-    for f in flows:
-        events.append((_parse_ts(f.ts), "flow", f))
-    for r in nav_rows:
-        events.append((_parse_ts(r.ts), "nav", r))
-    events.sort(key=lambda x: x[0])
+    warnings.warn(
+        "compute_unitization() is deprecated — use investor_report() which "
+        "reads authoritative stored units from the investor ledger.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
-    nav_per_unit = 1.0
+    # Use stored units from the investor ledger (authoritative source).
+    flows = read_investor_flows(path=investor_flows_path)
     units_by: dict[str, float] = {}
-    total_units = 0.0
+    for f in flows:
+        units_by[f.code] = units_by.get(f.code, 0.0) + f.units
 
-    for _ts, kind, obj in events:
-        if kind == "flow":
-            f: InvestorFlow = obj  # type: ignore[assignment]
-            if nav_per_unit <= 0:
-                nav_per_unit = 1.0
-            du = float(f.amount) / float(nav_per_unit)
-            units_by[f.code] = float(units_by.get(f.code, 0.0)) + du
-            total_units += du
-        else:
-            r = obj  # nav snapshot row
-            if total_units > 0:
-                nav_per_unit = float(getattr(r, "equity", 0.0)) / float(total_units)
-            else:
-                nav_per_unit = 1.0
+    total_units = sum(units_by.values())
+    nav_rows = read_nav_sheet(path=nav_sheet_path)
+    if nav_rows and total_units > 0:
+        nav_per_unit = float(nav_rows[-1].equity) / total_units
+    else:
+        nav_per_unit = 1.0
 
     return float(nav_per_unit), units_by
 
@@ -374,20 +370,15 @@ def investor_report(
     fund_return = ((current_equity - total_capital) / total_capital) if total_capital > 0 else 0.0
 
     out_rows = []
-    for code in sorted(units_by.keys()):
+    for code in units_by:
         units = float(units_by.get(code, 0.0))
         basis = float(basis_by.get(code, 0.0))
         if units <= 0:
             continue
         
-        # Value = units × current NAV/unit
         value = units * nav_per_unit
-        
-        # P&L and individual return
         pnl = value - basis
         ret = (pnl / basis) if basis > 0 else 0.0
-        
-        # Ownership = investor's units / total units
         ownership = units / total_units if total_units > 0 else 0.0
         
         out_rows.append(
@@ -401,6 +392,8 @@ def investor_report(
                 "ownership": ownership,
             }
         )
+
+    out_rows.sort(key=lambda r: abs(r["pnl"]), reverse=True)
 
     return {
         "asof": nav_rows[-1].ts if nav_rows else None,

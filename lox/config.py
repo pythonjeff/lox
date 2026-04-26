@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     TRADING_ECONOMICS_API_KEY: str | None = None
     MASSIVE_API_KEY: str | None = None  # Polygon.io / Massive - options OI, volume, greeks
     MARINETRAFFIC_API_KEY: str | None = None  # Optional: real-time AIS vessel tracking
+    USDA_FAS_API_KEY: str | None = None  # Optional: USDA PSD Online (WASDE data) — free at apps.fas.usda.gov/opendata/register
+    USDA_NASS_API_KEY: str | None = None  # Optional: USDA NASS QuickStats (crop reports) — free at quickstats.nass.usda.gov/api
 
     # Crypto perps
     CCXT_EXCHANGE: str = "okx"
@@ -89,6 +91,14 @@ class Settings(BaseSettings):
     @property
     def marinetraffic_api_key(self) -> str | None:
         return self.MARINETRAFFIC_API_KEY
+
+    @property
+    def usda_fas_api_key(self) -> str | None:
+        return self.USDA_FAS_API_KEY
+
+    @property
+    def usda_nass_api_key(self) -> str | None:
+        return self.USDA_NASS_API_KEY
 
     @property
     def price_source(self) -> str:

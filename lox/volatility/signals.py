@@ -14,9 +14,9 @@ from lox.volatility.models import VolatilityInputs, VolatilityState
 VOL_FRED_SERIES: Dict[str, str] = {
     # CBOE VIX (daily close)
     "VIX": "VIXCLS",
-    # Optional term structure points (availability can vary by FRED behavior)
+    # Term structure points (FRED renamed VIX3M → VXVCLS)
     "VIX9D": "VIX9D",
-    "VIX3M": "VIX3M",
+    "VIX3M": "VXVCLS",
 }
 
 
