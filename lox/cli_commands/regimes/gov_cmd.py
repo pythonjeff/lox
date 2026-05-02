@@ -184,6 +184,28 @@ def _btc_ctx(btc: float | None) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Quarterly Refunding Announcement (QRA) calendar
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _next_qra_date(today: date) -> tuple[date, int]:
+    """Treasury QRA: 1st Wednesday of Feb / May / Aug / Nov."""
+    import calendar
+    candidates: list[date] = []
+    for year in (today.year, today.year + 1):
+        for month in (2, 5, 8, 11):
+            cal = calendar.Calendar(firstweekday=0)
+            for day in cal.itermonthdates(year, month):
+                if day.month == month and day.weekday() == 2:  # Wed
+                    candidates.append(day)
+                    break
+    future = [d for d in candidates if d >= today]
+    if not future:
+        return today, 0
+    nxt = min(future)
+    return nxt, (nxt - today).days
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Upcoming long-end auction schedule
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -600,8 +622,7 @@ def _run_fiscal_snapshot(
             console.print(f"\n[dim]No cached data from {delta_days}d ago. Run `lox labs fiscal` daily to build history.[/dim]")
         return
 
-    # ── FPI scoring engine (Phase 2 upgrade) ──────────────────────────────
-    # Build full FiscalInputs via the state path so FPI has z-scores.
+    # ── FPI scoring engine ────────────────────────────────────────────────
     mc_impact = None
     try:
         fiscal_state = build_fiscal_state(settings=settings, start_date="2011-01-01", refresh=refresh)
@@ -609,100 +630,68 @@ def _run_fiscal_snapshot(
         fpi_score = scorecard.fpi
         fpi_label = scorecard.regime_label
         fpi_desc = scorecard.regime_description
-
-        # ── Sub-score breakdown ────────────────────────────────────────────
-        # Two sections:
-        #   1. WEIGHTED — pillars that feed the FPI composite (sorted by
-        #      contribution descending, so the biggest movers sit at the top).
-        #   2. DIAGNOSTIC — display-only sub-scores (weight=0); shown with "—"
-        #      in the weight/contrib columns to signal they don't move FPI.
-        weighted = [s for s in scorecard.sub_scores if s.weight > 0.0]
-        diagnostic = [s for s in scorecard.sub_scores if s.weight == 0.0]
-        weighted_sorted = sorted(weighted, key=lambda s: s.score * s.weight, reverse=True)
-
-        sub_scores = []
-        for s in weighted_sorted:
-            sub_scores.append({
-                "name": s.name,
-                "score": round(s.score, 1),
-                "weight": f"{s.weight*100:.0f}%",
-                "contrib": round(s.score * s.weight, 1),
-                "section": "weighted",
-            })
-        for s in diagnostic:
-            sub_scores.append({
-                "name": s.name,
-                "score": round(s.score, 1),
-                "weight": "—",
-                "contrib": None,
-                "section": "diagnostic",
-                "section_label": "Diagnostic",
-            })
-
-        # Calibrated MC impact
         mc_params = calibrate_fiscal_mc(scorecard)
         mc_impact = mc_params.description
     except Exception:
-        # Graceful fallback to skeleton regime if scorer fails
         fpi_score = 80 if "dominance" in regime.name else (60 if "contraction" in regime.name else 40)
         fpi_label = regime.label or regime.name
         fpi_desc = regime.description
-        sub_scores = None
         mc_impact = None
         scorecard = None
 
-    # Sectoral balance display values
-    pb_disp = f"{float(private_balance_pct_gdp):+.1f}%" if isinstance(private_balance_pct_gdp, (int, float)) else "n/a"
-    pb_imp_disp = f"{float(private_balance_impulse):+.2f}%" if isinstance(private_balance_impulse, (int, float)) else "n/a"
+    # ── Forward calendar ──────────────────────────────────────────────────
+    qra_dt, qra_days = _next_qra_date(date.today())
+    long_auctions_recent = [ra for ra in (recent_auctions or [])
+                            if ra.get("term") in {"10-Year", "20-Year", "30-Year"}]
+    upcoming = _get_upcoming_long_end(long_auctions_recent)
 
-    # ── Compute directional changes ──────────────────────────────────────
-    def _chg_arrow(delta: float | None, *, invert: bool = False, units: str = "", fmt: str = "{:+.1f}") -> str:
-        """Color-coded change string. invert=True means rising is bad."""
-        if delta is None:
-            return ""
-        bad_up = invert
-        if abs(delta) < 0.01:
-            return "[dim]— flat[/dim]"
-        color = ("red" if delta > 0 else "green") if bad_up else ("green" if delta > 0 else "red")
-        arrow = "▲" if delta > 0 else "▼"
-        return f"[{color}]{arrow} {fmt.format(delta)}{units}[/{color}]"
+    def _next_by_tenor(tenor: str) -> dict | None:
+        for ua in upcoming:
+            if ua["tenor"] == tenor:
+                return ua
+        return None
 
-    # Deficit 30d change (in $B, positive = wider deficit = more NFA to private sector)
-    deficit_30d_chg = None
-    if d30 and isinstance(d30.get("deficit_12m"), (int, float)):
-        deficit_30d_chg = (deficit_12m - float(d30["deficit_12m"])) * 1_000_000 / 1e9  # → $B
+    next_10 = _next_by_tenor("10-Year")
+    next_30 = _next_by_tenor("30-Year")
 
-    # Deficit 1y change  
-    deficit_1y_chg = None
-    if d1y and isinstance(d1y.get("deficit_12m"), (int, float)):
-        deficit_1y_chg = (deficit_12m - float(d1y["deficit_12m"])) * 1_000_000 / 1e9
+    def _short_date(d: date) -> str:
+        return f"{d.strftime('%b')} {d.day}"
 
-    # Deficit % GDP change (30d)
-    deficit_pct_30d_chg = None
-    if (d30 and isinstance(d30.get("deficit_12m"), (int, float))
-            and isinstance(gdp_millions, (int, float)) and float(gdp_millions) != 0):
-        prev_pct = 100.0 * float(d30["deficit_12m"]) / float(gdp_millions)
-        deficit_pct_30d_chg = float(deficit_pct_gdp) - prev_pct if isinstance(deficit_pct_gdp, (int, float)) else None
+    def _auction_row(label: str, ua: dict | None) -> dict:
+        if ua is None:
+            return {"name": label, "value": "[dim]—[/dim]", "context": ""}
+        days = (ua["date"] - date.today()).days
+        offering = f"${ua['offering_b']:.0f}B" if ua.get("offering_b") else ""
+        ctx = "announced" if ua["source"] == "announced" else "est. cadence"
+        if ua.get("reopening"):
+            ctx = f"reopen · {ctx}"
+        return {
+            "name": label,
+            "value": f"{_short_date(ua['date'])} ([cyan]{days}d[/cyan])",
+            "change": offering,
+            "context": ctx,
+        }
 
-    # TGA 4w dollar change for display
+    # ── TGA tracker ───────────────────────────────────────────────────────
     tga_4w_val = tga.get("tga_d_4w") if tga else None
     tga_13w_val = tga.get("tga_d_13w") if tga else None
 
-    # Short context labels (full explanation lives in --full mode)
-    def _pb_short(v):
-        if not isinstance(v, (int, float)): return ""
-        v = float(v)
-        if v <= -2: return "deep deficit — fragile"
-        if v <= 0: return "private deficit"
-        if v <= 3: return "modest surplus"
-        return "strong surplus"
+    def _bn_arrow(val_millions, *, invert: bool = True, suffix: str = "4w"):
+        if not isinstance(val_millions, (int, float)):
+            return ""
+        bn = float(val_millions) * 1_000_000 / 1e9
+        if abs(bn) < 1:
+            return "[dim]— flat[/dim]"
+        color = ("red" if bn > 0 else "green") if invert else ("green" if bn > 0 else "red")
+        arrow = "▲" if bn > 0 else "▼"
+        return f"[{color}]{arrow} ${abs(bn):,.0f}B {suffix}[/{color}]"
 
-    def _deficit_short(v):
-        if not isinstance(v, (int, float)): return ""
-        v = float(v)
-        if v < 3: return "contractionary"
-        if v < 6: return "moderate NFA"
-        return "strong NFA"
+    def _tga_short(z):
+        if not isinstance(z, (int, float)): return ""
+        v = float(z)
+        if v <= -0.75: return "low → supportive"
+        if v >= 0.75: return "high → draining"
+        return "normal range"
 
     def _impulse_short(v):
         if not isinstance(v, (int, float)): return ""
@@ -713,62 +702,7 @@ def _run_fiscal_snapshot(
         if v <= 1: return "growing"
         return "strong thrust"
 
-    def _tga_short(z):
-        if not isinstance(z, (int, float)): return ""
-        v = float(z)
-        if v <= -0.75: return "low → supportive"
-        if v >= 0.75: return "high → draining"
-        return "normal range"
-
-    metrics = [
-        {"name": "── Sectoral Balance", "value": "", "context": ""},
-        {
-            "name": "Private balance",
-            "value": pb_disp,
-            "change": _chg_arrow(private_balance_impulse, invert=True, units="pp YoY"),
-            "context": _pb_short(private_balance_pct_gdp),
-        },
-        {"name": "── Gov't Spending", "value": "", "context": ""},
-        {
-            "name": "Deficit 12m",
-            "value": disp,
-            "change": _chg_arrow(deficit_30d_chg, invert=False, units="B 30d", fmt="{:+,.0f}") if deficit_30d_chg is not None else "",
-            "context": f"YoY Δ: {d_yoy}" if d_yoy and d_yoy != "n/a" else "",
-        },
-        {
-            "name": "Deficit (% GDP)",
-            "value": deficit_pct_gdp_disp,
-            "change": _chg_arrow(deficit_pct_30d_chg, invert=False, units="pp 30d") if deficit_pct_30d_chg is not None else "",
-            "context": _deficit_short(deficit_pct_gdp),
-        },
-        {
-            "name": "Impulse (% GDP)",
-            "value": impulse_disp,
-            "context": _impulse_short(impulse),
-        },
-        {
-            "name": "Long issuance",
-            "value": long_share_disp,
-            "context": "bill-heavy" if isinstance(long_share, (int, float)) and float(long_share) < 0.25 else
-                       "long-heavy → watch" if isinstance(long_share, (int, float)) and float(long_share) >= 0.40 else
-                       "balanced",
-        },
-        {"name": "── Reserve Drain", "value": "", "context": ""},
-        {
-            "name": "TGA level",
-            "value": tga_level,
-            "change": _chg_arrow(
-                float(tga_4w_val) * 1_000_000 / 1e9 if isinstance(tga_4w_val, (int, float)) else None,
-                invert=True, units="B 4w", fmt="{:+,.0f}",
-            ) if isinstance(tga_4w_val, (int, float)) else "",
-            "context": _tga_short(tga_z_level),
-        },
-    ]
-
-    # Per-tenor auction quality — compact: one row per tenor bucket
-    metrics.append({"name": "── Auctions", "value": "", "context": ""})
-    _tenor_labels = {"front": "2Y-5Y", "back": "7Y-30Y"}
-
+    # ── Worst-tenor auction signal ────────────────────────────────────────
     def _auction_signal(tail, dealer, btc):
         flags = 0
         if isinstance(tail, (int, float)) and float(tail) >= 3: flags += 1
@@ -778,145 +712,114 @@ def _run_fiscal_snapshot(
         if flags == 1: return "[yellow]watch[/yellow]"
         return "[green]ok[/green]"
 
+    def _stress_flags(tail, dealer, btc) -> int:
+        flags = 0
+        if isinstance(tail, (int, float)) and float(tail) >= 3: flags += 1
+        if isinstance(dealer, (int, float)) and float(dealer) >= 20: flags += 1
+        if isinstance(btc, (int, float)) and float(btc) < 2.3: flags += 1
+        return flags
+
+    worst_tenor_row = None
     if by_tenor:
-        for bucket in ("front", "back"):
-            b = by_tenor.get(bucket, {})
+        # "Worst" = most flags fired; tie-break on tail width.
+        best_flags, best_tail = -1, -1.0
+        for bucket_key, bucket_label in (("front", "2Y-5Y"), ("back", "7Y-30Y")):
+            b = by_tenor.get(bucket_key, {})
             if not isinstance(b, dict) or not b.get("n"):
                 continue
-            prefix = _tenor_labels.get(bucket, bucket)
             b_tail = b.get("tail_bps")
             b_dealer = b.get("dealer_take_pct")
             b_btc = b.get("btc")
-            sig = _auction_signal(b_tail, b_dealer, b_btc)
-            t_s = f"{float(b_tail):.1f}" if isinstance(b_tail, (int, float)) else "—"
-            d_s = f"{float(b_dealer):.0f}" if isinstance(b_dealer, (int, float)) else "—"
-            c_s = f"{float(b_btc):.1f}" if isinstance(b_btc, (int, float)) else "—"
-            metrics.append({
-                "name": prefix,
-                "value": f"{t_s}bp/{d_s}%/{c_s}x",
-                "context": sig,
-            })
-    else:
-        metrics.append({"name": "All tenors", "value": f"{tail_disp}/{dealer_disp}", "context": ""})
+            flags = _stress_flags(b_tail, b_dealer, b_btc)
+            tail_v = float(b_tail) if isinstance(b_tail, (int, float)) else 0.0
+            if flags > best_flags or (flags == best_flags and tail_v > best_tail):
+                best_flags, best_tail = flags, tail_v
+                tail_str = f"{tail_v:.1f}bp tail" if isinstance(b_tail, (int, float)) else "—"
+                worst_tenor_row = {
+                    "name": "Auction stress",
+                    "value": bucket_label,
+                    "change": tail_str,
+                    "context": _auction_signal(b_tail, b_dealer, b_btc),
+                }
 
-    # Append MC impact + divergence flags to description if available.
-    # The divergence flag is the canary for "clean clearing masking demand-quality decay" —
-    # it deserves a prominent spot above the MC line, not buried in a sub-score footnote.
-    full_desc = fpi_desc
+    metrics = [
+        {"name": "── Calendar ahead", "value": "", "context": ""},
+        {
+            "name": "Next QRA",
+            "value": f"{_short_date(qra_dt)} ([cyan]{qra_days}d[/cyan])",
+            "context": "Treasury refunding announcement",
+        },
+        _auction_row("Next 10Y auction", next_10),
+        _auction_row("Next 30Y auction", next_30),
+        {"name": "── TGA tracker", "value": "", "context": ""},
+        {
+            "name": "Level",
+            "value": tga_level,
+            "change": _bn_arrow(tga_4w_val, invert=True, suffix="4w"),
+            "context": _tga_short(tga_z_level),
+        },
+    ]
+    if isinstance(tga_13w_val, (int, float)):
+        metrics.append({
+            "name": "13w trend",
+            "value": "",
+            "change": _bn_arrow(tga_13w_val, invert=True, suffix="13w"),
+            "context": "building cash" if float(tga_13w_val) > 0 else "draining cash",
+        })
+
+    metrics.append({"name": "── Leading signals", "value": "", "context": ""})
+    metrics.append({
+        "name": "Deficit impulse",
+        "value": f"{float(impulse):+.2f}% GDP" if isinstance(impulse, (int, float)) else "n/a",
+        "context": _impulse_short(impulse),
+    })
+    if worst_tenor_row:
+        metrics.append(worst_tenor_row)
+
+    # ── Description: top driver + (optional) divergence flag + dim MC impact ──
+    desc_lines = [fpi_desc]
     if scorecard is not None and scorecard.divergence_flags.get("auction_clearing_vs_quality"):
         clearing = next((p for p in scorecard.sub_scores if p.name == "Auction Clearing"), None)
         quality = next((p for p in scorecard.sub_scores if p.name == "Auction Demand Quality"), None)
         if clearing is not None and quality is not None:
-            delta = abs(clearing.score - quality.score)
             if quality.score > clearing.score:
-                msg = (
-                    f"[bold yellow]⚠ Divergence:[/bold yellow] auction clearing reads clean "
-                    f"({clearing.score:.0f}) but bidder mix is decaying ({quality.score:.0f}, Δ {delta:.0f}). "
-                    f"Watch for indirect retreat / dealer absorption pickup."
+                desc_lines.append(
+                    f"[bold yellow]⚠ Divergence:[/bold yellow] clean clearing ({clearing.score:.0f}) "
+                    f"but bidder mix decaying ({quality.score:.0f}). Watch indirect retreat."
                 )
             else:
-                msg = (
-                    f"[bold yellow]⚠ Divergence:[/bold yellow] tail/BTC stressed "
-                    f"({clearing.score:.0f}) while bidder mix still healthy ({quality.score:.0f}, Δ {delta:.0f}). "
-                    f"Likely concession-driven, not a demand event."
+                desc_lines.append(
+                    f"[bold yellow]⚠ Divergence:[/bold yellow] tail/BTC stressed ({clearing.score:.0f}) "
+                    f"with healthy bidder mix ({quality.score:.0f}). Concession-driven."
                 )
-            full_desc = f"{full_desc}\n{msg}"
     if mc_impact:
-        full_desc = f"{full_desc}\n[dim]MC impact: {mc_impact}[/dim]"
+        # Strip redundant "FPI X/100; " prefix and reformat as bullet list.
+        mc_clean = mc_impact
+        if ";" in mc_clean:
+            parts = [p.strip() for p in mc_clean.split(";")]
+            parts = [p for p in parts if p and not p.lower().startswith("fpi ")]
+            mc_clean = " · ".join(parts)
+        desc_lines.append(f"[dim]MC: {mc_clean}[/dim]")
+    full_desc = "\n".join(desc_lines)
 
     from lox.regimes.trend import get_domain_trend
     trend = get_domain_trend("gov", fpi_score, fpi_label)
 
     print(render_regime_panel(
-        domain="Fiscal",
+        domain="Government",
         asof=d.get("asof", ""),
         regime_label=fpi_label,
         score=fpi_score,
         percentile=None,
         description=full_desc,
         metrics=metrics,
-        sub_scores=sub_scores,
+        sub_scores=None,
         trend=trend,
     ))
 
-    # Recent individual auctions detail table (10Y + 30Y only — the tenors
-    # that matter most for duration supply / term-premium stress)
-    if recent_auctions:
-        from rich.table import Table as RichTable
-        _LONG_TENORS = {"10-Year", "30-Year", "20-Year"}
-        long_auctions = [ra for ra in recent_auctions if ra.get("term") in _LONG_TENORS]
-        at = RichTable(
-            title="Recent Long-End Auctions (10Y / 20Y / 30Y)",
-            show_header=True,
-            header_style="bold yellow",
-            box=None,
-            padding=(0, 1),
-        )
-        at.add_column("Date", style="dim")
-        at.add_column("Term")
-        at.add_column("Tail", justify="right")
-        at.add_column("Dealer %", justify="right")
-        at.add_column("BTC", justify="right")
-        at.add_column("Signal", style="dim")
-        for ra in long_auctions:
-            t = ra.get("tail_bps")
-            d_pct = ra.get("dealer_take_pct")
-            btc_v = ra.get("btc")
-            # Color-code the signal
-            stress_flags = 0
-            if isinstance(t, (int, float)) and float(t) >= 3.0:
-                stress_flags += 1
-            if isinstance(d_pct, (int, float)) and float(d_pct) >= 20.0:
-                stress_flags += 1
-            if isinstance(btc_v, (int, float)) and float(btc_v) < 2.3:
-                stress_flags += 1
-            if stress_flags >= 2:
-                signal = "[red]STRESS[/red]"
-            elif stress_flags == 1:
-                signal = "[yellow]WATCH[/yellow]"
-            else:
-                signal = "[green]OK[/green]"
-            at.add_row(
-                str(ra.get("date", "")),
-                str(ra.get("term", "")),
-                f"{float(t):.1f}bp" if isinstance(t, (int, float)) else "—",
-                f"{float(d_pct):.1f}%" if isinstance(d_pct, (int, float)) else "—",
-                f"{float(btc_v):.2f}x" if isinstance(btc_v, (int, float)) else "—",
-                signal,
-            )
-        console.print()
-        console.print(at)
-
-        # ── Sparkline trend summary ──────────────────────────────────────
-        if len(long_auctions) >= 4:
-            _show_auction_trend(console, long_auctions)
-
-        # ── Upcoming long-end auctions ────────────────────────────────────
-        upcoming = _get_upcoming_long_end(long_auctions)
-        if upcoming:
-            from rich.table import Table as RichTable
-            ut = RichTable(
-                title="Upcoming Long-End Auctions",
-                show_header=True,
-                header_style="bold cyan",
-                box=None,
-                padding=(0, 1),
-            )
-            ut.add_column("Date", style="dim")
-            ut.add_column("Term")
-            ut.add_column("Offering")
-            ut.add_column("Type", style="dim")
-            ut.add_column("Source", style="dim")
-            for ua in upcoming:
-                dt = ua["date"]
-                days_away = (dt - date.today()).days
-                date_str = f"{dt.isoformat()}  ({days_away}d)"
-                offering = f"${ua['offering_b']:.0f}B" if ua.get("offering_b") else "—"
-                reopen = "Reopen" if ua.get("reopening") else "New"
-                src = "[green]announced[/green]" if ua["source"] == "announced" else "[dim]est. from cadence[/dim]"
-                ut.add_row(date_str, ua["tenor"], offering, reopen, src)
-            console.print()
-            console.print(ut)
+    # ── Auction trend sparklines (most leading thing we have) ─────────────
+    if len(long_auctions_recent) >= 4:
+        _show_auction_trend(console, long_auctions_recent)
 
     if llm:
         from lox.cli_commands.shared.regime_display import print_llm_regime_analysis
