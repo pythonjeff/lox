@@ -198,7 +198,7 @@ SCENARIOS: list[ScenarioDefinition] = [
                 name_contains=("elevated", "shock"), required=True,
             ),
             PillarCondition(
-                domain="fiscal", score_min=45,
+                domain="gov", score_min=45,
                 name_contains=("fiscal_contraction", "fiscal_drag", "fiscal_dominance"),
                 required=False,
             ),
@@ -255,7 +255,7 @@ SCENARIOS: list[ScenarioDefinition] = [
         name="DURATION REGIME SHIFT",
         thesis_template=(
             "Rates dislocating ({rates_label}) with fiscal pressure building "
-            "({fiscal_label}, score {fiscal_score:.0f}) and USD weakening "
+            "({gov_label}, score {gov_score:.0f}) and USD weakening "
             "({usd_label}) — term premium repricing underway."
         ),
         conditions=[
@@ -264,7 +264,7 @@ SCENARIOS: list[ScenarioDefinition] = [
                 name_contains=("rates_shock_up", "bear_steepener"), required=True,
             ),
             PillarCondition(
-                domain="fiscal", score_min=45,
+                domain="gov", score_min=45,
                 name_contains=("fiscal_contraction", "fiscal_drag", "fiscal_dominance"),
                 required=True,
             ),
@@ -407,75 +407,6 @@ SCENARIOS: list[ScenarioDefinition] = [
         primary_risk="Inflation re-accelerates, forcing the Fed to stay restrictive longer than priced.",
     ),
 
-    # ── 8. TRADE WAR ESCALATION ──────────────────────────────────────────
-    ScenarioDefinition(
-        scenario_id="trade_war_escalation",
-        name="TRADE WAR ESCALATION",
-        thesis_template=(
-            "Policy uncertainty surging ({policy_label}, score {policy_score:.0f}) with "
-            "inflation sticky ({inflation_label}, score {inflation_score:.0f}) "
-            "— tariff escalation passing through to input costs and squeezing margins."
-        ),
-        conditions=[
-            PillarCondition(
-                domain="policy", score_min=60,
-                label_contains=("Stress", "Crisis", "Elevated"), required=True,
-            ),
-            PillarCondition(
-                domain="inflation", score_min=50,
-                label_contains=("Elevated", "Above Target", "Hot"), required=True,
-            ),
-            PillarCondition(
-                domain="commodities", score_min=55,
-                name_contains=("commodity_reflation", "energy_shock"), required=False,
-            ),
-            PillarCondition(
-                domain="volatility", score_min=50,
-                name_contains=("elevated", "shock"), required=False,
-            ),
-        ],
-        trades=[
-            ScenarioTrade("LONG", "GLD", "calls", "Gold as geopolitical + inflation hedge", "core"),
-            ScenarioTrade("SHORT", "EEM", "puts", "EM most exposed to trade friction and supply chain disruption", "core"),
-            ScenarioTrade("LONG", "XLE", "equity", "Energy benefits from supply-side disruption", "tactical"),
-            ScenarioTrade("SHORT", "XLY", "puts", "Consumer discretionary hit by tariff cost pass-through", "tactical"),
-            ScenarioTrade("LONG", "TIP", "equity", "TIPS hedge tariff-driven inflation expectations", "hedge"),
-        ],
-        primary_risk="Trade deal or de-escalation announcement reverses positioning rapidly.",
-    ),
-
-    # ── 9. SUPPLY CHAIN NORMALIZATION ────────────────────────────────────
-    ScenarioDefinition(
-        scenario_id="supply_chain_normalization",
-        name="SUPPLY CHAIN NORMALIZATION",
-        thesis_template=(
-            "Policy uncertainty fading ({policy_label}, score {policy_score:.0f}) with "
-            "inflation receding ({inflation_label}, score {inflation_score:.0f}) "
-            "— trade normalization removing cost headwinds for growth."
-        ),
-        conditions=[
-            PillarCondition(
-                domain="policy", score_max=30,
-                label_contains=("Calm", "Low"), required=True,
-            ),
-            PillarCondition(
-                domain="inflation", score_max=45,
-                label_contains=("At Target", "Below Target"), required=True,
-            ),
-            PillarCondition(
-                domain="commodities", score_max=45,
-                name_contains=("benign", "normal"), required=False,
-            ),
-        ],
-        trades=[
-            ScenarioTrade("LONG", "QQQ", "calls", "Tech/growth benefits from easing cost pressure", "core"),
-            ScenarioTrade("SHORT", "VXX", "equity", "Vol compresses as uncertainty fades", "tactical"),
-            ScenarioTrade("LONG", "EEM", "calls", "EM recovery as trade barriers come down", "tactical"),
-            ScenarioTrade("REDUCE", "GLD", "equity", "Trim safe-haven gold — risk premium unwinding", "tactical"),
-        ],
-        primary_risk="Policy reversal or new geopolitical shock re-escalates uncertainty.",
-    ),
-
     # ── 10. CREDIT CRUNCH ────────────────────────────────────────────────
     ScenarioDefinition(
         scenario_id="credit_crunch",
@@ -529,10 +460,9 @@ _PRIORITY_KEYS: dict[str, list[str]] = {
     "rates": ["10Y", "2s10s", "10Y 20d Chg"],
     "liquidity": ["SOFR", "Corridor", "Reserves"],
     "consumer": ["Michigan", "Retail MoM", "30Y Mortgage"],
-    "fiscal": ["Deficit 12m", "z Deficit", "Auction Tail", "FPI"],
+    "gov": ["Deficit 12m", "z Deficit", "Auction Tail", "FPI"],
     "usd": ["DXY", "20d Chg", "Strength"],
     "commodities": ["WTI", "Gold", "Broad 60d"],
-    "policy": ["EPU", "EPU %ile", "News 7d", "Import Px YoY"],
 }
 
 
@@ -540,7 +470,7 @@ def _build_thesis(defn: ScenarioDefinition, state: UnifiedRegimeState) -> str:
     """Substitute live regime values into the thesis template."""
     tvars: dict[str, Any] = {}
     for domain in ("growth", "inflation", "volatility", "credit", "rates",
-                    "liquidity", "consumer", "fiscal", "usd", "commodities", "policy"):
+                    "liquidity", "consumer", "gov", "usd", "commodities"):
         regime = getattr(state, domain, None)
         if regime:
             tvars[f"{domain}_label"] = regime.label

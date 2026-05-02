@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from lox.fiscal.models import FiscalInputs
-from lox.fiscal.scoring import score_fiscal_regime
-from lox.fiscal.signals import _compute_auction_demand_quality
+from lox.gov.models import FiscalInputs
+from lox.gov.scoring import score_fiscal_regime
+from lox.gov.signals import _compute_auction_demand_quality
 
 
 # ─────────────────────────────────────────────────────────────────────────────

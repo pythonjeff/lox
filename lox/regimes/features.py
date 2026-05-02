@@ -27,19 +27,18 @@ REGIME_WEIGHTS = {
     "Credit": 0.13,
     "Rates": 0.10,
     "Funding": 0.05,
-    "Fiscal": 0.05,
+    "Gov": 0.08,
     "Consumer": 0.08,
     "Monetary": 0.05,
     "USD": 0.02,
     "Commodities": 0.02,
     "Positioning": 0.04,
     "Earnings": 0.06,
-    "Policy": 0.03,
 }
 
-# ── 12 domain names (ordered for display) ────────────────────────────────
+# ── Domain names (ordered for display) ────────────────────────────────
 CORE_DOMAINS = ["growth", "inflation", "volatility", "credit", "rates", "liquidity"]
-EXTENDED_DOMAINS = ["consumer", "fiscal", "usd", "commodities", "earnings", "policy", "positioning"]
+EXTENDED_DOMAINS = ["consumer", "gov", "usd", "commodities", "earnings", "positioning"]
 ALL_DOMAINS = CORE_DOMAINS + EXTENDED_DOMAINS
 
 
@@ -60,13 +59,12 @@ class UnifiedRegimeState:
     rates: Optional[RegimeResult] = None
     liquidity: Optional[RegimeResult] = None
 
-    # Extended 6 (for overlay/context)
+    # Extended (for overlay/context)
     consumer: Optional[RegimeResult] = None
-    fiscal: Optional[RegimeResult] = None
+    gov: Optional[RegimeResult] = None
     usd: Optional[RegimeResult] = None
     commodities: Optional[RegimeResult] = None
     earnings: Optional[RegimeResult] = None
-    policy: Optional[RegimeResult] = None
     positioning: Optional[RegimeResult] = None
 
     # Aggregate risk assessment
@@ -243,12 +241,12 @@ class UnifiedRegimeState:
             elif "plunge" in self.usd.name or "weak" in self.usd.name:
                 params["equity_drift_adj"] += 0.01
 
-        # ── Fiscal regime adjustments (calibrated via FPI scoring engine) ─
-        if self.fiscal:
+        # ── Gov regime adjustments (calibrated via FPI scoring engine) ─
+        if self.gov:
             try:
-                from lox.fiscal.signals import build_fiscal_state
-                from lox.fiscal.scoring import score_fiscal_regime
-                from lox.fiscal.mc_calibration import calibrate_fiscal_mc
+                from lox.gov.signals import build_fiscal_state
+                from lox.gov.scoring import score_fiscal_regime
+                from lox.gov.mc_calibration import calibrate_fiscal_mc
 
                 fiscal_state = build_fiscal_state(
                     settings=load_settings(), start_date="2011-01-01"
@@ -263,7 +261,7 @@ class UnifiedRegimeState:
                 params["jump_prob_adj"] *= fiscal_mc.jump_prob_multiplier
                 params["jump_size_adj"] *= fiscal_mc.jump_size_multiplier
             except Exception:
-                if "dominance" in self.fiscal.name or "stress" in self.fiscal.name:
+                if "dominance" in self.gov.name or "stress" in self.gov.name:
                     params["rate_drift_adj"] += 0.005
                     params["spread_drift_adj"] += 0.002
 
@@ -893,10 +891,10 @@ def build_unified_regime_state(
             logger.warning(f"Failed to build consumer regime: {e}")
             return None
 
-    def _build_fiscal():
+    def _build_gov():
         try:
-            from lox.fiscal.signals import build_fiscal_state as _build_fiscal_state
-            from lox.fiscal.scoring import score_fiscal_regime as _score_fiscal
+            from lox.gov.signals import build_fiscal_state as _build_fiscal_state
+            from lox.gov.scoring import score_fiscal_regime as _score_fiscal
 
             fiscal_st = _build_fiscal_state(settings=settings, start_date="2011-01-01", refresh=refresh)
             fiscal_sc = _score_fiscal(fiscal_st.inputs)
@@ -906,7 +904,7 @@ def build_unified_regime_state(
                 label=fiscal_sc.regime_label,
                 description=fiscal_sc.regime_description,
                 score=fiscal_sc.fpi,
-                domain="fiscal",
+                domain="gov",
                 tags=["risk_off"] if fiscal_sc.fpi >= 65 else [],
                 metrics={
                     "Deficit 12m": f"${fiscal_st.inputs.deficit_12m / 1e6:.2f}T" if fiscal_st.inputs.deficit_12m else None,
@@ -921,7 +919,7 @@ def build_unified_regime_state(
                 },
             )
         except Exception as e:
-            logger.warning(f"Failed to build fiscal regime: {e}")
+            logger.warning(f"Failed to build gov regime: {e}")
             return None
 
     def _build_usd():
@@ -1029,45 +1027,6 @@ def build_unified_regime_state(
             logger.warning(f"Failed to build earnings regime: {e}")
             return None
 
-    def _build_policy():
-        try:
-            from lox.altdata.policy_market import compute_policy_inputs
-            from lox.policy.regime import classify_policy_regime
-
-            inputs = compute_policy_inputs(settings=settings, start_date=start_date, refresh=refresh)
-            if inputs.error:
-                logger.warning(f"Policy data issue: {inputs.error}")
-                return None
-
-            # Note: cross-regime scores (inflation, commodities, vol) are not
-            # available yet because they run in parallel. The CLI command
-            # fetches them from regime_history for Layer 3. Here we pass None
-            # so the classifier still produces a Layer-1 + Layer-2 score.
-            oil_disruption = None
-            try:
-                from lox.data.regime_history import get_score_series
-                oil_series = get_score_series("oil")
-                if oil_series:
-                    oil_disruption = oil_series[-1].get("score")
-            except Exception:
-                pass
-
-            return classify_policy_regime(
-                epu_level=inputs.epu_level,
-                epu_1y_percentile=inputs.epu_1y_percentile,
-                epu_30d_change=inputs.epu_30d_change,
-                news_article_count_7d=inputs.news_article_count_7d,
-                news_article_count_30d=inputs.news_article_count_30d,
-                import_price_yoy=inputs.import_price_yoy,
-                import_price_mom_accel=inputs.import_price_mom_accel,
-                vix_level=inputs.vix_level,
-                dxy_20d_chg=inputs.dxy_20d_chg,
-                oil_disruption_score=oil_disruption,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to build policy regime: {e}")
-            return None
-
     def _build_positioning():
         try:
             from lox.positioning.data import compute_positioning_inputs
@@ -1102,11 +1061,10 @@ def build_unified_regime_state(
         "rates": _build_rates,
         "liquidity": _build_liquidity,
         "consumer": _build_consumer,
-        "fiscal": _build_fiscal,
+        "gov": _build_gov,
         "usd": _build_usd,
         "commodities": _build_commodities,
         "earnings": _build_earnings,
-        "policy": _build_policy,
         "positioning": _build_positioning,
     }
 

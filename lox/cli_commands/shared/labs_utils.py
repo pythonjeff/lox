@@ -428,7 +428,7 @@ EXTREME_REGIMES: Dict[str, Dict[str, Any]] = {
         "extreme_metrics": {"reserves_z_level": {"low": -2.0, "critical": -3.0}},
         "alert_color": "yellow",
     },
-    "fiscal": {
+    "gov": {
         "extreme_regimes": ["Heavy Funding (stress)", "Auction Stress"],
         "extreme_metrics": {"deficit_pct_gdp": {"high": 7.0, "critical": 10.0}},
         "alert_color": "yellow",
@@ -535,7 +535,7 @@ DOMAIN_CALENDAR_EVENTS: Dict[str, List[str]] = {
     "rates": ["FOMC", "Bill Auction", "Bond Auction", "CPI", "PCE", "GDP", "Fed Balance Sheet"],
     "commodities": ["OPEC", "EIA", "GDP", "PMI", "Trade Balance", "Crude Oil"],
     "monetary": ["FOMC", "Fed Balance Sheet", "Fed", "Bill Auction"],
-    "fiscal": ["Bill Auction", "Bond Auction", "Budget", "Debt", "Treasury Refunding"],
+    "gov": ["Bill Auction", "Bond Auction", "Budget", "Debt", "Treasury Refunding"],
     "funding": ["FOMC", "Fed Balance Sheet", "Bill Auction"],
     "inflation": ["CPI", "PCE", "PPI", "Import Prices", "Core PCE"],
     "growth": ["GDP", "NFP", "Retail Sales", "ISM", "PMI", "Jobless Claims", "Employment"],
@@ -747,7 +747,7 @@ TRADE_EXPRESSIONS: Dict[str, Dict[str, List[Dict[str, str]]]] = {
             {"direction": "Short", "ticker": "HYG", "rationale": "Credit stress"},
         ],
     },
-    "fiscal": {
+    "gov": {
         "Strong Fiscal Stimulus": [
             {"direction": "Long", "ticker": "SPY", "rationale": "NFA injection supports risk assets"},
             {"direction": "Short", "ticker": "TLT", "rationale": "Supply pressure from issuance"},

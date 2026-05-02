@@ -4,7 +4,7 @@ import pandas as pd
 
 from lox.config import Settings
 from lox.commodities.signals import build_commodities_dataset
-from lox.fiscal.signals import build_fiscal_dataset
+from lox.gov.signals import build_fiscal_dataset
 from lox.funding.signals import build_funding_dataset
 from lox.macro.signals import build_macro_dataset
 from lox.rates.signals import build_rates_dataset

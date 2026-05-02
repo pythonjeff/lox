@@ -7,10 +7,10 @@ from rich import print
 from rich.panel import Panel
 
 from lox.config import load_settings
-from lox.fiscal.regime import classify_fiscal_regime, classify_fiscal_regime_skeleton
-from lox.fiscal.mc_calibration import calibrate_fiscal_mc
-from lox.fiscal.scoring import score_fiscal_regime
-from lox.fiscal.signals import build_fiscal_deficit_page_data, build_fiscal_state
+from lox.gov.regime import classify_fiscal_regime, classify_fiscal_regime_skeleton
+from lox.gov.mc_calibration import calibrate_fiscal_mc
+from lox.gov.scoring import score_fiscal_regime
+from lox.gov.signals import build_fiscal_deficit_page_data, build_fiscal_state
 from lox.utils.formatting import fmt_usd_from_millions
 
 
@@ -549,7 +549,7 @@ def _run_fiscal_snapshot(
 
     # Handle --features and --json flags
     if handle_output_flags(
-        domain="fiscal",
+        domain="gov",
         snapshot=snapshot_data,
         features=feature_dict,
         regime=regime.label or regime.name,
@@ -562,19 +562,19 @@ def _run_fiscal_snapshot(
 
     # Handle --alert flag (silent unless extreme)
     if alert:
-        show_alert_output("fiscal", regime.label or regime.name, snapshot_data, regime.description)
+        show_alert_output("gov", regime.label or regime.name, snapshot_data, regime.description)
         return
 
     # Handle --calendar flag
     if calendar:
         print(Panel.fit(f"[b]Regime:[/b] {regime.label or regime.name}", title="US Fiscal", border_style="cyan"))
-        show_calendar_output("fiscal")
+        show_calendar_output("gov")
         return
 
     # Handle --trades flag
     if trades:
         print(Panel.fit(f"[b]Regime:[/b] {regime.label or regime.name}", title="US Fiscal", border_style="cyan"))
-        show_trades_output("fiscal", regime.label or regime.name)
+        show_trades_output("gov", regime.label or regime.name)
         return
 
     # Handle --delta flag
@@ -593,8 +593,8 @@ def _run_fiscal_snapshot(
             "Dealer Take:dealer_take_pct:%",
         ]
         
-        metrics_for_delta, prev_regime = get_delta_metrics("fiscal", snapshot_data, metric_keys, delta_days)
-        show_delta_summary("fiscal", regime.label or regime.name, prev_regime, metrics_for_delta, delta_days)
+        metrics_for_delta, prev_regime = get_delta_metrics("gov", snapshot_data, metric_keys, delta_days)
+        show_delta_summary("gov", regime.label or regime.name, prev_regime, metrics_for_delta, delta_days)
         
         if prev_regime is None:
             console.print(f"\n[dim]No cached data from {delta_days}d ago. Run `lox labs fiscal` daily to build history.[/dim]")
@@ -825,7 +825,7 @@ def _run_fiscal_snapshot(
         full_desc = f"{full_desc}\n[dim]MC impact: {mc_impact}[/dim]"
 
     from lox.regimes.trend import get_domain_trend
-    trend = get_domain_trend("fiscal", fpi_score, fpi_label)
+    trend = get_domain_trend("gov", fpi_score, fpi_label)
 
     print(render_regime_panel(
         domain="Fiscal",
@@ -941,7 +941,7 @@ def _run_fiscal_snapshot(
         }
         print_llm_regime_analysis(
             settings=settings,
-            domain="fiscal",
+            domain="gov",
             snapshot=snapshot_data,
             regime_label=regime.label or regime.name,
             regime_description=regime.description,

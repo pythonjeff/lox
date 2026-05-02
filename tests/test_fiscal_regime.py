@@ -1,5 +1,5 @@
-from lox.fiscal.models import FiscalInputs
-from lox.fiscal.regime import classify_fiscal_regime
+from lox.gov.models import FiscalInputs
+from lox.gov.regime import classify_fiscal_regime
 
 
 def test_fiscal_regime_default_moderate_support():

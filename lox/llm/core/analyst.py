@@ -145,11 +145,11 @@ DOMAIN_CONTEXT = {
         "trading_focus": "liquidity-sensitive assets, bank equities, risk assets broadly",
         "data_sources": ["FRED WALCL", "FRED WRESBAL", "FRED RRPONTSYD", "Federal Reserve H.4.1"],
     },
-    "fiscal": {
-        "description": "US fiscal regime (deficits, Treasury issuance, TGA, auction demand)",
+    "gov": {
+        "description": "US government regime (fiscal flows, Treasury operations, federal activity)",
         "key_metrics": ["deficit/GDP", "TGA balance", "issuance mix", "auction demand", "dealer absorption"],
         "related_tickers": ["TLT", "IEF", "TMV", "TMF", "SPY"],
-        "news_keywords": ["deficit", "Treasury", "auction", "debt ceiling", "fiscal", "government spending", "issuance", "TGA"],
+        "news_keywords": ["deficit", "Treasury", "auction", "debt ceiling", "fiscal", "government spending", "issuance", "TGA", "Bessent"],
         "macro_keywords": ["Congress", "budget", "stimulus", "tax"],
         "trading_focus": "duration risk, term premium, crowding out",
         "data_sources": ["FRED MTSDS133FMS", "Treasury FiscalData MSPD", "Treasury Direct Auctions"],

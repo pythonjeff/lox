@@ -8,7 +8,7 @@ import pandas as pd
 from lox.config import Settings
 from lox.data.fiscaldata import FiscalDataClient, FiscalDataEndpoint
 from lox.data.fred import FredClient
-from lox.fiscal.models import FiscalInputs, FiscalState
+from lox.gov.models import FiscalInputs, FiscalState
 from lox.macro.transforms import merge_series_daily, zscore
 
 

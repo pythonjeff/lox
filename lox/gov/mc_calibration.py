@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from lox.fiscal.scoring import FiscalScorecard
+from lox.gov.scoring import FiscalScorecard
 
 
 @dataclass(frozen=True)

@@ -169,7 +169,7 @@ def build_funding_state(settings: Settings, start_date: str = "2011-01-01", refr
 
     # Fetch ON RRP + reserves + TGA data from monetary/fiscal modules
     from lox.monetary.signals import build_monetary_dataset
-    from lox.fiscal.signals import _tga_behavior_metrics
+    from lox.gov.signals import _tga_behavior_metrics
     from lox.data.fred import FredClient
     
     monetary_df = build_monetary_dataset(settings=settings, start_date=start_date, refresh=refresh)

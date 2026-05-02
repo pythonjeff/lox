@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from lox.fiscal.models import FiscalInputs
+from lox.gov.models import FiscalInputs
 
 
 @dataclass

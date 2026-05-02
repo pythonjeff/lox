@@ -95,7 +95,7 @@ PM_PILLARS = [
     ("Rates",     "rates"),
     ("Liquidity", "liquidity"),
     ("Consumer",  "consumer"),
-    ("Fiscal",    "fiscal"),
+    ("Gov't",     "gov"),
     ("Earnings",  "earnings"),
     ("Oil/Cmdty", "commodities"),
 ]

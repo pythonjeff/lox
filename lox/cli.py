@@ -222,8 +222,8 @@ def regime_vol(
         show_book_impact(domain="volatility")
 
 
-@regime_app.command("fiscal")
-def regime_fiscal(
+@regime_app.command("gov")
+def regime_gov(
     refresh: bool = typer.Option(False, "--refresh", help="Force refresh FRED / fiscaldata downloads"),
     llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
     ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
@@ -232,12 +232,12 @@ def regime_fiscal(
     delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
     book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
 ):
-    """Fiscal regime."""
-    from lox.cli_commands.regimes.fiscal_cmd import fiscal_snapshot
+    """Government regime (fiscal flows + federal activity)."""
+    from lox.cli_commands.regimes.gov_cmd import fiscal_snapshot
     fiscal_snapshot(refresh=refresh, llm=llm, ticker=ticker, features=features, json_out=json_out, delta=delta)
     if book:
         from lox.cli_commands.shared.book_impact import show_book_impact
-        show_book_impact(domain="fiscal")
+        show_book_impact(domain="gov")
 
 
 @regime_app.command("funding")
@@ -404,31 +404,6 @@ def regime_usd(
     if book:
         from lox.cli_commands.shared.book_impact import show_book_impact
         show_book_impact(domain="usd")
-
-
-@regime_app.command("policy")
-def regime_policy(
-    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
-    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
-    refresh: bool = typer.Option(False, "--refresh", help="Force refresh data downloads"),
-    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
-    features: bool = typer.Option(False, "--features", help="Export ML-ready feature vector (JSON)"),
-    json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
-    delta: str = typer.Option("", "--delta", help="Show changes vs N days ago (e.g., 7d, 1w, 1m)"),
-    alert: bool = typer.Option(False, "--alert", help="Only output if regime is extreme (for cron/monitoring)"),
-    calendar: bool = typer.Option(False, "--calendar", help="Show upcoming events that could shift this regime"),
-    trades: bool = typer.Option(False, "--trades", help="Show quick trade expressions for current regime"),
-):
-    """Policy / geopolitical uncertainty regime (EPU, trade policy news, tariff pass-through)."""
-    from lox.cli_commands.regimes.policy_cmd import policy_snapshot
-    policy_snapshot(
-        llm=llm, ticker=ticker, refresh=refresh,
-        features=features, json_out=json_out, delta=delta,
-        alert=alert, calendar=calendar, trades=trades,
-    )
-    if book:
-        from lox.cli_commands.shared.book_impact import show_book_impact
-        show_book_impact(domain="policy")
 
 
 @regime_app.command("positioning")

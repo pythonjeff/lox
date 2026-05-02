@@ -3,12 +3,12 @@ Interactive Research Chat - Conversation with the LLM analyst.
 
 Usage:
     lox chat                           # Start fresh with portfolio context
-    lox chat -c fiscal                 # Pre-load fiscal snapshot
+    lox chat -c gov                    # Pre-load government snapshot
     lox chat -c vol                    # Pre-load volatility snapshot
     lox chat -c macro                  # Pre-load macro dashboard
     lox chat -c regimes                # Pre-load all regime data
-    lox chat -c fiscal -c funding      # Multiple contexts
-    lox chat -c fiscal,funding,monetary  # Comma-separated contexts
+    lox chat -c gov -c funding         # Multiple contexts
+    lox chat -c gov,funding,monetary   # Comma-separated contexts
     lox chat -t AAPL                   # Ticker-focused chat
 
 After the context loads, you can ask follow-up questions like:
@@ -68,9 +68,9 @@ def _get_context_data(context: str, settings: Settings, refresh: bool = False) -
             "breakeven_5y": inp.breakeven_5y,
         }
 
-    elif context == "fiscal":
-        from lox.fiscal.signals import build_fiscal_deficit_page_data
-        from lox.fiscal.regime import classify_fiscal_regime_snapshot
+    elif context == "gov":
+        from lox.gov.signals import build_fiscal_deficit_page_data
+        from lox.gov.regime import classify_fiscal_regime_snapshot
 
         data = build_fiscal_deficit_page_data(settings=settings, lookback_years=5, refresh=refresh)
         net = data.get("net_issuance") if isinstance(data.get("net_issuance"), dict) else None
@@ -81,8 +81,8 @@ def _get_context_data(context: str, settings: Settings, refresh: bool = False) -
             long_duration_issuance_share=net.get("long_share") if net else None,
             tga_z_d_4w=tga.get("z_d_4w") if tga else None,
         )
-        return f"Fiscal Regime: {regime.label}", {
-            "domain": "fiscal",
+        return f"Government Regime: {regime.label}", {
+            "domain": "gov",
             "regime": regime.label,
             "description": regime.description,
             "snapshot": data,
@@ -159,7 +159,7 @@ def _get_context_data(context: str, settings: Settings, refresh: bool = False) -
 
     elif context in ("regimes", "all"):
         contexts = {}
-        for ctx in ("vol", "macro", "fiscal", "commodities", "rates", "funding", "monetary"):
+        for ctx in ("vol", "macro", "gov", "commodities", "rates", "funding", "monetary"):
             try:
                 _, data = _get_context_data(ctx, settings, refresh=refresh)
                 contexts[ctx] = data
@@ -191,7 +191,7 @@ def _get_context_data(context: str, settings: Settings, refresh: bool = False) -
         }
 
     else:
-        available = "vol, macro, fiscal, commodities, rates, funding, monetary, regimes, portfolio"
+        available = "vol, macro, gov, commodities, rates, funding, monetary, regimes, portfolio"
         raise ValueError(f"Unknown context: {context}. Available: {available}")
 
 
@@ -378,7 +378,7 @@ def register(app: typer.Typer) -> None:
         context: list[str] = typer.Option(
             ["portfolio"],
             "--context", "-c",
-            help="Context(s): vol, macro, fiscal, commodities, rates, funding, monetary, regimes, portfolio",
+            help="Context(s): vol, macro, gov, commodities, rates, funding, monetary, regimes, portfolio",
         ),
         ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused analysis"),
         refresh: bool = typer.Option(False, "--refresh", help="Force refresh data"),
@@ -392,8 +392,8 @@ def register(app: typer.Typer) -> None:
         Examples:
             lox research chat                        # Portfolio context
             lox research chat -t AAPL                # Ticker chat
-            lox research chat -c fiscal              # Fiscal regime
-            lox research chat -c fiscal -c funding   # Multiple contexts
+            lox research chat -c gov                 # Government regime
+            lox research chat -c gov -c funding      # Multiple contexts
             lox research chat -c regimes             # All regimes
         """
         console = Console()

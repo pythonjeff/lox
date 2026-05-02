@@ -24,7 +24,7 @@ _REGIME_DETAIL_TTL = 600  # 10 minutes — macro data changes daily at most
 
 REGIME_NAMES = [
     "growth", "inflation", "volatility", "credit", "rates", "liquidity",
-    "consumer", "fiscal", "usd", "commodities", "earnings", "policy", "positioning",
+    "consumer", "gov", "usd", "commodities", "earnings", "positioning",
 ]
 
 REGIME_DISPLAY_NAMES = {
@@ -35,11 +35,10 @@ REGIME_DISPLAY_NAMES = {
     "rates": "Rates",
     "liquidity": "Liquidity",
     "consumer": "Consumer",
-    "fiscal": "Fiscal",
+    "gov": "Government",
     "usd": "USD",
     "commodities": "Commodities",
     "earnings": "Earnings",
-    "policy": "Policy",
     "positioning": "Positioning",
 }
 
@@ -132,7 +131,7 @@ REGIME_SCORE_THRESHOLDS = {
         (30, "Consumer Boom", "Consumer Expanding"), (45, "Consumer Expanding", "Consumer Stable"),
         (55, "Consumer Stable", "Consumer Weakening"), (70, "Consumer Weakening", "Consumer Stress"),
     ],
-    "fiscal": [
+    "gov": [
         (25, "Benign", "Elevated Funding"), (45, "Elevated Funding", "Stress Building"),
         (65, "Stress Building", "Fiscal Stress"), (80, "Fiscal Stress", "Fiscal Dominance Risk"),
     ],
@@ -165,7 +164,7 @@ REGIME_BLURBS = {
     "rates": "What's happening with interest rates? Watches Treasury yields from 3-month bills to 10-year bonds and the shape of the curve. When short rates top long rates, it's a classic recession warning.",
     "liquidity": "Is the financial plumbing working and how much cash is in the system? Tracks overnight rates, the Fed's balance sheet, bank reserves, and the reverse repo facility. When liquidity tightens, asset prices feel it fast.",
     "consumer": "How is the average household doing? Tracks confidence surveys, spending, mortgage costs, and whether people are falling behind on loans. Consumer health drives about 70% of GDP.",
-    "fiscal": "Can the government keep spending at this pace? Watches the deficit, debt interest costs, and how easily the Treasury can sell new bonds. Rising fiscal pressure pushes long-term rates higher.",
+    "gov": "Can the government keep spending at this pace? Watches the deficit, debt interest costs, how easily the Treasury can sell new bonds, and federal activity (executive orders, Treasury statements, prediction-market gauges of shutdown/debt-ceiling risk). Rising government pressure pushes long-term rates higher.",
     "usd": "How strong is the dollar? Uses the FRED broad trade-weighted index (26 partners) with a 3-year z-score window. A strong dollar hurts U.S. exporters and squeezes EM borrowers. Big moves in either direction create global ripple effects.",
     "commodities": "What are raw materials telling us? Gold rises on fear, oil reflects supply and demand, copper tracks global factory activity, and silver follows both industrial use and safe-haven flows.",
 }
@@ -190,8 +189,8 @@ def _build_regime_cache(settings, refresh=False):
 
     fiscal_scorecard = None
     try:
-        from lox.fiscal.signals import build_fiscal_state
-        from lox.fiscal.scoring import score_fiscal_regime
+        from lox.gov.signals import build_fiscal_state
+        from lox.gov.scoring import score_fiscal_regime
         fiscal_state = build_fiscal_state(settings=settings, start_date="2011-01-01", refresh=refresh)
         fiscal_scorecard = score_fiscal_regime(fiscal_state.inputs)
     except Exception as e:
@@ -546,8 +545,8 @@ _REGIME_METRICS_SPEC = {
          "extreme": 60, "extreme_date": "Q1 2023", "extreme_event": "SVB banking stress", "inverted": False},
     ],
 
-    # ── Fiscal (9 metrics) ──────────────────────────────────────────────────
-    "fiscal": [
+    # ── Government (9 metrics) ──────────────────────────────────────────────
+    "gov": [
         {"key": "Deficit 12m", "name": "Annual Deficit ($T)", "weight": 0.16, "fmt": None,
          "desc": "How much more the government spends than it earns",
          "healthy": 0.5, "healthy_label": "Manageable", "stressed": 2.5, "stressed_label": "Unsustainable",
@@ -863,7 +862,7 @@ def get_regime_detail(settings, regime_name, refresh=False):
     metrics = _enrich_metrics(regime_result, regime_name, prev_regime_result=prev_regime_result)
 
     pillars = []
-    if regime_name == "fiscal" and fiscal_scorecard:
+    if regime_name == "gov" and fiscal_scorecard:
         try:
             for s in fiscal_scorecard.sub_scores:
                 pillars.append({

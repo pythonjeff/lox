@@ -217,7 +217,7 @@ def register(app: typer.Typer) -> None:
                 scores_dict = {
                     domain: getattr(state, domain).score
                     for domain in ["growth", "inflation", "volatility", "credit",
-                                   "rates", "funding", "consumer", "fiscal",
+                                   "rates", "funding", "consumer", "gov",
                                    "positioning", "monetary", "usd", "commodities"]
                     if getattr(state, domain) is not None
                 }

@@ -273,11 +273,10 @@ def _show_regime_overview(console: Console, settings, state, include_llm: bool, 
 
     extended = [
         ("Consumer", state.consumer),
-        ("Fiscal", state.fiscal),
+        ("Gov't", state.gov),
         ("USD", state.usd),
         ("Commodities", state.commodities),
         ("Earnings", state.earnings),
-        ("Policy", state.policy),
         ("Positioning", state.positioning),
     ]
     console.print(_build_pillar_table("Extended Pillars", extended))
@@ -324,13 +323,12 @@ def _show_regime_detail(console: Console, settings, state, pillar: str, include_
         "liquidity": "liquidity",
         "funding": "liquidity",
         "consumer": "consumer",
-        "fiscal": "fiscal",
+        "gov": "gov",
         "earnings": "earnings",
         "oil": "oil",
         "commodities": "oil",
         "usd": "usd",
         "dollar": "usd",
-        "policy": "policy",
         "positioning": "positioning",
         "flow": "positioning",
     }
@@ -367,8 +365,8 @@ def _show_regime_detail(console: Console, settings, state, pillar: str, include_
     elif domain == "consumer":
         from lox.cli_commands.regimes.consumer_cmd import consumer_snapshot
         consumer_snapshot(llm=include_llm, refresh=False)
-    elif domain == "fiscal":
-        from lox.cli_commands.regimes.fiscal_cmd import fiscal_snapshot
+    elif domain == "gov":
+        from lox.cli_commands.regimes.gov_cmd import fiscal_snapshot
         fiscal_snapshot(llm=include_llm, refresh=False)
     elif domain == "earnings":
         from lox.cli_commands.regimes.earnings_cmd import earnings_snapshot

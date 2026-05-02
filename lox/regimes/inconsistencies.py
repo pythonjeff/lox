@@ -197,7 +197,7 @@ def _check_consumer_growth_lag(state: "UnifiedRegimeState") -> MarketDislocation
 
 def _check_fiscal_rates_lag(state: "UnifiedRegimeState") -> MarketDislocation | None:
     """Fiscal pressure building but rates haven't repriced term premium."""
-    fi = state.fiscal
+    fi = state.gov
     ra = state.rates
     if not fi or not ra:
         return None
@@ -209,8 +209,8 @@ def _check_fiscal_rates_lag(state: "UnifiedRegimeState") -> MarketDislocation | 
             severity="MEDIUM",
             thesis=f"Fiscal stress building ({fi.label}, {fi.score:.0f}) but rates calm ({ra.label}, {ra.score:.0f}) — bond market hasn't repriced term premium.",
             trade_implication="Short long-end duration (TLT puts, steepener trades). Fiscal deterioration → term premium repricing can be sudden and violent.",
-            domains_involved=("fiscal", "rates"),
-            metrics_snapshot=_metric_snap(state, ["fiscal", "rates"]),
+            domains_involved=("gov", "rates"),
+            metrics_snapshot=_metric_snap(state, ["gov", "rates"]),
         )
 
     return None
