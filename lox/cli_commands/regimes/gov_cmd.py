@@ -742,6 +742,10 @@ def _run_fiscal_snapshot(
                     "context": _auction_signal(b_tail, b_dealer, b_btc),
                 }
 
+    # ── DTS daily TGA flow ────────────────────────────────────────────────
+    from lox.gov.dts import compute_tga_daily_metrics
+    dts = compute_tga_daily_metrics(refresh=refresh)
+
     metrics = [
         {"name": "── Calendar ahead", "value": "", "context": ""},
         {
@@ -751,20 +755,59 @@ def _run_fiscal_snapshot(
         },
         _auction_row("Next 10Y auction", next_10),
         _auction_row("Next 30Y auction", next_30),
-        {"name": "── TGA tracker", "value": "", "context": ""},
-        {
-            "name": "Level",
-            "value": tga_level,
-            "change": _bn_arrow(tga_4w_val, invert=True, suffix="4w"),
-            "context": _tga_short(tga_z_level),
-        },
+        {"name": "── TGA (daily flow)", "value": "", "context": ""},
     ]
-    if isinstance(tga_13w_val, (int, float)):
+
+    if dts.get("level_b") is not None:
+        # Daily DTS path — fresher than weekly FRED.
+        dts_asof = dts["asof"]
+        try:
+            asof_short = _short_date(date.fromisoformat(dts_asof))
+        except Exception:
+            asof_short = dts_asof
+        delta_1d = dts.get("delta_1d_b")
+        delta_str = ""
+        if isinstance(delta_1d, (int, float)) and abs(delta_1d) >= 0.5:
+            color = "red" if delta_1d < 0 else "green"
+            arrow = "▼" if delta_1d < 0 else "▲"
+            delta_str = f"[{color}]{arrow} ${abs(delta_1d):,.0f}B 1d[/{color}]"
         metrics.append({
-            "name": "13w trend",
-            "value": "",
-            "change": _bn_arrow(tga_13w_val, invert=True, suffix="13w"),
-            "context": "building cash" if float(tga_13w_val) > 0 else "draining cash",
+            "name": "Close",
+            "value": f"${dts['level_b']:,.0f}B ([dim]{asof_short}[/dim])",
+            "change": delta_str,
+            "context": "daily DTS",
+        })
+
+        series = dts.get("series_5d_b") or []
+        if len(series) >= 2:
+            net_5d = series[-1] - series[0]
+            spark = _sparkline(series)
+            net_color = "red" if net_5d < 0 else "green"
+            net_arrow = "▼" if net_5d < 0 else "▲"
+            net_str = f"[{net_color}]{net_arrow} ${abs(net_5d):,.0f}B 5d[/{net_color}]"
+            metrics.append({
+                "name": "5d flow",
+                "value": spark,
+                "change": net_str,
+                "context": "draining" if net_5d < 0 else ("refilling" if net_5d > 0 else "steady"),
+            })
+
+        floor_dist = dts.get("floor_distance_b")
+        if isinstance(floor_dist, (int, float)):
+            color = "green" if floor_dist > 200 else ("yellow" if floor_dist > 50 else "red")
+            metrics.append({
+                "name": "vs panic floor",
+                "value": f"[{color}]+${floor_dist:,.0f}B[/{color}]",
+                "context": dts.get("floor_label", ""),
+            })
+
+    # Weekly FRED context (4w trend) — useful even when DTS is current.
+    if isinstance(tga_4w_val, (int, float)):
+        metrics.append({
+            "name": "4w trend",
+            "value": "" if dts.get("level_b") is not None else tga_level,
+            "change": _bn_arrow(tga_4w_val, invert=True, suffix="4w"),
+            "context": _tga_short(tga_z_level) if dts.get("level_b") is None else "weekly FRED",
         })
 
     metrics.append({"name": "── Leading signals", "value": "", "context": ""})
