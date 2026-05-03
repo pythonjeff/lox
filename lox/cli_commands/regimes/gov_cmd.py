@@ -792,23 +792,122 @@ def _run_fiscal_snapshot(
                 "context": "draining" if net_5d < 0 else ("refilling" if net_5d > 0 else "steady"),
             })
 
-        floor_dist = dts.get("floor_distance_b")
-        if isinstance(floor_dist, (int, float)):
-            color = "green" if floor_dist > 200 else ("yellow" if floor_dist > 50 else "red")
+        # ── Refunding target (QRA EOQ assumption) ──
+        from lox.gov.qra import compute_qra_target_metrics
+        qra_t = compute_qra_target_metrics(refresh=refresh)
+        if qra_t.get("target_b") is not None:
+            target_b = qra_t["target_b"]
+            distance = qra_t.get("distance_b")
+            try:
+                eoq_short = _short_date(date.fromisoformat(qra_t["eoq_date"]))
+            except Exception:
+                eoq_short = qra_t["eoq_date"]
+            days_left = qra_t.get("days_remaining")
+            value_str = f"${target_b:,.0f}B by {eoq_short}"
+            if isinstance(days_left, int):
+                value_str += f" ([cyan]{days_left}d[/cyan])"
+            change_str = ""
+            if isinstance(distance, (int, float)):
+                color = "green" if distance >= 0 else "red"
+                arrow = "▲" if distance >= 0 else "▼"
+                change_str = f"[{color}]{arrow} ${abs(distance):,.0f}B vs target[/{color}]"
+            ann = qra_t.get("announcement_date") or ""
+            ctx = f"{ann} QRA" if ann else "QRA target"
             metrics.append({
-                "name": "vs panic floor",
-                "value": f"[{color}]+${floor_dist:,.0f}B[/{color}]",
-                "context": dts.get("floor_label", ""),
+                "name": "Refunding target",
+                "value": value_str,
+                "change": change_str,
+                "context": ctx,
             })
 
-    # Weekly FRED context (4w trend) — useful even when DTS is current.
-    if isinstance(tga_4w_val, (int, float)):
+        # Floor cushion: distance to panic floor + (only if meaningfully draining)
+        # a days-to-floor estimate at the smoother 30d burn rate. When TGA is
+        # ~flat the days-to-floor field is noise, so we suppress it.
+        floor_dist = dts.get("floor_distance_b")
+        burn_30 = dts.get("burn_30d_b")
+        burn_10 = dts.get("burn_10d_b")
+        if isinstance(floor_dist, (int, float)):
+            color = "green" if floor_dist > 200 else ("yellow" if floor_dist > 50 else "red")
+            burn = burn_30 if isinstance(burn_30, (int, float)) else burn_10
+            d2f_str = ""
+            if isinstance(burn, (int, float)) and burn < -2.0 and floor_dist > 0:
+                d2f = floor_dist / abs(burn)
+                if d2f >= 365:
+                    d2f_str = f"[green]>1yr at {burn:+.1f}B/d[/green]"
+                elif d2f >= 90:
+                    d2f_str = f"[yellow]~{d2f:.0f}d at {burn:+.1f}B/d[/yellow]"
+                else:
+                    d2f_str = f"[red]~{d2f:.0f}d at {burn:+.1f}B/d ⚠[/red]"
+            metrics.append({
+                "name": "Floor cushion",
+                "value": f"[{color}]+${floor_dist:,.0f}B[/{color}]",
+                "change": d2f_str,
+                "context": "vs 2015 low",
+            })
+
+    # Weekly FRED 4w trend — only as a fallback when DTS is unavailable.
+    # When DTS is hot, the 5d sparkline already shows direction.
+    if isinstance(tga_4w_val, (int, float)) and dts.get("level_b") is None:
         metrics.append({
             "name": "4w trend",
-            "value": "" if dts.get("level_b") is not None else tga_level,
+            "value": tga_level,
             "change": _bn_arrow(tga_4w_val, invert=True, suffix="4w"),
-            "context": _tga_short(tga_z_level) if dts.get("level_b") is None else "weekly FRED",
+            "context": _tga_short(tga_z_level),
         })
+
+    # ── Net liquidity composite ───────────────────────────────────────────
+    from lox.gov.net_liquidity import compute_net_liquidity_metrics
+    nl = compute_net_liquidity_metrics(refresh=refresh)
+    if nl.get("level_t") is not None:
+        metrics.append({"name": "── Net liquidity", "value": "", "context": ""})
+        nl_asof = nl["asof"]
+        try:
+            nl_asof_short = _short_date(date.fromisoformat(nl_asof))
+        except Exception:
+            nl_asof_short = nl_asof
+        d1 = nl.get("delta_1d_b")
+        d1_str = ""
+        if isinstance(d1, (int, float)) and abs(d1) >= 1.0:
+            color = "red" if d1 < 0 else "green"
+            arrow = "▼" if d1 < 0 else "▲"
+            d1_str = f"[{color}]{arrow} ${abs(d1):,.0f}B 1d[/{color}]"
+        metrics.append({
+            "name": "Composite",
+            "value": f"${nl['level_t']:,.2f}T ([dim]{nl_asof_short}[/dim])",
+            "change": d1_str,
+            "context": "reserves − TGA − RRP",
+        })
+
+        series_t = nl.get("series_30d_t") or []
+        d30 = nl.get("delta_30d_b")
+        if len(series_t) >= 4 and isinstance(d30, (int, float)):
+            spark = _sparkline(series_t)
+            color = "red" if d30 < 0 else "green"
+            arrow = "▼" if d30 < 0 else "▲"
+            d30_str = f"[{color}]{arrow} ${abs(d30):,.0f}B 30d[/{color}]"
+            tag = "tightening" if d30 < -50 else ("loosening" if d30 > 50 else "steady")
+            metrics.append({
+                "name": "30d trend",
+                "value": spark,
+                "change": d30_str,
+                "context": tag,
+            })
+
+        comps = nl.get("components_b") or {}
+        if comps:
+            r_b = float(comps.get("reserves_b", 0))
+            tga_b = float(comps.get("tga_b", 0))
+            rrp_b = float(comps.get("rrp_b", 0))
+            r_str = f"${r_b/1000:.2f}T" if r_b >= 1000 else f"${r_b:,.0f}B"
+            # RRP collapsed to a small post-2024 residual is shown as context
+            # rather than crowding the value column.
+            if rrp_b >= 50:
+                value = f"R {r_str} · TGA ${tga_b:,.0f}B · RRP ${rrp_b:,.0f}B"
+                ctx = ""
+            else:
+                value = f"R {r_str} · TGA ${tga_b:,.0f}B"
+                ctx = f"RRP ${rrp_b:,.0f}B"
+            metrics.append({"name": "Components", "value": value, "context": ctx})
 
     metrics.append({"name": "── Leading signals", "value": "", "context": ""})
     metrics.append({

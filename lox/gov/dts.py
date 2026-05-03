@@ -101,6 +101,33 @@ def fetch_tga_daily(
     return daily[["date", "tga_close_b"]]
 
 
+def _avg_daily_change_b(df: pd.DataFrame, window: int) -> Optional[float]:
+    """
+    Average per-business-day Δ in TGA over the last `window` observations.
+
+    Negative = net draining. Returns None if not enough history.
+    """
+    if len(df) < window + 1:
+        return None
+    recent = df["tga_close_b"].tail(window + 1).reset_index(drop=True)
+    return float((recent.iloc[-1] - recent.iloc[0]) / window)
+
+
+def _days_to_floor(level_b: float, floor_b: float, burn_per_day_b: Optional[float]) -> Optional[float]:
+    """
+    Business days until the floor is hit at the given burn rate.
+
+    Returns None if not currently draining (burn_per_day_b >= 0) or if already
+    below the floor.
+    """
+    if burn_per_day_b is None or burn_per_day_b >= 0:
+        return None
+    distance = level_b - floor_b
+    if distance <= 0:
+        return 0.0
+    return distance / abs(burn_per_day_b)
+
+
 def compute_tga_daily_metrics(*, refresh: bool = False) -> dict:
     """Daily-resolution TGA metrics for the gov panel."""
     empty = {
@@ -110,6 +137,10 @@ def compute_tga_daily_metrics(*, refresh: bool = False) -> dict:
         "series_5d_b": [],
         "floor_distance_b": None,
         "floor_label": TGA_PANIC_FLOOR_LABEL,
+        "burn_10d_b": None,
+        "burn_30d_b": None,
+        "days_to_floor_10d": None,
+        "days_to_floor_30d": None,
     }
     try:
         df = fetch_tga_daily(refresh=refresh)
@@ -127,6 +158,9 @@ def compute_tga_daily_metrics(*, refresh: bool = False) -> dict:
 
     series_5d = [float(v) for v in df["tga_close_b"].tail(5).tolist()]
 
+    burn_10d = _avg_daily_change_b(df, 10)
+    burn_30d = _avg_daily_change_b(df, 30)
+
     return {
         "asof": str(last["date"]),
         "level_b": level_b,
@@ -134,4 +168,8 @@ def compute_tga_daily_metrics(*, refresh: bool = False) -> dict:
         "series_5d_b": series_5d,
         "floor_distance_b": level_b - TGA_PANIC_FLOOR_B,
         "floor_label": TGA_PANIC_FLOOR_LABEL,
+        "burn_10d_b": burn_10d,
+        "burn_30d_b": burn_30d,
+        "days_to_floor_10d": _days_to_floor(level_b, TGA_PANIC_FLOOR_B, burn_10d),
+        "days_to_floor_30d": _days_to_floor(level_b, TGA_PANIC_FLOOR_B, burn_30d),
     }

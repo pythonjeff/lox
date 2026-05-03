@@ -71,6 +71,9 @@ DEFAULT_SERIES = {
     # auto loan stress (CVNA thesis monitoring)
     "DRALACBN": FredSeries("DRALACBN", "quarterly"),  # Delinquency Rate on Consumer Loans, All Commercial Banks
     "SUBLPDCLATRNQ": FredSeries("SUBLPDCLATRNQ", "quarterly"),  # Net % Banks Tightening Subprime Auto Loan Standards
+    # net liquidity composite (gov regime: TGA + RRP + bank reserves)
+    "RRPONTSYD": FredSeries("RRPONTSYD", "daily"),  # ON RRP Treasuries (Billions of US Dollars)
+    "WRESBAL": FredSeries("WRESBAL", "weekly"),  # Reserve Balances with Federal Reserve Banks (Millions of US Dollars)
 }
 
 # Optional series that won't crash if unavailable
