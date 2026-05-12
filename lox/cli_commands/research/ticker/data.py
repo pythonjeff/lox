@@ -125,6 +125,66 @@ def fetch_fundamentals(settings, symbol: str) -> dict:
         return {}
 
 
+def fetch_earnings_data(settings, symbol: str) -> dict:
+    """
+    Pull earnings + analyst expectations from FMP.
+
+    Returns dict with:
+        earnings_calendar  — list of dicts (past + upcoming) with eps,
+                             epsEstimated, revenue, revenueEstimated, date, time
+        analyst_estimates  — list of dicts by fiscal year/quarter with
+                             estimatedEpsAvg, estimatedRevenueAvg, num_analysts
+        ratings_consensus  — {strongBuy, buy, hold, sell, strongSell, consensus}
+        price_target       — {targetConsensus, targetMedian, targetHigh, targetLow}
+
+    Each section degrades to {} / [] if its endpoint fails. The caller decides
+    what to render based on what's present.
+    """
+    if not settings.fmp_api_key:
+        return {}
+
+    import requests
+
+    api = settings.fmp_api_key
+    out: dict = {}
+
+    def _get(url: str, params: dict | None = None, timeout: int = 12):
+        try:
+            r = requests.get(url, params={**(params or {}), "apikey": api}, timeout=timeout)
+            if not r.ok:
+                return None
+            return r.json()
+        except Exception:
+            logger.debug("FMP fetch failed: %s", url, exc_info=True)
+            return None
+
+    # Historical + upcoming earnings (estimates and actuals together)
+    cal = _get(f"https://financialmodelingprep.com/api/v3/historical/earning_calendar/{symbol}")
+    if isinstance(cal, list):
+        out["earnings_calendar"] = cal
+
+    # Annual/quarterly analyst estimates — pull enough to find the next 2 future FYs
+    # (FMP returns most-distant first, so we need a wider window than 4)
+    est = _get(f"https://financialmodelingprep.com/api/v3/analyst-estimates/{symbol}",
+               params={"period": "annual", "limit": 10})
+    if isinstance(est, list):
+        out["analyst_estimates"] = est
+
+    # Buy/hold/sell consensus (v4 endpoint — v3 returns empty)
+    rc = _get("https://financialmodelingprep.com/api/v4/upgrades-downgrades-consensus",
+              params={"symbol": symbol})
+    if isinstance(rc, list) and rc:
+        out["ratings_consensus"] = rc[0]
+
+    # Price target consensus (v4 endpoint)
+    pt = _get("https://financialmodelingprep.com/api/v4/price-target-consensus",
+              params={"symbol": symbol})
+    if isinstance(pt, list) and pt:
+        out["price_target"] = pt[0]
+
+    return out
+
+
 def fetch_atm_implied_vol(settings, symbol: str, current_price: float | None) -> float | None:
     """Fetch ATM implied vol from options chain (Polygon) if available. Returns annualized IV as decimal or None."""
     if not current_price or current_price <= 0:

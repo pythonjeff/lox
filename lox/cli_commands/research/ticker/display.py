@@ -248,14 +248,16 @@ def show_peer_comparison(console: Console, settings, symbol: str, fundamentals: 
         ev_rev_str = f"{ev_rev:.1f}x" if ev_rev is not None else "—"
         pe = r.get("pe")
         pe_str = f"{pe:.1f}x" if pe is not None else "—"
-        rg = r.get("rev_growth")
-        rg_color = "green" if rg and rg > 0 else "red" if rg and rg < 0 else ""
-        rg_str = f"[{rg_color}]{rg:+.1f}%[/{rg_color}]" if rg is not None else "—"
+        def _signed_pct(v: float | None, fmt: str = "{:+.1f}%") -> str:
+            if v is None:
+                return "—"
+            color = "green" if v > 0 else "red" if v < 0 else ""
+            body = fmt.format(v)
+            return f"[{color}]{body}[/{color}]" if color else body
+        rg_str = _signed_pct(r.get("rev_growth"))
         gm = r.get("gross_margin")
         gm_str = f"{gm:.1f}%" if gm is not None else "—"
-        nm = r.get("net_margin")
-        nm_color = "green" if nm and nm > 0 else "red" if nm and nm < 0 else ""
-        nm_str = f"[{nm_color}]{nm:.1f}%[/{nm_color}]" if nm is not None else "—"
+        nm_str = _signed_pct(r.get("net_margin"), "{:.1f}%")
         ticker_style = f"[bold cyan]{r['ticker']}[/bold cyan]" if is_target else r["ticker"]
         table.add_row(ticker_style, price_str, mc_str, pe_str, ev_rev_str, rg_str, gm_str, nm_str)
     console.print()
@@ -1085,6 +1087,264 @@ def _show_stock_fundamentals(console: Console, fundamentals: dict, technicals: d
 
     console.print()
     console.print(table)
+
+
+def show_earnings_outlook(
+    console: Console,
+    symbol: str,
+    earnings_outlook: dict,
+    ratings_consensus: dict | None = None,
+    price_target: dict | None = None,
+    current_price: float | None = None,
+):
+    """
+    Earnings expectations: next print, consensus EPS/Rev, beat-miss history,
+    implied move, and analyst-rating consensus.
+
+    Each subsection renders only if its data is present. The block is fully
+    optional and skipped if nothing is available (e.g., for ETFs or symbols
+    with no coverage).
+    """
+    next_e = earnings_outlook.get("next_earnings")
+    history = earnings_outlook.get("history") or []
+    beat_summary = earnings_outlook.get("beat_summary")
+    implied_move = earnings_outlook.get("implied_move")
+    fy_estimates = earnings_outlook.get("fy_estimates") or []
+
+    if not any([next_e, history, fy_estimates, ratings_consensus, price_target]):
+        return
+
+    console.print()
+    console.print(f"[bold cyan]─── Earnings Outlook ─────────────────────────────────────────────[/bold cyan]")
+
+    # ── Header: next earnings date ────────────────────────────────────────
+    if next_e:
+        date_s = next_e["date"]
+        dte = next_e["dte"]
+        time_tag = ""
+        t = (next_e.get("time") or "").lower()
+        if t == "amc":
+            time_tag = " (after close)"
+        elif t == "bmo":
+            time_tag = " (pre-market)"
+
+        from datetime import datetime
+        try:
+            dow = datetime.strptime(date_s, "%Y-%m-%d").strftime("%a")
+            date_str = f"{date_s} ({dow}){time_tag}"
+        except Exception:
+            date_str = f"{date_s}{time_tag}"
+
+        urgency = "[red]" if dte is not None and dte <= 7 else ("[yellow]" if dte is not None and dte <= 21 else "[dim]")
+        urgency_end = urgency.replace("[", "[/")
+        dte_s = f"{urgency}{dte}d away{urgency_end}" if dte is not None else ""
+        console.print(f"  [bold]Next print:[/bold] {date_str}    {dte_s}")
+
+    # ── Consensus EPS / Revenue for next print + FY ──────────────────────
+    if next_e or fy_estimates:
+        table = Table(box=None, padding=(0, 2), show_header=True, header_style="bold cyan")
+        table.add_column("Period", min_width=14)
+        table.add_column("Consensus EPS", justify="right")
+        table.add_column("YoY", justify="right")
+        table.add_column("Consensus Rev", justify="right")
+        table.add_column("YoY", justify="right")
+        table.add_column("Analysts", justify="right")
+
+        def _fmt_eps(v):
+            return f"${float(v):.2f}" if isinstance(v, (int, float)) else "—"
+
+        def _fmt_rev(v):
+            if not isinstance(v, (int, float)):
+                return "—"
+            if abs(v) >= 1e9:
+                return f"${v/1e9:.2f}B"
+            if abs(v) >= 1e6:
+                return f"${v/1e6:.0f}M"
+            return f"${v:,.0f}"
+
+        def _yoy(curr, prior):
+            if not isinstance(curr, (int, float)) or not isinstance(prior, (int, float)) or prior == 0:
+                return "[dim]—[/dim]"
+            pct = (curr - prior) / abs(prior) * 100.0
+            color = "green" if pct > 0 else "red"
+            return f"[{color}]{pct:+.1f}%[/{color}]"
+
+        if next_e:
+            eps_est = next_e.get("consensus_eps")
+            rev_est = next_e.get("consensus_revenue")
+            label = "Next Q (est.)"
+            if next_e.get("fiscal_period"):
+                label = f"{next_e['fiscal_period'][:7]} (est.)"
+            table.add_row(
+                label,
+                _fmt_eps(eps_est),
+                _yoy(eps_est, next_e.get("prior_year_eps")),
+                _fmt_rev(rev_est),
+                _yoy(rev_est, next_e.get("prior_year_revenue")),
+                "[dim]—[/dim]",
+            )
+
+        for fy in fy_estimates:
+            year_label = f"FY {fy['year']} (est.)"
+            n = fy.get("num_analysts_eps") or fy.get("num_analysts_revenue") or "—"
+            table.add_row(
+                year_label,
+                _fmt_eps(fy.get("eps_avg")),
+                "[dim]—[/dim]",
+                _fmt_rev(fy.get("revenue_avg")),
+                "[dim]—[/dim]",
+                f"{n}" if n != "—" else "—",
+            )
+
+        console.print()
+        console.print(table)
+
+    # ── Beat/Miss history ────────────────────────────────────────────────
+    if history:
+        bm = Table(
+            title="Beat/Miss History",
+            box=None, padding=(0, 1), show_header=True, header_style="bold cyan",
+        )
+        bm.add_column("Date", min_width=10)
+        bm.add_column("Actual EPS", justify="right")
+        bm.add_column("Estimate", justify="right")
+        bm.add_column("Surprise", justify="right")
+        bm.add_column("1d Move", justify="right")
+        bm.add_column("Result", justify="center")
+
+        def _surprise_color(pct, beat):
+            if pct is None or beat is None:
+                return "[dim]—[/dim]"
+            color = "green" if beat else "red"
+            sign = "+" if pct >= 0 else ""
+            return f"[{color}]{sign}{pct:.1f}%[/{color}]"
+
+        def _move_color(pct):
+            if pct is None:
+                return "[dim]—[/dim]"
+            color = "green" if pct >= 0 else "red"
+            sign = "+" if pct >= 0 else ""
+            return f"[{color}]{sign}{pct:.1f}%[/{color}]"
+
+        for h in history:
+            bm.add_row(
+                h["date"],
+                f"${h['actual_eps']:.2f}",
+                f"${h['est_eps']:.2f}" if h.get("est_eps") is not None else "—",
+                _surprise_color(h.get("surprise_pct"), h.get("beat")),
+                _move_color(h.get("move_1d_pct")),
+                "[green]✓[/green]" if h.get("beat") else ("[red]✗[/red]" if h.get("beat") is False else "—"),
+            )
+
+        console.print()
+        console.print(bm)
+
+        if beat_summary:
+            n = beat_summary["n_quarters"]
+            bc = beat_summary["beat_count"]
+            br = beat_summary["beat_rate"]
+            avg_s = beat_summary.get("avg_surprise_pct")
+            avg_m = beat_summary.get("avg_abs_move_1d_pct")
+            br_str = f"{bc}/{n} ({100*br:.0f}%)" if br is not None else "—"
+            avg_s_str = f"{avg_s:+.1f}%" if avg_s is not None else "—"
+            avg_m_str = f"±{avg_m:.1f}%" if avg_m is not None else "—"
+            console.print(f"  [dim]Beat rate:[/dim] {br_str}  [dim]·  Avg surprise:[/dim] {avg_s_str}  [dim]·  Avg 1d move:[/dim] {avg_m_str}")
+
+    # ── Implied earnings move ────────────────────────────────────────────
+    if implied_move:
+        vol = implied_move["vol"]
+        src = implied_move.get("vol_source") or "iv"
+        dte_e = implied_move["dte_to_earnings"]
+        move_1d = implied_move["move_1d_pct"]
+        move_e = implied_move.get("move_to_earnings_pct")
+        avg_hist = implied_move.get("avg_hist_1d_move_pct")
+        ratio = implied_move.get("ratio_vs_avg_history")
+
+        console.print()
+        if src == "iv":
+            console.print("[bold]Implied Earnings Move[/bold]  [dim](from ATM options)[/dim]")
+            vol_label = "ATM IV (~30d)"
+        else:
+            console.print("[bold]Expected Move (HV proxy)[/bold]  [dim](no options data — doesn't include earnings premium)[/dim]")
+            vol_label = "Realized vol (30d)"
+        console.print(f"  {vol_label}: {vol*100:.1f}%   DTE to earnings: {dte_e}d")
+        console.print(f"  1σ 1-day move: [bold]±{move_1d:.1f}%[/bold]   ·   cumulative through earnings: ±{move_e:.1f}%")
+        if avg_hist is not None and ratio is not None:
+            if src == "iv":
+                if ratio > 1.4:
+                    tag = f"[yellow]market pricing {ratio:.1f}× normal — elevated event premium[/yellow]"
+                elif ratio < 0.7:
+                    tag = f"[green]market pricing {ratio:.1f}× normal — calm setup[/green]"
+                else:
+                    tag = f"[dim]pricing {ratio:.1f}× normal — in line[/dim]"
+            else:
+                # HV doesn't include event premium; under-shoot is the norm
+                tag = f"[dim]baseline {ratio:.1f}× — HV alone doesn't price the print[/dim]"
+            console.print(f"  vs avg historical 1d post-print (±{avg_hist:.1f}%)  →  {tag}")
+
+    # ── Analyst ratings + price target ───────────────────────────────────
+    if ratings_consensus or price_target:
+        console.print()
+        console.print("[bold]Analyst Ratings & Price Target[/bold]")
+
+        if ratings_consensus:
+            sb = ratings_consensus.get("strongBuy", 0) or 0
+            b = ratings_consensus.get("buy", 0) or 0
+            h = ratings_consensus.get("hold", 0) or 0
+            s = ratings_consensus.get("sell", 0) or 0
+            ss = ratings_consensus.get("strongSell", 0) or 0
+            total = sb + b + h + s + ss
+            cons = ratings_consensus.get("consensus") or "—"
+            cons_color = {"Buy": "green", "Strong Buy": "green", "Hold": "yellow",
+                          "Sell": "red", "Strong Sell": "red"}.get(cons, "dim")
+            console.print(f"  [green]Strong Buy[/green] {sb}  [green]Buy[/green] {b}  [yellow]Hold[/yellow] {h}  [red]Sell[/red] {s}  [red]Strong Sell[/red] {ss}   [dim]({total} analysts → [/dim][{cons_color}]{cons}[/{cons_color}][dim])[/dim]")
+
+        if price_target:
+            tc = price_target.get("targetConsensus") or price_target.get("targetMedian")
+            th = price_target.get("targetHigh")
+            tl = price_target.get("targetLow")
+            if isinstance(tc, (int, float)):
+                upside_str = ""
+                if isinstance(current_price, (int, float)) and current_price > 0:
+                    upside = (tc - current_price) / current_price * 100.0
+                    up_color = "green" if upside > 0 else "red"
+                    upside_str = f"   [{up_color}]{upside:+.1f}% upside[/{up_color}]"
+                range_str = ""
+                if isinstance(th, (int, float)) and isinstance(tl, (int, float)):
+                    range_str = f"   [dim](${tl:,.0f} – ${th:,.0f} range)[/dim]"
+                console.print(f"  Mean target: [bold]${tc:,.2f}[/bold]{upside_str}{range_str}")
+
+
+def show_stacked_signals(console: Console, stacks: list[dict]):
+    """
+    Render detected signal stacks — high-conviction multi-block patterns.
+
+    Silent when no stacks fire (preferred over a "nothing found" message —
+    the absence of synthesis is itself information: read the individual blocks).
+    """
+    if not stacks:
+        return
+
+    console.print()
+    console.print("[bold cyan]═══ Stacked Signals ═══════════════════════════════════════════════[/bold cyan]")
+    console.print("[dim]Multi-block patterns where signals confirm each other.[/dim]")
+
+    dir_marker = {
+        "bull":    ("[bold green]▲ BULL[/bold green]",       "green"),
+        "bear":    ("[bold red]▼ BEAR[/bold red]",            "red"),
+        "caution": ("[bold yellow]◆ CAUTION[/bold yellow]",   "yellow"),
+    }
+
+    for stack in stacks:
+        marker, color = dir_marker.get(stack.get("direction", "caution"), ("?", "dim"))
+        console.print()
+        console.print(f"  {marker}  [bold]{stack['name']}[/bold]")
+        console.print(f"  [dim]{stack['thesis']}[/dim]")
+        for sig in stack.get("signals", []):
+            console.print(f"    [{color}]·[/{color}] {sig}")
+        trade = stack.get("trade")
+        if trade:
+            console.print(f"  [italic dim]→ {trade}[/italic dim]")
 
 
 def show_technicals(console: Console, technicals: dict):

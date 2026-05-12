@@ -1,11 +1,11 @@
-"""Smoke tests for net liquidity composite (lox.gov.net_liquidity)."""
+"""Smoke tests for net liquidity composite (lox.funding.net_liquidity)."""
 from __future__ import annotations
 
 from datetime import date
 
 import pandas as pd
 
-import lox.gov.net_liquidity as nl
+import lox.funding.net_liquidity as nl
 
 
 def _fake_tga_daily(*, refresh: bool = False, lookback_days: int = 60) -> pd.DataFrame:

@@ -429,6 +429,267 @@ def _show_structural_liquidity(console, fi):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Fed balance sheet composition (H.4.1)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fed_bs_signal(leg: str, d_13w_m, d_ytd_m) -> str:
+    """
+    Signal column for a balance-sheet leg.
+
+    Lending lines (BTFP / discount window): rising = bank stress (red).
+    Purchase lines (Treasuries / MBS / agency): rising = liquidity adding
+    (green); falling = passive runoff / QT (yellow).
+    Total: yellow if QT, green if expanding, dim if flat.
+    """
+    d13_bn = float(d_13w_m) / 1000 if isinstance(d_13w_m, (int, float)) else None
+    if d13_bn is None:
+        return "[dim]—[/dim]"
+
+    if leg == "lending":
+        if d13_bn > 10:
+            return "[red]stress — facility usage rising[/red]"
+        if d13_bn > 3:
+            return "[yellow]rising — watch[/yellow]"
+        if d13_bn < -5:
+            return "[green]unwinding[/green]"
+        return "[dim]quiet[/dim]"
+
+    if leg == "purchase":
+        if d13_bn > 20:
+            return "[green]accumulating — active buying[/green]"
+        if d13_bn > 2:
+            return "[green]drifting higher[/green]"
+        if d13_bn < -50:
+            return "[red]running off fast[/red]"
+        if d13_bn < -10:
+            return "[yellow]passive runoff[/yellow]"
+        return "[dim]flat[/dim]"
+
+    # total — keep label terse; deltas are already in the row's other columns
+    if d13_bn > 20:
+        return "[green]expanding[/green]"
+    if d13_bn < -20:
+        return "[yellow]QT continuing[/yellow]"
+    return "[dim]flat[/dim]"
+
+
+def _show_fed_bs_composition(console, refresh: bool):
+    """
+    H.4.1 asset-side decomposition with 4w / 13w / YTD deltas.
+
+    Answers: while WALCL moves, *what* is the Fed buying or running off?
+    """
+    from rich.table import Table as RichTable
+    from lox.funding.fed_bs import compute_fed_bs_metrics
+
+    try:
+        metrics = compute_fed_bs_metrics(refresh=refresh)
+    except Exception:
+        return
+    components = metrics.get("components") or {}
+    if not components:
+        return
+
+    def _fmt_level(m):
+        if not isinstance(m, (int, float)):
+            return "—"
+        tn = m / 1_000_000
+        if abs(tn) >= 0.5:
+            return f"${tn:,.2f}T"
+        bn = m / 1000
+        if abs(bn) >= 0.5:
+            return f"${bn:,.1f}B"
+        return f"${m:,.0f}M"
+
+    def _fmt_delta(m):
+        if not isinstance(m, (int, float)):
+            return "[dim]—[/dim]"
+        bn = m / 1000
+        if abs(bn) < 0.5:
+            return "[dim]flat[/dim]"
+        color = "green" if bn > 0 else "red"
+        sign = "+" if bn > 0 else "−"
+        return f"[{color}]{sign}${abs(bn):,.0f}B[/{color}]"
+
+    table = RichTable(
+        title=f"Fed Balance Sheet (H.4.1, week of {metrics.get('asof', '—')})",
+        show_header=True,
+        header_style="bold cyan",
+        box=None,
+        padding=(0, 1),
+    )
+    table.add_column("Component", min_width=20)
+    table.add_column("Level", justify="right", min_width=10)
+    table.add_column("4w Δ", justify="right", min_width=8)
+    table.add_column("13w Δ", justify="right", min_width=8)
+    table.add_column("YTD Δ", justify="right", min_width=8)
+    table.add_column("Signal", min_width=28)
+
+    # Stable display order: total first, then purchase legs by size, then lending.
+    order = ["total_assets", "notes_bonds", "bills", "tips", "mbs", "agency",
+             "repo", "primary_credit", "btfp"]
+    rendered_any = False
+    for key in order:
+        c = components.get(key)
+        if not c:
+            continue
+        label = c["label"]
+        # Make the total row visually distinct
+        if c["leg"] == "total":
+            label = f"[bold]{label}[/bold]"
+        table.add_row(
+            label,
+            _fmt_level(c["level_m"]),
+            _fmt_delta(c["delta_4w_m"]),
+            _fmt_delta(c["delta_13w_m"]),
+            _fmt_delta(c["delta_ytd_m"]),
+            _fed_bs_signal(c["leg"], c["delta_13w_m"], c["delta_ytd_m"]),
+        )
+        rendered_any = True
+
+    if not rendered_any:
+        return
+
+    console.print()
+    console.print(table)
+
+    # ── Driver attribution: what % of YTD WALCL move came from each leg ──
+    total = components.get("total_assets")
+    if total and isinstance(total.get("delta_ytd_m"), (int, float)) and abs(total["delta_ytd_m"]) > 1000:
+        denom = abs(float(total["delta_ytd_m"]))
+        rows = []
+        for key in ("notes_bonds", "bills", "tips", "mbs", "agency", "repo", "primary_credit", "btfp"):
+            c = components.get(key)
+            if not c:
+                continue
+            d = c.get("delta_ytd_m")
+            if not isinstance(d, (int, float)) or abs(d) < denom * 0.05:
+                continue
+            share = 100.0 * float(d) / denom
+            direction = "drove" if (d * total["delta_ytd_m"]) > 0 else "offset"
+            rows.append((abs(share), c["label"], share, direction))
+        rows.sort(reverse=True)
+        if rows:
+            ytd_bn = float(total["delta_ytd_m"]) / 1000
+            ytd_color = "green" if ytd_bn > 0 else "red"
+            ytd_sign = "+" if ytd_bn > 0 else "−"
+            console.print(f"  [dim]YTD WALCL change: [/dim][{ytd_color}]{ytd_sign}${abs(ytd_bn):,.0f}B[/{ytd_color}][dim] — driven by:[/dim]")
+            for _abs_share, label, share, direction in rows[:4]:
+                tag = "[yellow]offset[/yellow]" if direction == "offset" else "[dim]drove[/dim]"
+                console.print(f"    {label:<24} {tag} {share:+.0f}%")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Funding cross-correlations (within-stack)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _show_funding_correlations(console, refresh: bool):
+    """
+    Cross-correlations within the funding stack:
+      - 60d rolling pair correlations vs 3y baseline
+      - Regime classification + divergence flags
+      - Lead-lag relationships (which lever leads SOFR-IORB)
+
+    The synthesis tells you *which mechanism is currently driving funding stress*
+    rather than just showing levels.
+    """
+    from rich.table import Table as RichTable
+    from lox.funding.correlations import compute_funding_correlation_report
+
+    try:
+        rep = compute_funding_correlation_report(refresh=refresh)
+    except Exception:
+        return
+
+    pairs = rep.get("pairs") or []
+    lags = rep.get("lags") or []
+    regime = rep.get("regime")
+    if not pairs and not regime:
+        return
+
+    console.print()
+    console.print("[bold cyan]═══ Funding Cross-Correlations ═══════════════════════════════════[/bold cyan]")
+    console.print(f"[dim]60-day rolling correlations vs 3-year baseline.  asof {rep.get('asof', '—')}[/dim]")
+
+    # ── Pair correlation table ───────────────────────────────────────────
+    if pairs:
+        table = RichTable(box=None, padding=(0, 1), show_header=True, header_style="bold cyan")
+        table.add_column("Pair", min_width=28)
+        table.add_column("60d corr", justify="right", min_width=9)
+        table.add_column("Baseline", justify="right", min_width=9)
+        table.add_column("Δ", justify="right", min_width=7)
+        table.add_column("Status", min_width=22, no_wrap=False)
+
+        def _fmt_corr(v):
+            if not isinstance(v, (int, float)):
+                return "—"
+            return f"{v:+.2f}"
+
+        def _fmt_delta(d):
+            if not isinstance(d, (int, float)):
+                return "—"
+            if abs(d) < 0.05:
+                return "[dim]≈[/dim]"
+            arrow = "↑" if d > 0 else "↓"
+            return f"{arrow}{abs(d):.2f}"
+
+        for p in pairs:
+            table.add_row(
+                p["name"],
+                _fmt_corr(p["current"]),
+                _fmt_corr(p["baseline"]),
+                _fmt_delta(p.get("delta")),
+                p["label"],
+            )
+        console.print()
+        console.print(table)
+
+    # ── Regime classification ────────────────────────────────────────────
+    if regime:
+        regime_color = {
+            "RESERVE-CONSTRAINED": "red",
+            "RESERVE-LINKED": "yellow",
+            "RRP-CUSHIONED": "green",
+            "NET-LIQUIDITY-DRIVEN": "yellow",
+            "DECOUPLED": "yellow",
+            "BALANCED": "dim",
+        }.get(regime, "dim")
+        console.print()
+        console.print(f"  [bold]Regime:[/bold] [{regime_color}]{regime}[/{regime_color}]  [dim]— {rep.get('rationale', '')}[/dim]")
+
+    # ── Divergences ──────────────────────────────────────────────────────
+    divs = rep.get("divergences") or []
+    if divs:
+        console.print(f"  [bold]Active signals:[/bold]")
+        for d in divs[:6]:
+            console.print(f"    [yellow]•[/yellow] {d}")
+
+    # ── Lead-lag indicators ──────────────────────────────────────────────
+    if lags:
+        console.print(f"  [bold]Lead-lag (which lever moves first):[/bold]")
+        for l in lags:
+            sign = "+" if l["best_corr"] > 0 else "−"
+            mag = abs(l["best_corr"])
+            lag_d = l["best_lag"]
+            if l.get("tradeable"):
+                console.print(
+                    f"    [cyan]▸[/cyan] {l['name']}: [bold]{lag_d}-day lead[/bold], corr {sign}{mag:.2f}  →  {l['interpretation']}"
+                )
+            else:
+                # Not tradeable — too weak or sign-flipped or no lead
+                why = []
+                if mag < 0.30:
+                    why.append("too weak")
+                if not l.get("sign_matches"):
+                    why.append("wrong sign")
+                if lag_d < 3:
+                    why.append("no real lead")
+                console.print(
+                    f"    [dim]· {l['name']}: best lag {lag_d}d, corr {sign}{mag:.2f}  ({', '.join(why) or '—'})[/dim]"
+                )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Cross-regime signals
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -627,6 +888,41 @@ def run_funding_snapshot(
         {"name": "TGA 4wk Δ", "value": _fmt_usd_bn(fi.tga_chg_4w) if fi.tga_chg_4w is not None else "n/a", "context": _tga_ctx(fi.tga_chg_4w)},
     ]
 
+    # ── Net liquidity composite (reserves − TGA − RRP) ────────────────────
+    # Daily-aligned aggregate of the three Structural inputs above. Gives the
+    # single number macro traders watch for risk-asset liquidity at 1-2w lag.
+    from lox.funding.net_liquidity import compute_net_liquidity_metrics
+    nl = compute_net_liquidity_metrics(refresh=refresh)
+    if nl.get("level_t") is not None:
+        metrics.append({"name": "─── Net liquidity ───", "value": "", "context": ""})
+        d1 = nl.get("delta_1d_b")
+        d1_str = ""
+        if isinstance(d1, (int, float)) and abs(d1) >= 1.0:
+            color = "red" if d1 < 0 else "green"
+            arrow = "▼" if d1 < 0 else "▲"
+            d1_str = f"[{color}]{arrow} ${abs(d1):,.0f}B 1d[/{color}]"
+        metrics.append({
+            "name": "Composite",
+            "value": f"${nl['level_t']:,.2f}T",
+            "change": d1_str,
+            "context": "reserves − TGA − RRP",
+        })
+
+        series_t = nl.get("series_30d_t") or []
+        d30 = nl.get("delta_30d_b")
+        if len(series_t) >= 4 and isinstance(d30, (int, float)):
+            spark = _sparkline(series_t)
+            color = "red" if d30 < 0 else "green"
+            arrow = "▼" if d30 < 0 else "▲"
+            d30_str = f"[{color}]{arrow} ${abs(d30):,.0f}B 30d[/{color}]"
+            tag = "tightening" if d30 < -50 else ("loosening" if d30 > 50 else "steady")
+            metrics.append({
+                "name": "30d trend",
+                "value": spark,
+                "change": d30_str,
+                "context": tag,
+            })
+
     from lox.regimes.trend import get_domain_trend
     trend = get_domain_trend("liquidity", score, regime.label or regime.name)
 
@@ -650,7 +946,13 @@ def run_funding_snapshot(
     # ── Block 3: Structural liquidity dashboard ──────────────────────────
     _show_structural_liquidity(console, fi)
 
-    # ── Block 4: Cross-regime signals ────────────────────────────────────
+    # ── Block 4: Fed balance sheet composition (H.4.1) ───────────────────
+    _show_fed_bs_composition(console, refresh)
+
+    # ── Block 5: Funding cross-correlations (within-stack edge) ──────────
+    _show_funding_correlations(console, refresh)
+
+    # ── Block 6: Cross-regime signals ────────────────────────────────────
     _show_cross_regime_signals(console, fi, score)
 
     if llm:

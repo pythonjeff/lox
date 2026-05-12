@@ -1,6 +1,11 @@
 """
 Net liquidity composite: bank reserves − TGA − ON RRP.
 
+Lives in the funding regime because two of three legs (reserves, RRP) are Fed
+balance-sheet primitives. TGA is imported from lox.gov.dts since the Treasury
+General Account is a fiscal-authority lever — the dependency runs one-way
+(funding ← gov), mirroring the Fed/Treasury institutional separation.
+
 Pure ΔTGA in isolation can be noisy. The net-liquidity series — Fed bank reserves
 minus TGA minus ON RRP — has stronger documented co-movement with risk-asset
 returns at a 1-2 week lag, because it captures the *net* reserve impact of all

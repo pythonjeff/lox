@@ -381,6 +381,154 @@ def _show_auction_trend(console, long_auctions: list[dict]) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Fiscal behavior — DTS revenue + spending decomposition
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _yoy_tag(pct, *, watch_threshold: float = 15.0, alarm_threshold: float = 25.0,
+             higher_is_worse: bool = False) -> str:
+    """Color-coded YoY % with optional 'watch'/'alarm' arrow."""
+    if pct is None:
+        return "[dim]—[/dim]"
+    sign = "+" if pct >= 0 else ""
+    base = f"{sign}{pct:.0f}%"
+    abs_p = abs(pct)
+    if abs_p < watch_threshold:
+        return f"[dim]{base}[/dim]"
+
+    # If higher_is_worse (spending), red on big positive, green on big negative
+    if higher_is_worse:
+        arrow = "▲" if pct > 0 else "▼"
+        color = "red" if pct > 0 else "green"
+    else:  # revenue: positive = good
+        arrow = "▲" if pct > 0 else "▼"
+        color = "green" if pct > 0 else "red"
+    if abs_p >= alarm_threshold:
+        return f"[bold {color}]{arrow} {base}[/bold {color}]"
+    return f"[{color}]{arrow} {base}[/{color}]"
+
+
+def _show_fiscal_behavior(console, *, refresh: bool):
+    """
+    Show DTS revenue + spending breakdown to explain *why* TGA is moving.
+
+    Two compact tables (revenue, spending) with 5d sums and YoY pace, plus a
+    summary line for net operating vs debt flow, and a w/w movers section.
+    """
+    from rich.table import Table as RichTable
+    from lox.gov.dts_flows import compute_dts_flow_breakdown
+
+    try:
+        b = compute_dts_flow_breakdown(refresh=refresh)
+    except Exception:
+        return
+    if not b or not b.get("revenue_5d") and not b.get("spending_5d"):
+        return
+
+    console.print()
+    console.print(
+        f"[bold cyan]─── Fiscal Behavior (DTS, last {b.get('window_days', 5)} business days, asof {b.get('asof', '—')}) ───[/bold cyan]"
+    )
+
+    def _fmt_b(v):
+        if not isinstance(v, (int, float)):
+            return "—"
+        if abs(v) >= 1000:
+            return f"${v/1000:,.2f}T"
+        return f"${v:,.1f}B"
+
+    # Suppress rows below $0.3B in the 5d window (noise) unless they're the
+    # 'other' residual or have notable YoY context worth surfacing.
+    def _significant(row):
+        if row["key"] == "other":
+            return True
+        if abs(row.get("amount_b") or 0) >= 0.3:
+            return True
+        yoy = row.get("yoy_pct")
+        if isinstance(yoy, (int, float)) and abs(yoy) >= 15:
+            return True
+        return False
+
+    # ── Revenue table ────────────────────────────────────────────────────
+    rev = [r for r in b.get("revenue_5d") or [] if _significant(r)]
+    if rev:
+        rt = RichTable(box=None, padding=(0, 2), show_header=True, header_style="bold cyan")
+        rt.add_column("Revenue", min_width=24)
+        rt.add_column("5d $B", justify="right", min_width=9)
+        rt.add_column("FYTD $B", justify="right", min_width=10)
+        rt.add_column("YoY pace", justify="right", min_width=11)
+        for r in rev:
+            rt.add_row(
+                r["label"],
+                _fmt_b(r["amount_b"]),
+                _fmt_b(r.get("fytd_b")),
+                _yoy_tag(r.get("yoy_pct"), higher_is_worse=False),
+            )
+        console.print()
+        console.print(rt)
+
+    # ── Spending table ───────────────────────────────────────────────────
+    spd = [r for r in b.get("spending_5d") or [] if _significant(r)]
+    if spd:
+        st = RichTable(box=None, padding=(0, 2), show_header=True, header_style="bold cyan")
+        st.add_column("Spending", min_width=24)
+        st.add_column("5d $B", justify="right", min_width=9)
+        st.add_column("FYTD $B", justify="right", min_width=10)
+        st.add_column("YoY pace", justify="right", min_width=11)
+        for r in spd:
+            # Interest on debt is the runaway story — always flag bold
+            higher_bad = True
+            rt_yoy = r.get("yoy_pct")
+            yoy_cell = _yoy_tag(rt_yoy, higher_is_worse=higher_bad)
+            if r["key"] == "interest" and isinstance(rt_yoy, (int, float)) and rt_yoy >= 10:
+                yoy_cell = f"[bold red]▲ {rt_yoy:+.0f}% ⚠[/bold red]"
+            st.add_row(
+                r["label"],
+                _fmt_b(r["amount_b"]),
+                _fmt_b(r.get("fytd_b")),
+                yoy_cell,
+            )
+        console.print()
+        console.print(st)
+
+    # ── Net summary ──────────────────────────────────────────────────────
+    net_op = b.get("net_operating_5d_b")
+    debt_flow = b.get("debt_flow_5d_b")
+    if isinstance(net_op, (int, float)) and isinstance(debt_flow, (int, float)):
+        total = net_op + debt_flow
+        op_color = "green" if net_op > 0 else "red"
+        op_sign = "+" if net_op >= 0 else ""
+        debt_color = "green" if debt_flow > 0 else "red"
+        debt_sign = "+" if debt_flow >= 0 else ""
+        tot_color = "green" if total > 0 else "red"
+        tot_sign = "+" if total >= 0 else ""
+        console.print()
+        console.print(
+            f"  [bold]5d net:[/bold] "
+            f"Operating [{op_color}]{op_sign}${net_op:,.1f}B[/{op_color}] · "
+            f"Debt flow [{debt_color}]{debt_sign}${debt_flow:,.1f}B[/{debt_color}] · "
+            f"Total ΔTGA [{tot_color}]{tot_sign}${total:,.1f}B[/{tot_color}]"
+        )
+        issues = b.get("debt_issues_5d_b") or 0
+        redemp = b.get("debt_redemp_5d_b") or 0
+        if issues or redemp:
+            console.print(
+                f"    [dim]Debt: issued ${issues:,.0f}B, redeemed ${redemp:,.0f}B[/dim]"
+            )
+
+    # ── Largest w/w movers (concentration of action) ─────────────────────
+    movers = b.get("largest_movers") or []
+    if movers:
+        console.print(f"  [bold]Largest w/w movers (concentration of action):[/bold]")
+        for m in movers[:5]:
+            color = "green" if m["delta_b"] > 0 else "red"
+            sign = "+" if m["delta_b"] >= 0 else ""
+            console.print(
+                f"    [{color}]{sign}${m['delta_b']:,.1f}B[/{color}]  {m['label']}  "
+                f"[dim](now ${m['current_b']:,.1f}B vs prior ${m['prior_b']:,.1f}B)[/dim]"
+            )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Core implementation (callable directly)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -855,59 +1003,9 @@ def _run_fiscal_snapshot(
             "context": _tga_short(tga_z_level),
         })
 
-    # ── Net liquidity composite ───────────────────────────────────────────
-    from lox.gov.net_liquidity import compute_net_liquidity_metrics
-    nl = compute_net_liquidity_metrics(refresh=refresh)
-    if nl.get("level_t") is not None:
-        metrics.append({"name": "── Net liquidity", "value": "", "context": ""})
-        nl_asof = nl["asof"]
-        try:
-            nl_asof_short = _short_date(date.fromisoformat(nl_asof))
-        except Exception:
-            nl_asof_short = nl_asof
-        d1 = nl.get("delta_1d_b")
-        d1_str = ""
-        if isinstance(d1, (int, float)) and abs(d1) >= 1.0:
-            color = "red" if d1 < 0 else "green"
-            arrow = "▼" if d1 < 0 else "▲"
-            d1_str = f"[{color}]{arrow} ${abs(d1):,.0f}B 1d[/{color}]"
-        metrics.append({
-            "name": "Composite",
-            "value": f"${nl['level_t']:,.2f}T ([dim]{nl_asof_short}[/dim])",
-            "change": d1_str,
-            "context": "reserves − TGA − RRP",
-        })
-
-        series_t = nl.get("series_30d_t") or []
-        d30 = nl.get("delta_30d_b")
-        if len(series_t) >= 4 and isinstance(d30, (int, float)):
-            spark = _sparkline(series_t)
-            color = "red" if d30 < 0 else "green"
-            arrow = "▼" if d30 < 0 else "▲"
-            d30_str = f"[{color}]{arrow} ${abs(d30):,.0f}B 30d[/{color}]"
-            tag = "tightening" if d30 < -50 else ("loosening" if d30 > 50 else "steady")
-            metrics.append({
-                "name": "30d trend",
-                "value": spark,
-                "change": d30_str,
-                "context": tag,
-            })
-
-        comps = nl.get("components_b") or {}
-        if comps:
-            r_b = float(comps.get("reserves_b", 0))
-            tga_b = float(comps.get("tga_b", 0))
-            rrp_b = float(comps.get("rrp_b", 0))
-            r_str = f"${r_b/1000:.2f}T" if r_b >= 1000 else f"${r_b:,.0f}B"
-            # RRP collapsed to a small post-2024 residual is shown as context
-            # rather than crowding the value column.
-            if rrp_b >= 50:
-                value = f"R {r_str} · TGA ${tga_b:,.0f}B · RRP ${rrp_b:,.0f}B"
-                ctx = ""
-            else:
-                value = f"R {r_str} · TGA ${tga_b:,.0f}B"
-                ctx = f"RRP ${rrp_b:,.0f}B"
-            metrics.append({"name": "Components", "value": value, "context": ctx})
+    # Net liquidity composite (reserves − TGA − RRP) lives in the funding
+    # regime — see lox/funding/net_liquidity.py — because two of three legs
+    # are Fed balance-sheet primitives. Run `lox regime funding` for that view.
 
     metrics.append({"name": "── Leading signals", "value": "", "context": ""})
     metrics.append({
@@ -962,6 +1060,9 @@ def _run_fiscal_snapshot(
     # ── Auction trend sparklines (most leading thing we have) ─────────────
     if len(long_auctions_recent) >= 4:
         _show_auction_trend(console, long_auctions_recent)
+
+    # ── Fiscal Behavior (DTS revenue + spending breakdown) ────────────────
+    _show_fiscal_behavior(console, refresh=refresh)
 
     if llm:
         from lox.cli_commands.shared.regime_display import print_llm_regime_analysis

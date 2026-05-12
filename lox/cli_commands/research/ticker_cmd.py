@@ -18,18 +18,26 @@ from lox.cli_commands.research.ticker.data import (
     fetch_price_data,
     fetch_fundamentals,
     fetch_atm_implied_vol,
+    fetch_earnings_data,
     fetch_futures_depth,
     FUTURES_ETF_MAP,
 )
-from lox.cli_commands.research.ticker.compute import compute_technicals
+from lox.cli_commands.research.ticker.compute import (
+    compute_technicals,
+    compute_earnings_outlook,
+    compute_flow_context,
+    detect_stacked_signals,
+)
 from lox.cli_commands.research.ticker.display import (
     show_price_panel,
     show_fundamentals,
     show_key_risks_summary,
     show_peer_comparison,
+    show_earnings_outlook,
     show_etf_flows,
     show_futures_depth,
     show_refinancing_wall,
+    show_stacked_signals,
     show_technicals,
     show_hy_default_context,
     _HY_ETF_TICKERS,
@@ -82,6 +90,7 @@ def register(app: typer.Typer) -> None:
             technicals = compute_technicals(price_data)
 
         # 1. Price box
+        iv = None
         if price_data:
             iv = fetch_atm_implied_vol(settings, symbol, technicals.get("current") if technicals else None)
             show_price_panel(console, symbol, price_data, technicals or {}, implied_vol=iv)
@@ -104,10 +113,13 @@ def register(app: typer.Typer) -> None:
             show_technicals(console, technicals)
 
         # ETF Flow analysis (only for ETFs)
+        flow_context = None
         if is_etf and price_data.get("historical"):
             show_etf_flows(console, price_data, fundamentals)
+            flow_context = compute_flow_context(price_data)
 
         # E-mini Futures Depth (index ETFs with corresponding CME futures)
+        futures_data = None
         if symbol in FUTURES_ETF_MAP:
             profile = fundamentals.get("profile", {})
             etf_price = (price_data.get("quote", {}).get("price")
@@ -137,6 +149,51 @@ def register(app: typer.Typer) -> None:
             is_hy = symbol in _HY_ETF_TICKERS or "high yield" in description or "high-yield" in description
             if is_hy and settings.FRED_API_KEY:
                 show_hy_default_context(console, settings, symbol)
+
+        # Earnings outlook (stocks only — ETFs don't report earnings)
+        earnings_data = None
+        outlook = None
+        if not is_etf and price_data:
+            earnings_data = fetch_earnings_data(settings, symbol)
+            if earnings_data:
+                spot = (price_data.get("quote", {}).get("price")
+                        or (technicals or {}).get("current"))
+                # HV decimalized for the fallback path (technicals stores it as percent)
+                hv_pct = (technicals or {}).get("volatility_30d") or (technicals or {}).get("volatility")
+                hv_decimal = hv_pct / 100.0 if isinstance(hv_pct, (int, float)) else None
+                outlook = compute_earnings_outlook(
+                    earnings_data=earnings_data,
+                    price_data=price_data,
+                    spot=spot,
+                    implied_vol=iv,
+                    realized_vol_fallback=hv_decimal,
+                )
+                show_earnings_outlook(
+                    console,
+                    symbol,
+                    outlook,
+                    ratings_consensus=earnings_data.get("ratings_consensus"),
+                    price_target=earnings_data.get("price_target"),
+                    current_price=spot,
+                )
+
+        # ── Stacked Signals — synthesis across all blocks ────────────────
+        current_price = (price_data.get("quote", {}).get("price") if price_data else None) \
+            or (technicals or {}).get("current")
+        stacks = detect_stacked_signals(
+            symbol=symbol,
+            is_etf=bool(is_etf),
+            technicals=technicals,
+            fundamentals=fundamentals,
+            earnings_outlook=outlook,
+            ratings_consensus=(earnings_data or {}).get("ratings_consensus"),
+            price_target=(earnings_data or {}).get("price_target"),
+            futures_data=futures_data,
+            flow_context=flow_context,
+            iv=iv,
+            current_price=current_price,
+        )
+        show_stacked_signals(console, stacks)
 
         # Generate chart
         if chart and price_data:
