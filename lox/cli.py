@@ -273,6 +273,36 @@ def regime_rates(
         show_book_impact(domain="rates")
 
 
+@regime_app.command("ai")
+def regime_ai(
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh price downloads"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
+):
+    """AI bubble regime (v0 — basket equity signals)."""
+    from lox.cli_commands.regimes.ai_cmd import ai_snapshot
+    ai_snapshot(llm=llm, ticker=ticker, refresh=refresh)
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="ai")
+
+
+@regime_app.command("bubble")
+def regime_bubble(
+    llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),
+    ticker: str = typer.Option("", "--ticker", "-t", help="Ticker for focused chat (used with --llm)"),
+    refresh: bool = typer.Option(False, "--refresh", help="Force refresh underlying data"),
+    book: bool = typer.Option(False, "--book", "-b", help="Show impact on open positions"),
+):
+    """Broad-market bubble regime — valuation, concentration, margin debt."""
+    from lox.cli_commands.regimes.bubble_cmd import bubble_snapshot
+    bubble_snapshot(llm=llm, ticker=ticker, refresh=refresh)
+    if book:
+        from lox.cli_commands.shared.book_impact import show_book_impact
+        show_book_impact(domain="bubble")
+
+
 @regime_app.command("oil")
 def regime_oil(
     llm: bool = typer.Option(False, "--llm", help="Chat with LLM analyst"),

@@ -9,6 +9,8 @@ from lox.funding.correlations import (
     classify_funding_regime,
     compute_lead_lag,
     compute_pair_correlations,
+    EQUITY_LAG_PAIRS,
+    EQUITY_PAIR_META,
     PAIR_META,
 )
 
@@ -162,3 +164,88 @@ def test_lead_lag_tradeable_filter():
             assert abs(l["best_corr"]) > 0.30
             assert l["sign_matches"]
             assert l["best_lag"] >= 3
+
+
+# ── Fed ↔ equity transmission tests ──────────────────────────────────────────
+
+def _synthetic_equity_dataset(n: int = 800, seed: int = 7) -> pd.DataFrame:
+    """
+    Extend the plumbing synthetic data with sp500/vix that have the *expected*
+    couplings: SPX returns track ΔNet Liq; VIX inversely tracks Net Liq and
+    co-moves with corridor stress.
+    """
+    df = _synthetic_dataset(n=n, seed=seed)
+    rng = np.random.default_rng(seed + 1)
+    # Wed-cadence diff of net_liq_t — production builder computes this; the
+    # base synthetic helper doesn't, so we add it here.
+    wed = df[df["date"].dt.dayofweek == 2].copy()
+    wed["d_net_liq_t"] = wed["net_liq_t"].diff()
+    df = df.merge(wed[["date", "d_net_liq_t"]], on="date", how="left")
+    df["d_net_liq_t"] = df["d_net_liq_t"].ffill()
+    # VIX: baseline 17, kicks up with sofr_iorb stress, calmer with high net liq
+    df["vix"] = (
+        17.0
+        + 0.4 * df["sofr_iorb_bps"]
+        - 6.0 * (df["net_liq_t"] - df["net_liq_t"].mean())
+        + rng.normal(0, 1.5, len(df))
+    ).clip(lower=9.0)
+    # SP500: random walk with drift tied to d_net_liq_t
+    rets = 0.0003 + 0.0008 * df["d_net_liq_t"].fillna(0) + rng.normal(0, 0.01, len(df))
+    df["sp500"] = 4000.0 * np.exp(np.cumsum(rets))
+    # d_sp500_pct on Wed cadence (same construction as build_correlation_dataset)
+    wed2 = df[df["date"].dt.dayofweek == 2].copy()
+    wed2["d_sp500_pct"] = wed2["sp500"].pct_change() * 100.0
+    df = df.merge(wed2[["date", "d_sp500_pct"]], on="date", how="left")
+    df["d_sp500_pct"] = df["d_sp500_pct"].ffill()
+    return df
+
+
+def test_equity_pair_meta_columns_resolvable():
+    """Every EQUITY_PAIR_META entry references columns the synthetic builder produces."""
+    df = _synthetic_equity_dataset()
+    for meta in EQUITY_PAIR_META:
+        assert meta["x"] in df.columns, f"missing x={meta['x']} for {meta['name']}"
+        assert meta["y"] in df.columns, f"missing y={meta['y']} for {meta['name']}"
+
+
+def test_compute_equity_pair_correlations():
+    """Pass EQUITY_PAIR_META through meta_list — should produce one row per pair."""
+    df = _synthetic_equity_dataset()
+    eq = compute_pair_correlations(df, window=60, meta_list=EQUITY_PAIR_META)
+    names = {p["name"] for p in eq}
+    expected = {m["name"] for m in EQUITY_PAIR_META}
+    assert names == expected
+
+
+def test_equity_pairs_detect_constructed_signs():
+    """ΔNet Liq ↔ ΔSPX was constructed positive; SOFR-IORB ↔ VIX positive too."""
+    df = _synthetic_equity_dataset()
+    eq = compute_pair_correlations(df, window=60, meta_list=EQUITY_PAIR_META)
+    by_name = {p["name"]: p for p in eq}
+    nl_spx = by_name["ΔNet Liquidity ↔ ΔSPX"]
+    assert nl_spx["current"] is not None
+    assert nl_spx["current"] > 0  # constructed positive coupling
+    sofr_vix = by_name["SOFR-IORB ↔ VIX"]
+    assert sofr_vix["current"] is not None
+    assert sofr_vix["current"] > 0  # constructed positive coupling
+
+
+def test_equity_lead_lag_runs():
+    """compute_lead_lag accepts a custom lag_pairs arg and returns shaped results."""
+    df = _synthetic_equity_dataset()
+    lags = compute_lead_lag(df, window=60, max_lag_days=20, lag_pairs=EQUITY_LAG_PAIRS)
+    assert isinstance(lags, list)
+    for l in lags:
+        assert "best_lag" in l and 0 <= l["best_lag"] <= 20
+        assert "best_corr" in l
+
+
+def test_plumbing_meta_default_unaffected_by_equity():
+    """Default meta path (PAIR_META) still produces the original plumbing pair set."""
+    df = _synthetic_equity_dataset()
+    plumbing = compute_pair_correlations(df, window=60)  # default = PAIR_META
+    names = {p["name"] for p in plumbing}
+    # Equity pair names must NOT appear in the default plumbing output
+    assert not any(
+        n in names for n in {m["name"] for m in EQUITY_PAIR_META}
+    )

@@ -688,6 +688,97 @@ def _show_funding_correlations(console, refresh: bool):
                     f"    [dim]· {l['name']}: best lag {lag_d}d, corr {sign}{mag:.2f}  ({', '.join(why) or '—'})[/dim]"
                 )
 
+    # ── Equity transmission (Fed → stock market) ─────────────────────────
+    _show_equity_transmission(console, rep)
+
+
+def _show_equity_transmission(console, rep: dict) -> None:
+    """
+    Fed → equity transmission section.
+
+    Shows whether the Fed's liquidity stance is currently passing through to
+    SPX levels/returns and VIX. Display-only; never feeds the regime score.
+
+    Reading guide:
+        strong  — Fed plumbing is the active equity driver right now.
+        broken  — equities moving on something else (earnings, fiscal, AI capex,
+                  sentiment). The "Fed put" channel is muted.
+        flipped — regime break; equities moving opposite to plumbing.
+    """
+    from rich.table import Table as RichTable
+
+    epairs = rep.get("equity_pairs") or []
+    elags = rep.get("equity_lags") or []
+    if not epairs and not elags:
+        return
+
+    console.print()
+    console.print("[bold magenta]─── Fed → Equity Transmission ─────────────────────────────────[/bold magenta]")
+    console.print("[dim]Display-only — does NOT feed the funding regime score.[/dim]")
+
+    if epairs:
+        table = RichTable(box=None, padding=(0, 1), show_header=True, header_style="bold magenta")
+        table.add_column("Pair", min_width=28)
+        table.add_column("60d corr", justify="right", min_width=9)
+        table.add_column("Baseline", justify="right", min_width=9)
+        table.add_column("Δ", justify="right", min_width=7)
+        table.add_column("Status", min_width=22, no_wrap=False)
+
+        def _fmt_corr(v):
+            return f"{v:+.2f}" if isinstance(v, (int, float)) else "—"
+
+        def _fmt_delta(d):
+            if not isinstance(d, (int, float)):
+                return "—"
+            if abs(d) < 0.05:
+                return "[dim]≈[/dim]"
+            arrow = "↑" if d > 0 else "↓"
+            return f"{arrow}{abs(d):.2f}"
+
+        for p in epairs:
+            table.add_row(
+                p["name"],
+                _fmt_corr(p["current"]),
+                _fmt_corr(p["baseline"]),
+                _fmt_delta(p.get("delta")),
+                p["label"],
+            )
+        console.print(table)
+
+    # Plain-English summary: which channel is active right now?
+    active: list[str] = []
+    broken: list[str] = []
+    for p in epairs:
+        if p["status"] == "strong":
+            active.append(f"{p['name']} ({p['current']:+.2f})")
+        elif p["status"] in ("broken", "flipped"):
+            broken.append(f"{p['name']} ({p['current']:+.2f}, was {p['baseline']:+.2f})")
+
+    if active:
+        console.print(f"  [bold]Active Fed→equity channels:[/bold]")
+        for line in active:
+            console.print(f"    [green]▸[/green] {line}")
+    if broken:
+        console.print(f"  [bold]Broken / decoupled channels:[/bold]")
+        for line in broken:
+            console.print(f"    [yellow]·[/yellow] {line}")
+    if not active and not broken:
+        console.print(f"  [dim]All equity-transmission channels near baseline — Fed coupling normal.[/dim]")
+
+    # Equity lead-lag
+    if elags:
+        any_tradeable = any(l.get("tradeable") for l in elags)
+        if any_tradeable:
+            console.print(f"  [bold]Fed flow leading equities:[/bold]")
+            for l in elags:
+                if not l.get("tradeable"):
+                    continue
+                sign = "+" if l["best_corr"] > 0 else "−"
+                mag = abs(l["best_corr"])
+                console.print(
+                    f"    [magenta]▸[/magenta] {l['name']}: [bold]{l['best_lag']}-day lead[/bold], corr {sign}{mag:.2f}  →  {l['interpretation']}"
+                )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Cross-regime signals

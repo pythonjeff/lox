@@ -141,6 +141,92 @@ LAG_PAIRS: list[dict] = [
 ]
 
 
+# ── Fed ↔ equity transmission pairs ──────────────────────────────────────────
+# These quantify whether the Fed's liquidity stance is currently propagating
+# into equity levels and volatility. Display-only — do NOT feed into the
+# funding regime score (equity reflexivity would muddle the funding call).
+#
+# Interpretation: a "strong" coupling here means the Fed's plumbing is the
+# active driver of equities right now. "Broken" means equities are moving on
+# something else (earnings, fiscal, AI capex, sentiment) — the Fed-equity
+# transmission is muted, which is itself a regime signal.
+EQUITY_PAIR_META: list[dict] = [
+    {
+        "name": "SOFR-IORB ↔ VIX",
+        "x": "sofr_iorb_bps", "y": "vix", "kind": "level",
+        "expected_sign": "positive",
+        "thesis": "Funding stress feeds equity vol — corridor widens, VIX bids.",
+        "strong": "funding stress passing through to equity vol",
+        "broken": "VIX moving independent of funding — sentiment/earnings driven",
+        "flipped": "vol compressing as corridor widens — atypical",
+    },
+    {
+        "name": "Net Liquidity ↔ VIX",
+        "x": "net_liq_t", "y": "vix", "kind": "level",
+        "expected_sign": "negative",
+        "thesis": "More net liquidity → vol suppression (the canonical 'Fed put' channel).",
+        "strong": "liquidity is the dominant vol suppressant right now",
+        "broken": "vol decoupled from liquidity — Fed put channel muted",
+        "flipped": "vol compressing while liquidity drains — risk-on complacency",
+    },
+    {
+        "name": "ΔNet Liquidity ↔ ΔSPX",
+        "x": "d_net_liq_t", "y": "d_sp500_pct", "kind": "change",
+        "expected_sign": "positive",
+        "thesis": "Howell/Bianco: net-liquidity flows pass through to equity returns.",
+        "strong": "net liquidity is actively pushing SPX",
+        "broken": "SPX decoupled from net liquidity — fiscal/AI capex dominant",
+        "flipped": "SPX moving opposite to liquidity — regime break",
+    },
+    {
+        "name": "ΔReserves ↔ ΔSPX",
+        "x": "d_reserves_b", "y": "d_sp500_pct", "kind": "change",
+        "expected_sign": "positive",
+        "thesis": "Reserves are the cleanest pass-through of Fed action into risk assets.",
+        "strong": "reserves flowing directly into equity bid",
+        "broken": "reserve flows not reaching equities — sitting at banks",
+        "flipped": "reserves growing while SPX falls — credit/risk-off override",
+    },
+    {
+        "name": "ΔRRP ↔ ΔSPX",
+        "x": "d_rrp_b", "y": "d_sp500_pct", "kind": "change",
+        "expected_sign": "negative",
+        "thesis": "RRP unwind releases MMF cash into the system — risk-on mechanically.",
+        "strong": "RRP drain is fuelling equity rally",
+        "broken": "RRP flows not affecting equities — cushion gone, no mechanism left",
+        "flipped": "RRP and SPX rising together — both bid by external flow",
+    },
+]
+
+# Equity lead-lag — does Fed liquidity *lead* equity returns?
+EQUITY_LAG_PAIRS: list[dict] = [
+    {
+        "name": "ΔNet Liquidity → ΔSPX",
+        "x": "d_net_liq_t", "y": "d_sp500_pct",
+        "expected_sign": "positive",
+        "interpretation": "Net liquidity flow leading equity returns (Howell channel).",
+    },
+    {
+        "name": "ΔWALCL → ΔSPX",
+        "x": "d_walcl_b", "y": "d_sp500_pct",
+        "expected_sign": "positive",
+        "interpretation": "Fed balance-sheet pace leading equity drift.",
+    },
+    {
+        "name": "ΔReserves → ΔSPX",
+        "x": "d_reserves_b", "y": "d_sp500_pct",
+        "expected_sign": "positive",
+        "interpretation": "Reserve injections leading equity returns.",
+    },
+    {
+        "name": "SOFR-IORB → VIX",
+        "x": "sofr_iorb_bps", "y": "vix",
+        "expected_sign": "positive",
+        "interpretation": "Funding stress leading equity vol expansion.",
+    },
+]
+
+
 def build_correlation_dataset(
     *,
     refresh: bool = False,
@@ -192,6 +278,10 @@ def build_correlation_dataset(
     reserves = _fred_b("WRESBAL", 1000.0).rename(columns={"value": "reserves_b"})  # M → B
     walcl = _fred_b("WALCL", 1000.0).rename(columns={"value": "walcl_b"})
     bills = _fred_b("WSHOBL", 1000.0).rename(columns={"value": "bills_b"})
+    # Equity transmission inputs — display-only, never feed into regime score.
+    # FRED SP500 only has ~10y of history; that's plenty for 60d rolling + 3y baseline.
+    sp500 = _fred_b("SP500", 1.0).rename(columns={"value": "sp500"})
+    vix = _fred_b("VIXCLS", 1.0).rename(columns={"value": "vix"})
 
     try:
         tga = fetch_tga_daily(refresh=refresh, lookback_days=2200)
@@ -205,7 +295,7 @@ def build_correlation_dataset(
     bidx = pd.bdate_range(start=pd.to_datetime(start_date), end=end)
     out = pd.DataFrame({"date": bidx})
 
-    for f in [rates, rrp, reserves, walcl, bills, tga]:
+    for f in [rates, rrp, reserves, walcl, bills, tga, sp500, vix]:
         if f is None or f.empty:
             continue
         out = out.merge(f, on="date", how="left")
@@ -214,7 +304,7 @@ def build_correlation_dataset(
     # daily rolling correlations an observation each day; daily series (RRP,
     # TGA) need ffill across federal holidays where reporting is skipped.
     # Without this, ANY holiday in a 60-day window makes the rolling corr NaN.
-    for col in ("rrp_b", "tga_b", "reserves_b", "walcl_b", "bills_b"):
+    for col in ("rrp_b", "tga_b", "reserves_b", "walcl_b", "bills_b", "sp500", "vix"):
         if col in out.columns:
             out[col] = out[col].ffill()
 
@@ -229,13 +319,19 @@ def build_correlation_dataset(
     # don't correlate properly. Sampling all to Wednesday cadence makes the
     # change-pair correlations apples-to-apples.
     wed_mask = out["date"].dt.dayofweek == 2
-    wed_only = out.loc[wed_mask, ["date"] + [c for c in ("tga_b", "rrp_b", "reserves_b", "walcl_b", "bills_b") if c in out.columns]].copy()
+    wed_cols = ["tga_b", "rrp_b", "reserves_b", "walcl_b", "bills_b", "net_liq_t", "sp500"]
+    wed_only = out.loc[wed_mask, ["date"] + [c for c in wed_cols if c in out.columns]].copy()
     diff_cols: list[str] = []
-    for col in ("tga_b", "rrp_b", "reserves_b", "walcl_b", "bills_b"):
+    for col in ("tga_b", "rrp_b", "reserves_b", "walcl_b", "bills_b", "net_liq_t"):
         if col not in wed_only.columns:
             continue
         wed_only[f"d_{col}"] = wed_only[col].diff()
         diff_cols.append(f"d_{col}")
+    # SP500: pct change (so the units match across vol regimes — a $50 SPX move
+    # in 2024 is not the same as in 2018). Multiplied by 100 for readability.
+    if "sp500" in wed_only.columns:
+        wed_only["d_sp500_pct"] = wed_only["sp500"].pct_change() * 100.0
+        diff_cols.append("d_sp500_pct")
     if diff_cols:
         out = out.merge(wed_only[["date"] + diff_cols], on="date", how="left")
         for col in diff_cols:
@@ -288,16 +384,17 @@ def compute_pair_correlations(
     *,
     window: int = 60,
     hist_window_days: int = 252 * 3,
+    meta_list: list[dict] | None = None,
 ) -> list[dict]:
     """
-    For each entry in PAIR_META, compute current and historical-baseline rolling
-    correlations and assign a status label.
+    For each entry in `meta_list` (default PAIR_META), compute current and
+    historical-baseline rolling correlations and assign a status label.
     """
     results: list[dict] = []
     if df.empty:
         return results
 
-    for meta in PAIR_META:
+    for meta in (meta_list if meta_list is not None else PAIR_META):
         x, y = meta["x"], meta["y"]
         if x not in df.columns or y not in df.columns:
             continue
@@ -341,16 +438,18 @@ def compute_lead_lag(
     *,
     window: int = 60,
     max_lag_days: int = 15,
+    lag_pairs: list[dict] | None = None,
 ) -> list[dict]:
     """
-    For each LAG_PAIRS entry, search lag in [0, max_lag_days] for the lag that
-    maximizes |correlation| and report it. x leads y by `lag` days.
+    For each entry in `lag_pairs` (default LAG_PAIRS), search lag in
+    [0, max_lag_days] for the lag that maximizes |correlation| and report it.
+    x leads y by `lag` days.
     """
     results: list[dict] = []
     if df.empty:
         return results
 
-    for meta in LAG_PAIRS:
+    for meta in (lag_pairs if lag_pairs is not None else LAG_PAIRS):
         x, y = meta["x"], meta["y"]
         if x not in df.columns or y not in df.columns:
             continue
@@ -478,16 +577,22 @@ def compute_funding_correlation_report(*, refresh: bool = False) -> dict:
     Returns:
         {
             "asof": "YYYY-MM-DD" | None,
-            "pairs": list[pair_result_dict],
-            "lags": list[lag_result_dict],
+            "pairs": list[pair_result_dict],            # plumbing pairs
+            "lags": list[lag_result_dict],              # plumbing lead-lag
+            "equity_pairs": list[pair_result_dict],     # Fed↔equities pairs (display-only)
+            "equity_lags": list[lag_result_dict],       # Fed↔equities lead-lag (display-only)
             "regime": str,
             "rationale": str,
             "divergences": list[str],
             "leading_indicators": list[str],
         }
+
+    Equity pairs are kept separate and never feed into the regime classifier:
+    funding scoring should reflect funding mechanics, not market reflexivity.
     """
     empty = {
         "asof": None, "pairs": [], "lags": [],
+        "equity_pairs": [], "equity_lags": [],
         "regime": None, "rationale": None,
         "divergences": [], "leading_indicators": [],
     }
@@ -506,9 +611,16 @@ def compute_funding_correlation_report(*, refresh: bool = False) -> dict:
     lags = compute_lead_lag(df)
     regime_info = classify_funding_regime(pairs, lags)
 
+    # Equity transmission — wider lag horizon (Howell channel is 2-12 weeks,
+    # not days). Skips gracefully when sp500/vix columns absent.
+    equity_pairs = compute_pair_correlations(df, meta_list=EQUITY_PAIR_META)
+    equity_lags = compute_lead_lag(df, lag_pairs=EQUITY_LAG_PAIRS, max_lag_days=60)
+
     return {
         "asof": asof,
         "pairs": pairs,
         "lags": lags,
+        "equity_pairs": equity_pairs,
+        "equity_lags": equity_lags,
         **regime_info,
     }
