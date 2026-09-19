@@ -210,6 +210,18 @@ from lox.cli_commands.quiver_cmd import app as quiver_app
 app.add_typer(quiver_app, name="quiver")
 app.add_typer(quiver_app, name="q")
 
+# Trades — congress × macro regime top 5
+from lox.cli_commands.trades_cmd import app as trades_app
+app.add_typer(trades_app, name="trades")
+
+# Backtest — congress signal win-rate + alpha analysis
+from lox.cli_commands.backtest_cmd import app as backtest_app
+app.add_typer(backtest_app, name="backtest")
+
+# Voltrades — high-volume vol-momentum options picker (validated via `lox backtest vol-factors`)
+from lox.cli_commands.volpicks_cmd import app as voltrades_app
+app.add_typer(voltrades_app, name="voltrades")
+
 
 # ── Keep regimes ──────────────────────────────────────────────────────────
 @regime_app.command("vol")
@@ -527,11 +539,9 @@ def _register_commands() -> None:
     from lox.cli_commands.core.weekly_report_cmd import register as register_weekly_report
     from lox.cli_commands.core.investor_report_cmd import register as register_investor_report
     from lox.cli_commands.core.closed_trades_cmd import register as register_closed_trades
-    from lox.cli_commands.core.suggest_cmd import register as register_suggest
 
     register_core(app)
     register_pm(app)
-    register_suggest(app)
     register_closed_trades(app)
     register_nav(nav_app)
     register_account(app)

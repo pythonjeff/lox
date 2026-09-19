@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     MARINETRAFFIC_API_KEY: str | None = None  # Optional: real-time AIS vessel tracking
     USDA_FAS_API_KEY: str | None = None  # Optional: USDA PSD Online (WASDE data) — free at apps.fas.usda.gov/opendata/register
     USDA_NASS_API_KEY: str | None = None  # Optional: USDA NASS QuickStats (crop reports) — free at quickstats.nass.usda.gov/api
+    CONGRESS_GOV_API_KEY: str | None = None  # Optional: Congress.gov API — free at api.congress.gov
 
     # Crypto perps
     CCXT_EXCHANGE: str = "okx"
@@ -99,6 +100,10 @@ class Settings(BaseSettings):
     @property
     def usda_nass_api_key(self) -> str | None:
         return self.USDA_NASS_API_KEY
+
+    @property
+    def congress_gov_api_key(self) -> str | None:
+        return self.CONGRESS_GOV_API_KEY
 
     @property
     def price_source(self) -> str:

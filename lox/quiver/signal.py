@@ -4,10 +4,17 @@ Cross-source signal scanner — congress + trump trades.
 Surfaces tickers where government insiders have bet in a direction
 but the stock hasn't yet moved to confirm it. That gap is the edge.
 
+Demoted per the Quiver Edge Expansion plan (Stage 3, see
+data/cache/quiver_research/ and scripts/quiver_*_backtest.py): a standalone
+backtest of congress buy disclosures showed only a weak, inconsistent effect
+(mean/median divergence and sub-50% hit rate at most horizons), so the bar
+for a standalone congress/trump signal is intentionally higher than before.
+This module is a candidate for a convergence bonus with a stronger family
+later, not a primary signal on its own.
+
 Signal filter (any one qualifies):
-  - cluster_count >= 2     (multiple officials, same ticker, same side)
-  - amount >= $250K + lag <= 14d
-  - lag <= 21d + |α vs SPY| <= 5%  (fresh trade, price still flat)
+  - cluster_count >= 3     (multiple officials, same ticker, same side)
+  - amount >= $500K + lag <= 14d
 
 Score weights:
   35% cluster size  |  30% freshness (1 − lag/45)  |
@@ -56,6 +63,8 @@ class QuiverSignal:
     score: float
     suggested_action: str
     rationale: str
+    committee_aligned: bool = False  # trader sits on oversight committee for this sector
+    committee_note: str = ""         # e.g. "Armed Services — defense contractor oversight"
 
 
 # ─── parse helpers ───────────────────────────────────────────────────────────
@@ -135,9 +144,11 @@ def records_from_congress(df: pd.DataFrame) -> list[TradeRecord]:
 
         amount_mid = _parse_amount(row.get("amount")) or _parse_amount(row.get("range"))
 
+        _desc = row.get("description")
+        _company = str(_desc) if _desc and str(_desc).lower() not in ("nan", "none", "") else ticker
         records.append(TradeRecord(
             ticker=ticker,
-            company=str(row.get("description") or ticker),
+            company=_company,
             official=str(row.get("representative") or "").strip(),
             source="congress",
             side=side,
@@ -235,11 +246,16 @@ def _is_notable(records: list[TradeRecord], side: str, score: float) -> bool:
     max_amt = max((r.amount_mid_usd for r in records), default=0)
     avg_lag = mean(r.lag_days for r in records)
 
-    if n >= 2:
+    # Demoted per the Quiver Edge Expansion plan (Stage 3): backtesting congress
+    # buy disclosures (scripts/quiver_congress_backtest.py) showed only a weak,
+    # inconsistent effect (mean/median divergence, sub-50% hit rate at most
+    # horizons), and the standalone Trump-any-trade carve-out below was the
+    # loosest of the old thresholds. Standalone congress/trump signals now need
+    # a materially larger cluster or a materially larger, still-fresh trade —
+    # single small disclosures are no longer enough on their own.
+    if n >= 3:
         return True
-    if max_amt >= 250_000 and avg_lag <= 14:
-        return True
-    if any(r.source == "trump" for r in records) and avg_lag <= 20:
+    if max_amt >= 500_000 and avg_lag <= 14:
         return True
     return False
 
@@ -271,6 +287,7 @@ def build_signals(
     trump_df: Optional[pd.DataFrame],
     max_lag_days: int = 30,
     min_score: float = 0.0,
+    congress_api_key: Optional[str] = None,
 ) -> list[QuiverSignal]:
     all_records: list[TradeRecord] = []
     if congress_df is not None and not congress_df.empty:
@@ -281,6 +298,27 @@ def build_signals(
     all_records = [r for r in all_records if r.lag_days <= max_lag_days]
     if not all_records:
         return []
+
+    # Build bioguide_map and pre-warm committee cache for alignment checks.
+    bioguide_map: dict[str, str] = {}
+    if congress_df is not None and not congress_df.empty:
+        rep_col = next((c for c in congress_df.columns if c.lower() == "representative"), None)
+        bio_col = next((c for c in congress_df.columns if c.lower() == "bioguideid"), None)
+        if rep_col and bio_col:
+            for _, row in congress_df.iterrows():
+                name = str(row[rep_col]).strip()
+                bio = str(row[bio_col]).strip()
+                if name and bio and bio.lower() not in ("nan", "none", ""):
+                    bioguide_map[name] = bio
+
+    if bioguide_map:
+        from lox.quiver.committees import get_member_committees, is_committee_aligned, alignment_note as _alignment_note
+        if congress_api_key:
+            for bio_id in set(bioguide_map.values()):
+                if bio_id:
+                    get_member_committees(bio_id, congress_api_key)
+    else:
+        from lox.quiver.committees import is_committee_aligned, alignment_note as _alignment_note
 
     groups: dict[tuple[str, str], list[TradeRecord]] = defaultdict(list)
     for r in all_records:
@@ -297,6 +335,18 @@ def build_signals(
         avg_alpha = round(mean(alphas), 1) if alphas else None
         action, rationale = _suggest(side, score, avg_alpha)
 
+        # Committee alignment: True if ANY congress official is oversight-aligned.
+        aligned = False
+        matched_committee = ""
+        for r in records:
+            if r.source == "congress":
+                bio = bioguide_map.get(r.official, "")
+                is_alg, committee = is_committee_aligned(bio, ticker)
+                if is_alg:
+                    aligned = True
+                    matched_committee = committee
+                    break
+
         signals.append(QuiverSignal(
             ticker=ticker,
             company=records[0].company,
@@ -311,6 +361,8 @@ def build_signals(
             score=score,
             suggested_action=action,
             rationale=rationale,
+            committee_aligned=aligned,
+            committee_note=_alignment_note(matched_committee) if matched_committee else "",
         ))
 
     signals.sort(key=lambda s: (s.avg_lag_days, -s.total_usd))

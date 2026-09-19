@@ -193,6 +193,37 @@ lox scan -t NVDA --want put       # Options chain scanner with Greek filters
 
 ---
 
+## Signal Scanner
+
+Multi-signal S&P 500 stock picker combining momentum, macro regime fit, analyst consensus, congressional/Trump trades, and money flow — enriched with insider buying, news sentiment, short interest, and analyst price targets. Each pick is delivered as a trade ticket with entry, target, stop, conviction, and horizon.
+
+```bash
+lox trades                    # Rank top 10 with ACTION tickets
+lox backtest congress         # Backtest congress signal win rate + alpha
+lox quiver flow               # Raw quiver cross-source scanner
+```
+
+**Signal composition (weights):** momentum 25% · regime fit 22% · analyst 22% · congress 16% · money flow 15% · insider boost (top 10)
+
+**ACTION ticket format:**
+
+```
+ 1  STLD   0.680  Matl   1.30× ↑↑     —   50%   +86%  ↑↑accum
+    BUY STLD @ $258.38 → $273.80 (+6%, 1-2mo)
+         stop $232.54  ·  conviction MED  (model +16%)
+```
+
+- **entry** — last close
+- **target** — Street analyst consensus (falls back to composite model target)
+- **`(model +N%)`** — flags when Street and model targets diverge ≥ 8pp
+- **stop** — 1.5× 20-day realized vol, floor/cap by conviction band
+- **horizon** — 1-2mo / 2-3mo / 3-6mo based on flow, momentum, and regime
+- **conviction** — HIGH / MED / LOW from composite score
+
+**Congressional signal (demoted):** standalone backtest showed sub-50% hit rate for congress buy disclosures at most horizons. Signals now require ≥3 clustered officials or ≥$500K within 14 days, and only contribute to the `lox trades` composite when the trader sits on a sector-aligned oversight committee (via congress.gov API).
+
+---
+
 ## Crypto Perps
 
 Real-time crypto perpetual futures data, LLM-powered analysis, and manual trading via Aster DEX.

@@ -19,8 +19,6 @@ from lox.quiver import contracts as q_contracts
 from lox.quiver import flow as q_flow
 from lox.quiver import trumptrades as q_trump
 from lox.quiver.loader import CATALOG, available_keys, fetch_congress_live, fetch_trump_live, get_api_key, missing_keys, quiver_dir
-from lox.quiver.signal import QuiverSignal, build_signals
-from lox.quiver.signal_email import send_signal_email
 from lox.quiver.synthesis import QuiverBrief, build_brief
 
 
@@ -578,95 +576,3 @@ def djt_trade_cmd(
 # lox quiver signal  — cross-source signal scanner
 # ─────────────────────────────────────────────────────────────────────────────
 
-_SCORE_GLYPHS = {5: "▸▸▸", 4: "▸▸", 3: "▸", 2: "·", 1: "·"}
-
-
-def _render_signals(console: Console, signals: list[QuiverSignal]) -> None:
-    from rich.text import Text as RText
-
-    lines: list = []
-    for s in signals:
-        side_style = "green" if s.side == "Buy" else "red"
-        play = "call" if s.side == "Buy" else "put "
-
-        filled = round(s.score * 5)
-        sig_str = "▸" * filled + "·" * (5 - filled)
-
-        alpha_str = f"{s.alpha_vs_spy:+.1f}%" if s.alpha_vs_spy is not None else "  —  "
-        if s.alpha_vs_spy is not None:
-            alpha_ok = (s.side == "Buy" and s.alpha_vs_spy <= 2) or (s.side == "Sell" and s.alpha_vs_spy >= -2)
-            alpha_style = "green" if alpha_ok else "yellow"
-        else:
-            alpha_style = "dim"
-
-        def _last(name: str) -> str:
-            return name.split()[-1] if name != "Trump" else "Trump"
-        names = [_last(o) for o in s.officials[:2]]
-        raw_officials = ", ".join(names) + (f" +{len(s.officials)-2}" if len(s.officials) > 2 else "")
-        officials_str = (raw_officials[:26] + "…") if len(raw_officials) > 26 else raw_officials
-
-        line = RText()
-        line.append(f"{s.avg_lag_days:2.0f}d  ", style="dim")
-        line.append(f"{s.ticker:<6}", style="bold white")
-        line.append(f"{s.side:<5}", style=side_style)
-        line.append(f"{alpha_str:>7}  ", style=alpha_style)
-        line.append(f"{_fmt_usd(s.total_usd):>7}", style="bold white")
-        line.append(f" ({s.cluster_count})  ", style="dim")
-        line.append("▸" * filled, style="yellow")
-        line.append("·" * (5 - filled) + "  ", style="dim")
-        line.append(officials_str, style="dim")
-        lines.append(line)
-
-    console.print(Panel(
-        Group(*lines),
-        title=f"[bold]Quiver Signals[/bold]  [dim]{len(signals)} signals · lag ↑  size ↓[/dim]",
-        title_align="left",
-        border_style="bold yellow",
-        padding=(1, 2),
-    ))
-
-
-@app.command("signal")
-def signal_cmd(
-    lag: int = typer.Option(14, "--lag", "-l", help="Max disclosure lag in days to consider."),
-    min_score: float = typer.Option(0.55, "--min-score", "-s", help="Minimum signal score to display (0-1)."),
-    email: bool = typer.Option(False, "--email", "-e", help="Send digest to your email."),
-    to: str = typer.Option("jeffreyblarson00@gmail.com", "--to", help="Recipient address."),
-) -> None:
-    """Score congress + trump trades and surface actionable options signals."""
-    console = Console()
-
-    api_key = get_api_key()
-    if not api_key:
-        console.print("[bold red]QUIVER_API_KEY not set.[/bold red]")
-        raise typer.Exit(1)
-
-    with console.status("[cyan]Fetching congress and Trump trades…[/cyan]"):
-        try:
-            congress_df = fetch_congress_live(api_key)
-            trump_df = fetch_trump_live(api_key)
-        except RuntimeError as exc:
-            console.print(f"[bold red]API error:[/bold red] {exc}")
-            raise typer.Exit(1)
-
-    signals = build_signals(congress_df, trump_df, max_lag_days=lag, min_score=min_score)
-
-    if not signals:
-        console.print(f"[yellow]No notable signals within {lag}d lag / score ≥ {min_score}.[/yellow]")
-        raise typer.Exit(0)
-
-    _render_signals(console, signals)
-
-    if email:
-        # Email uses a tighter floor — only send the highest-conviction names
-        email_signals = [s for s in signals if s.score >= max(min_score, 0.60)]
-        if not email_signals:
-            console.print("[dim]No signals above email threshold (0.60) — skipping send.[/dim]")
-        else:
-            with console.status(f"[cyan]Sending {len(email_signals)} signals to {to}…[/cyan]"):
-                try:
-                    send_signal_email(email_signals, to_email=to, asof=date.today())
-                    console.print(f"[green]✓ Email sent to {to} ({len(email_signals)} signals)[/green]")
-                except RuntimeError as exc:
-                    console.print(f"[bold red]Email failed:[/bold red] {exc}")
-                    raise typer.Exit(1)
