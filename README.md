@@ -180,6 +180,56 @@ lox risk --json       # Machine-readable export
 
 ---
 
+## Idea Generation
+
+Two screens that answer different questions.
+
+**`lox movers` — what actually moves.** Ranks the universe by how much each name
+moves and how often, then maps each one onto a trade structure. Built for finding
+things with enough range to be worth trading in the first place.
+
+```bash
+lox movers                        # Top 20 movers across S&P 500 + Dow + macro ETFs
+lox movers --character TRENDER    # Only names whose moves stick (directional)
+lox movers --character CHOPPY     # Only range traders (long/short vol)
+lox movers --move 0.03            # Only count 3%+ days as "a move"
+lox movers --window 120           # Measure over ~6 months instead of ~3
+lox movers --universe core        # ~30 liquid macro ETFs (fast)
+lox movers -t NVDA                # Single-name movement profile
+```
+
+```
+ Ticker  Name             Scr        Move  E[1m]    Vol  Type   Dir    Trade
+ WILD    Leveraged semis   96    4.1%/62%    31%  1.22x  CHOP   —      Long vol, needs >31%
+ RUNNER  Momentum name     85    2.2%/48%    11%  1.05x  TREND  LONG   LONG call spread ~11%
+ RANGE   Range trader      82    2.3%/47%    12%  0.89x  CHOP   —      Short vol outside ±12%
+ GAPPY   Event name        34     1.5%/3%    23%  0.99x  GAP    SHORT  Event risk, 23% move
+
+How to trade them
+
+Directional — trade the side
+  RUNNER $658.45  LONG — call debit spread, 30-45 DTE, ~11% wide
+    2.2%/day · 29 big moves in 60 sessions · Trend efficiency 0.88: moves stick.
+    lox scan -t RUNNER --want call --min-days 30 --max-days 60
+```
+
+Measures amplitude (mean daily move), frequency (share of sessions over the move
+bar), persistence (every sub-window, or one lucky gap?), vol expansion (20d vs 60d
+realized), and trend efficiency (does the move stick, or is it chop?). Liquidity-
+gated on price and dollar volume before any history is pulled.
+
+**`lox suggest` — what's happening today.** Four-pillar opportunity scan —
+momentum, flow, regime alignment, catalyst — with regime-conditional weights.
+
+```bash
+lox suggest                       # Full scanner
+lox suggest --signal flow         # Flow acceleration only
+lox suggest --deep                # + Monte Carlo
+lox suggest --track-record        # How past suggestions performed
+```
+
+---
+
 ## Research Suite
 
 ```bash

@@ -36,6 +36,13 @@ PORTFOLIO
 
 \b
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IDEA GENERATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  lox movers                 Names that move a lot, often + how to trade them
+  lox suggest                Today's opportunity scan (momentum/flow/regime)
+
+\b
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 REGIME DRILL-DOWN
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   lox regime growth          Growth pillar
@@ -528,10 +535,12 @@ def _register_commands() -> None:
     from lox.cli_commands.core.investor_report_cmd import register as register_investor_report
     from lox.cli_commands.core.closed_trades_cmd import register as register_closed_trades
     from lox.cli_commands.core.suggest_cmd import register as register_suggest
+    from lox.cli_commands.core.movers_cmd import register as register_movers
 
     register_core(app)
     register_pm(app)
     register_suggest(app)
+    register_movers(app)
     register_closed_trades(app)
     register_nav(nav_app)
     register_account(app)

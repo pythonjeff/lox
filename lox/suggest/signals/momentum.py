@@ -94,11 +94,15 @@ def score_momentum(
     )
 
     if price_panel is None or price_panel.empty:
-        from lox.data.market import fetch_equity_daily_closes
+        from lox.data.market import fetch_equity_daily_closes_resilient
         start = (pd.Timestamp.now() - pd.DateOffset(days=400)).strftime("%Y-%m-%d")
-        price_panel = fetch_equity_daily_closes(
+        # Resilient: a single delisted/renamed ticker used to abort the whole panel
+        # fetch and take the scan down with it.
+        price_panel, missing = fetch_equity_daily_closes_resilient(
             settings=settings, symbols=tickers, start=start, refresh=refresh,
         )
+        if missing:
+            logger.debug("No price history for %d tickers: %s", len(missing), missing[:10])
 
     if price_panel.empty:
         return {}, price_panel

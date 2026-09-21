@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 import os
 from pathlib import Path
 
@@ -12,6 +13,8 @@ from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 
 from lox.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_equity_daily_closes_alpaca(
@@ -154,6 +157,61 @@ def fetch_equity_daily_closes(
         api_secret = settings.alpaca_data_secret or settings.alpaca_api_secret
         return fetch_equity_daily_closes_alpaca(api_key=api_key, api_secret=api_secret, symbols=symbols, start=start)
     return fetch_equity_daily_closes_fmp(settings=settings, symbols=symbols, start=start, refresh=refresh)
+
+
+def fetch_equity_daily_closes_resilient(
+    *,
+    settings: Settings,
+    symbols: list[str],
+    start: str,
+    refresh: bool = False,
+    chunk_size: int = 25,
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Fetch daily closes for a large symbol list without letting one bad ticker
+    abort the whole panel.
+
+    ``fetch_equity_daily_closes`` raises as soon as any single symbol has no
+    history (delisted, renamed, ticker change). On a 500-name universe scan that
+    turns one dead ticker into a total failure. This wrapper fetches in chunks,
+    retries a failed chunk symbol-by-symbol, and reports what it could not get.
+
+    Returns (panel, failed_symbols).
+    """
+    syms = list(dict.fromkeys(s.strip().upper() for s in (symbols or []) if s and s.strip()))
+    if not syms:
+        return pd.DataFrame(), []
+
+    frames: list[pd.DataFrame] = []
+    failed: list[str] = []
+
+    for i in range(0, len(syms), max(1, chunk_size)):
+        chunk = syms[i : i + max(1, chunk_size)]
+        try:
+            frames.append(fetch_equity_daily_closes(
+                settings=settings, symbols=chunk, start=start, refresh=refresh,
+            ))
+            continue
+        except Exception as e:
+            logger.debug("Chunk fetch failed (%d symbols): %s — retrying individually", len(chunk), e)
+
+        for sym in chunk:
+            try:
+                frames.append(fetch_equity_daily_closes(
+                    settings=settings, symbols=[sym], start=start, refresh=refresh,
+                ))
+            except Exception as e:
+                failed.append(sym)
+                logger.debug("Price history unavailable for %s: %s", sym, e)
+
+    frames = [f for f in frames if f is not None and not f.empty]
+    if not frames:
+        return pd.DataFrame(), failed
+
+    panel = pd.concat(frames, axis=1).sort_index()
+    panel = panel.loc[:, ~panel.columns.duplicated()]
+    panel.index = pd.to_datetime(panel.index)
+    return panel, failed
 
 
 def fetch_crypto_daily_closes(

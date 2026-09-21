@@ -33,6 +33,10 @@ lox                           # Help with examples
 |   +-- regime oil            # Commodities (oil, gold, copper)
 |   +-- regime usd            # USD strength (trade-weighted, FX vol)
 |
++-- Idea Generation
+|   +-- movers                # Names that move a lot, often + trade structure
+|   +-- suggest               # Today's opportunity scan (momentum/flow/regime)
+|
 +-- Portfolio & Risk
 |   +-- status                # Portfolio health
 |   +-- risk                  # Greeks dashboard
@@ -59,6 +63,8 @@ lox                           # Help with examples
 | `lox status` | Portfolio health at a glance |
 | `lox risk` | Greeks dashboard + theta breakeven |
 | `lox scan -t TICKER` | Options chain scanner |
+| `lox movers` | Rank the universe by how much it moves, and how often |
+| `lox suggest` | Opportunity scan across S&P 500 + Dow + macro ETFs |
 | `lox research ticker TICKER` | Deep ticker research |
 | `lox research regimes` | Unified regime overview |
 
@@ -123,6 +129,79 @@ lox regime credit --book
 
 ---
 
+## Idea Generation
+
+Two screens, asking different questions.
+
+### `lox movers` — what actually moves
+
+`lox suggest` prefilters on a single session's change and volume, so it surfaces
+today's news pops. `lox movers` asks the prior question: **which names reliably
+deliver range**, measured over a rolling window, so there is something to trade
+in the first place. Then it maps each name onto a trade structure.
+
+```bash
+lox movers                       # Top 20 movers across S&P 500 + Dow + macro ETFs
+lox movers -n 30                 # Deeper list
+lox movers --move 0.03           # Only count 3%+ days as "a move"
+lox movers --window 120          # Measure over ~6 months instead of ~3
+lox movers --character TRENDER   # Only names whose moves stick (directional trades)
+lox movers --character CHOPPY    # Only range traders (long/short vol)
+lox movers --etf-only            # Macro ETFs only
+lox movers --universe core       # ~30 liquid macro ETFs (fast, few API calls)
+lox movers -t NVDA               # Single-name movement profile
+lox movers --llm                 # Hand the screen to the analyst chat
+lox movers --json                # Machine-readable
+```
+
+**What it measures** (over the window, from daily closes):
+
+| Metric | Meaning |
+|--------|---------|
+| Avg/d | Mean absolute daily move — the everyday size of a move |
+| Freq | Share of sessions clearing the move bar (`--move`, default 2%) |
+| Persistence | Does it clear the bar in *every* sub-window, or was it one gap? |
+| E[1m] | 1-sigma expected move over ~21 sessions — what an option has to beat |
+| Vol | 20d vs 60d realized vol — is the name waking up right now? |
+| Efficiency | Net move / total travel — trending mover vs chop |
+
+**Character → trade structure:**
+
+| Character | What it means | Structure |
+|-----------|---------------|-----------|
+| `TRENDER` | Moves stick — high trend efficiency | Directional debit spread, 30-45 DTE |
+| `CHOPPY` + vol expanding | Big range, no direction, waking up | Long strangle / straddle, 21-45 DTE |
+| `CHOPPY` + vol contracting | Big range, no direction, vol fading | Iron condor outside the expected move |
+| `GAPPER` | Range concentrated in a few sessions | Event risk — define risk, don't hold naked premium |
+| `QUIET` | Not enough movement to pay for anything | No trade |
+
+Every row ends in a `lox scan` command for the matching side and DTE band, so the
+handoff from idea to contract is a copy-paste.
+
+**Filters:** `--min-price` (default $5) and `--min-dollar-volume` (default $20M/day)
+gate on tradeability before any history is pulled — a name that moves but can't be
+filled is not an opportunity.
+
+**Cost:** one batch quote request for the whole universe, then price history for the
+`--pool` survivors only (default 120). Use `--universe core` for a near-free scan.
+
+### `lox suggest` — what's happening today
+
+```bash
+lox suggest                      # Full scanner (S&P 500 + Dow + ETFs)
+lox suggest --signal flow        # Flow acceleration candidates only
+lox suggest --signal tailwind    # Regime tailwind candidates only
+lox suggest --etf-only           # Exclude individual stocks
+lox suggest --deep               # Monte Carlo + extended flow analysis
+lox suggest --track-record       # Suggestion performance dashboard
+lox suggest -t AAPL              # Single-ticker deep dive
+```
+
+Scores four pillars — momentum, flow, regime alignment, catalyst — with
+regime-conditional weights and anti-staleness rotation.
+
+---
+
 ## Options Commands
 
 | Command | Purpose |
@@ -155,6 +234,11 @@ lox regime vol                # Volatility deep dive
 lox regime credit --book      # Credit + position exposure
 lox regime usd --llm          # USD regime + FX analysis
 lox research ticker NVDA      # Full research report
+
+# Idea generation
+lox movers                    # What is actually moving, and how to trade it
+lox movers --character TRENDER   # Directional candidates only
+lox suggest                   # What is happening today
 
 # Options scanning
 lox scan -t CRWV --want put

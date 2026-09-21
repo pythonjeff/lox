@@ -508,6 +508,35 @@ def _generate_html_report(nav: dict, investors: list, trades: list, week_wins: l
     sp500_text = f"{outlook['sp500_weekly']:+.1f}%" if outlook['sp500_weekly'] else "N/A"
     sp500_color = outlook.get('sp500_color', '#64748b')
     
+    # Built outside the report f-string below: nesting an f-string inside another
+    # f-string is Python 3.12+ syntax, and this package supports 3.10+.
+    if not week_wins_rows:
+        week_wins_section = (
+            '<div style="color: #666; font-size: 12px; margin-bottom: 16px;">'
+            "No winning trades closed this week.</div>"
+        )
+    else:
+        week_wins_section = f"""
+            <div style="display: flex; gap: 24px; margin-bottom: 16px;">
+                <div><strong>{len(week_wins)}</strong> winning trades</div>
+                <div><strong class="positive">${week_wins_total:+,.0f}</strong> realized gains</div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Trade</th>
+                        <th>Cost</th>
+                        <th>Proceeds</th>
+                        <th>P&L</th>
+                        <th>Return</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {week_wins_rows}
+                </tbody>
+            </table>
+            """
+
     html = f"""
 <!DOCTYPE html>
 <html>
@@ -843,26 +872,7 @@ def _generate_html_report(nav: dict, investors: list, trades: list, week_wins: l
         <!-- This Week's Wins -->
         <div class="section">
             <div class="section-title">This Week's Wins ({week_range})</div>
-            {'<div style="color: #666; font-size: 12px; margin-bottom: 16px;">No winning trades closed this week.</div>' if not week_wins_rows else f"""
-            <div style="display: flex; gap: 24px; margin-bottom: 16px;">
-                <div><strong>{len(week_wins)}</strong> winning trades</div>
-                <div><strong class="positive">${week_wins_total:+,.0f}</strong> realized gains</div>
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Trade</th>
-                        <th>Cost</th>
-                        <th>Proceeds</th>
-                        <th>P&L</th>
-                        <th>Return</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {week_wins_rows}
-                </tbody>
-            </table>
-            """}
+            {week_wins_section}
             <div style="font-size: 11px; color: #666; margin-top: 12px;">See Exhibit A for complete trade history.</div>
         </div>
         

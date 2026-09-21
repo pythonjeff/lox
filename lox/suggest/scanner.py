@@ -2,7 +2,8 @@
 Two-pass opportunity scanner — the main orchestrator.
 
 Pass 1: Quick scan ~550 tickers via batch FMP quotes.
-         Filter to ~75 "interesting" tickers (big movers + volume surges).
+         Filter to ~75 "interesting" tickers (big movers, volume surges,
+         and persistently wide-range names).
 Pass 2: Deep signal scoring (4 independent pillars).
          Composite scoring with regime-conditional weights + anti-staleness.
 
@@ -45,8 +46,9 @@ def _pass1_filter(
     Scores each ticker on:
     - |changesPercentage| (big movers)
     - volume / avgVolume (flow surge)
-    Takes union of top 25 by each dimension, capped at top_n.
-    Ensures minimum diversity (at least 5 with volume data).
+    - quote movement proxy (52w range width + intraday range) so names that
+      reliably move survive a quiet session
+    Takes the union of the top slice from each dimension, capped at top_n.
     """
     # Pre-compute scores
     for q in quotes:
@@ -79,6 +81,16 @@ def _pass1_filter(
     # Top volume surges (flow signal)
     by_volume = sorted(quotes, key=lambda q: q["_vol_surge"], reverse=True)
     for q in by_volume[:30]:
+        sym = str(q.get("symbol", "")).upper()
+        if sym and sym not in seen:
+            seen.add(sym)
+            survivors.append(q)
+
+    # Persistent movers: wide 52w range / big intraday range. These are the names
+    # that deliver something to trade even when today happens to be quiet.
+    from lox.suggest.movers import quote_movement_proxy
+    by_movement = sorted(quotes, key=quote_movement_proxy, reverse=True)
+    for q in by_movement[:20]:
         sym = str(q.get("symbol", "")).upper()
         if sym and sym not in seen:
             seen.add(sym)
