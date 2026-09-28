@@ -601,3 +601,98 @@ def vol_factors_cmd(
     console.print("[dim]t-stat >2.0 indicates statistically meaningful edge. Q5 vs Q1 spread is what matters — a factor with no spread has no edge regardless of individual t-stats.[/dim]")
     console.print("[dim]Rebalances are spaced by the longest horizon tested to reduce (not eliminate) overlap; within-date names still share market/sector moves.[/dim]")
     console.print()
+
+
+# ── Vol-compression backtest ────────────────────────────────────────────────
+
+@app.command("vol-compression")
+def vol_compression_cmd(
+    since: str = typer.Option("", "--since", help="Start date like 2022-06-01 (default: 3.5 years ago, to allow a 1yr own-history lookback)"),
+    universe: str = typer.Option("sp500", "--universe", help="sp500 | dow30 | scan"),
+    horizon: int = typer.Option(10, "--horizon", help="Primary holding period (business days) to display"),
+    lookback: int = typer.Option(252, "--lookback", help="Trading days of own-history used to rank vol compression"),
+) -> None:
+    """
+    "About to experience high volatility" backtest — does a stock's vol
+    being compressed relative to ITS OWN recent history predict a bigger
+    forward move / realized-vol expansion? Mirror image of `vol-factors`,
+    which asks about names already-volatile right now.
+    """
+    import datetime
+    from lox.config import load_settings
+    from lox.universe.sp500 import fetch_sp500_symbols, fetch_dow30_symbols, build_scan_universe
+    from lox.backtest.vol_factors import fetch_universe_closes, run_vol_compression_backtest
+
+    console = Console()
+    settings = load_settings()
+
+    today = date.today()
+    since_date = datetime.date.fromisoformat(since) if since else today - timedelta(days=int(365 * 3.5))
+
+    if universe == "dow30":
+        symbols = fetch_dow30_symbols(settings)
+    elif universe == "scan":
+        symbols = build_scan_universe(settings)
+    else:
+        symbols = fetch_sp500_symbols(settings)
+
+    if not symbols:
+        console.print("[red]Universe fetch returned no symbols (check FMP_API_KEY).[/red]")
+        raise typer.Exit(1)
+
+    console.print(Panel(
+        Text(f"Universe: {universe} ({len(symbols)} tickers)  ·  Since: {since_date}  ·  Own-history lookback: {lookback}d", style="dim"),
+        title="[bold]VOL-COMPRESSION BACKTEST[/bold]",
+        border_style="bright_blue",
+    ))
+    console.print("[yellow]Q1 = most compressed vs own history (\"coiled\"). Q5 = already at its own recent vol high.[/yellow]")
+    console.print()
+
+    with console.status(f"Fetching {len(symbols)} tickers + SPY (cold cache = slow first run)…"):
+        spy_df = fetch_universe_closes(settings=settings, symbols=["SPY"], start=str(since_date))
+        spy = spy_df["SPY"] if "SPY" in spy_df.columns else None
+        closes = fetch_universe_closes(settings=settings, symbols=symbols, start=str(since_date))
+
+    if closes.empty:
+        console.print("[red]No price data returned.[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[dim]{closes.shape[1]} tickers with price history, {closes.shape[0]} trading days.[/dim]")
+    console.print()
+
+    with console.status("Ranking own-history vol regime + running walk-forward backtest (this is slower than vol-factors — 252d rolling percentile per ticker)…"):
+        results = run_vol_compression_backtest(closes, spy, lookback=lookback, horizons=(5, 10, 20))
+
+    if not results:
+        console.print("[yellow]No results — need at least ~1.5yr of history before --since for the lookback window to fill.[/yellow]")
+        raise typer.Exit(0)
+
+    table = Table(box=None, padding=(0, 2), show_header=True, header_style="bold dim", expand=False)
+    table.add_column("Quintile",       width=16, no_wrap=True)
+    table.add_column("N",              width=6,  justify="right")
+    table.add_column("Avg |Move|",     width=11, justify="right")
+    table.add_column(f"Avg {horizon}d", width=9,  justify="right")
+    table.add_column("Alpha",          width=8,  justify="right")
+    table.add_column("Fwd Vol Ratio",  width=14, justify="right")
+    table.add_column("% Vol Expanded", width=14, justify="right")
+
+    q_label = {1: "Q1 (compressed)", 2: "Q2", 3: "Q3", 4: "Q4", 5: "Q5 (expanded)"}
+
+    for r in [r for r in results if r.horizon == horizon]:
+        ratio_style = "green" if r.avg_fwd_vol_ratio >= 1.0 else "red"
+        table.add_row(
+            q_label.get(r.quintile, str(r.quintile)),
+            str(r.n),
+            f"{r.avg_abs_move:.1f}%",
+            Text(_fmt_return(r.avg_return), style="green" if r.avg_return >= 0 else "red"),
+            Text(_fmt_return(r.avg_alpha) if not math.isnan(r.avg_alpha) else "—",
+                 style="green" if (not math.isnan(r.avg_alpha) and r.avg_alpha >= 0) else "red"),
+            Text(f"{r.avg_fwd_vol_ratio:.2f}×" if not math.isnan(r.avg_fwd_vol_ratio) else "—", style=ratio_style),
+            f"{r.pct_vol_expanded:.0f}%" if not math.isnan(r.pct_vol_expanded) else "—",
+        )
+
+    console.print(table)
+    console.print()
+    console.print("[dim]Fwd Vol Ratio = realized vol over the holding period ÷ realized vol at entry. >1× means vol expanded as predicted.[/dim]")
+    console.print("[dim]Compare Q1 vs Q5 avg |Move| and Fwd Vol Ratio — if Q1 doesn't show bigger forward moves/vol expansion than Q5, compression isn't predictive here.[/dim]")
+    console.print()

@@ -32,6 +32,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 
+import pandas as pd
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -64,15 +65,24 @@ def voltrades(
     vol_top_pct: float = typer.Option(0.2, "--vol-top-pct", help="Fraction of universe kept as 'most volatile'"),
     min_price: float = typer.Option(10.0, "--min-price", help="Minimum stock price (options liquidity floor)"),
     target_dte: int = typer.Option(35, "--dte", help="Target days-to-expiry for the suggested call"),
+    earnings_window: int = typer.Option(21, "--earnings-window", help="Flag upcoming earnings within this many days"),
     no_options: bool = typer.Option(False, "--no-options", help="Skip live option chain lookups (just rank stocks)"),
 ) -> None:
-    """Rank the most volatile names in the universe by validated momentum; suggest a near-ATM call for each."""
+    """
+    Rank the most volatile names in the universe by validated momentum, and
+    make the FULL vol picture clear for each: is this name's vol already
+    elevated or still compressed (about to move — see `backtest
+    vol-compression`), and if it has earnings coming up, is the option
+    market pricing more or less move than its own history (see `voltrades
+    earnings`)? One command, three signals, so you're not juggling three.
+    """
     if ctx.invoked_subcommand is not None:
         return
 
     from lox.config import load_settings
     from lox.universe.sp500 import fetch_sp500_symbols, fetch_dow30_symbols, build_scan_universe
-    from lox.backtest.vol_factors import fetch_universe_closes, realized_vol, momentum, rsi
+    from lox.backtest.vol_factors import fetch_universe_closes, realized_vol, momentum, rsi, latest_vol_percentile
+    from lox.backtest.earnings_vol import historical_earnings_moves, implied_move_pct, classify_richness
 
     console = Console()
     settings = load_settings()
@@ -88,7 +98,10 @@ def voltrades(
         console.print("[red]Universe fetch returned no symbols (check FMP_API_KEY).[/red]")
         raise typer.Exit(1)
 
-    lookback_start = date.today() - timedelta(days=200)  # buffer for 60d momentum + 20d vol window
+    # 430 calendar days ≈ 290 trading days: enough for the 252d own-history
+    # vol-percentile window (latest_vol_percentile) plus the 20d RV window
+    # it's built from, with a buffer for holidays/gaps.
+    lookback_start = date.today() - timedelta(days=430)
     with console.status(f"Fetching {len(symbols)} tickers…"):
         closes = fetch_universe_closes(settings=settings, symbols=symbols, start=str(lookback_start))
 
@@ -100,6 +113,7 @@ def voltrades(
     mom20 = momentum(closes, 20)
     mom60 = momentum(closes, 60)
     r14 = rsi(closes, 14)
+    vpr = latest_vol_percentile(closes, 20, 252)  # own-history vol regime, 0=compressed, 1=elevated
 
     vol_row = rv.iloc[-1]
     price_row = closes.iloc[-1]
@@ -125,6 +139,7 @@ def voltrades(
     m60r = m60[common].rank(pct=True)
     score = ((m20r + m60r) / 2.0).sort_values(ascending=False)
     picks = list(score.head(top_n).items())
+    pick_syms = [sym for sym, _ in picks]
 
     console.print(Panel(
         Text(
@@ -135,12 +150,36 @@ def voltrades(
         title="[bold]LOX VOLTRADES — Vol-Momentum Picker[/bold]",
         border_style="bright_blue",
     ))
-    console.print("[yellow]Backtested factor: underlying momentum within high-vol names (t-stat 5-8, see `lox backtest vol-factors`).[/yellow]")
-    console.print("[yellow]NOT backtested: option contract economics (premium, IV crush, spread) — live chain context only.[/yellow]")
+    console.print("[yellow]Momentum (Score) is the validated directional edge (t-stat 5-8, `lox backtest vol-factors`).[/yellow]")
+    console.print("[yellow]Vol Regime is descriptive, not directional (`lox backtest vol-compression`): COMPRESSED predicts bigger realized-vol swings ahead, not a bigger net move.[/yellow]")
+    console.print("[yellow]Earnings richness is a live pricing check, not backtested (`lox voltrades earnings`) — no historical options/IV data exists in lox.[/yellow]")
     console.print()
+
+    # ── Upcoming earnings for this pick list only (cheap — ~top_n tickers) ────
+    upcoming_earnings: dict[str, date] = {}
+    try:
+        from lox.altdata.fmp import fetch_earnings_calendar
+        today = date.today()
+        to_date = today + timedelta(days=earnings_window)
+        with console.status("Checking upcoming earnings for the pick list…"):
+            cal_rows = fetch_earnings_calendar(settings=settings, tickers=pick_syms, from_date=str(today), to_date=str(to_date))
+        for r in cal_rows:
+            sym = str(r.get("symbol") or "").strip().upper()
+            d = r.get("date")
+            if not sym or not d:
+                continue
+            try:
+                edate = pd.Timestamp(str(d)[:10]).date()
+            except Exception:
+                continue
+            if sym not in upcoming_earnings or edate < upcoming_earnings[sym]:
+                upcoming_earnings[sym] = edate
+    except Exception:
+        pass
 
     # ── Live option chain lookups (optional) ─────────────────────────────────
     contracts: dict[str, object] = {}
+    earnings_labels: dict[str, str] = {}
     if not no_options:
         from lox.data.alpaca import make_clients, fetch_option_chain, to_candidates
 
@@ -156,44 +195,88 @@ def voltrades(
                 try:
                     chain = fetch_option_chain(data_client, sym, feed=settings.alpaca_options_feed)
                     cands = list(to_candidates(chain, sym))
-                    return sym, _pick_call_contract(cands, target_dte)
                 except Exception:
-                    return sym, None
+                    cands = []
+                contract = _pick_call_contract(cands, target_dte) if cands else None
+
+                earn_label = None
+                if sym in upcoming_earnings and cands:
+                    edate = upcoming_earnings[sym]
+                    spot = price_row.get(sym)
+                    trailing_vol = vol_row.get(sym)
+                    try:
+                        hist_moves = historical_earnings_moves(settings=settings, ticker=sym, closes=closes[sym])
+                    except Exception:
+                        hist_moves = []
+                    if len(hist_moves) >= 4 and spot:
+                        med = sorted(hist_moves)[len(hist_moves) // 2]
+                        _, _, implied = implied_move_pct(
+                            cands, float(spot), edate,
+                            daily_vol_annualized=float(trailing_vol) if trailing_vol else None,
+                        )
+                        if implied is not None and med > 0:
+                            ratio = implied / med
+                            earn_label = f"{edate.strftime('%m/%d')} {classify_richness(ratio)} ({ratio:.1f}×)"
+                    if earn_label is None:
+                        earn_label = f"{edate.strftime('%m/%d')} (no hist. data)"
+
+                return sym, contract, earn_label
 
             with console.status(f"Pulling live option chains for {len(picks)} names…"):
                 with ThreadPoolExecutor(max_workers=6) as ex:
-                    futures = [ex.submit(_fetch, sym) for sym, _ in picks]
+                    futures = [ex.submit(_fetch, sym) for sym in pick_syms]
                     for fut in as_completed(futures):
-                        sym, contract = fut.result()
+                        sym, contract, earn_label = fut.result()
                         if contract is not None:
                             contracts[sym] = contract
+                        if earn_label is not None:
+                            earnings_labels[sym] = earn_label
 
     # ── Table ─────────────────────────────────────────────────────────────────
     table = Table(box=None, padding=(0, 2), show_header=True, header_style="bold dim", expand=False)
-    table.add_column("#",        width=3,  justify="right")
-    table.add_column("Ticker",   width=8,  no_wrap=True)
-    table.add_column("Score",    width=6,  justify="right")
-    table.add_column("Mom20d",   width=8,  justify="right")
-    table.add_column("Mom60d",   width=8,  justify="right")
-    table.add_column("RSI14",    width=6,  justify="right")
-    table.add_column("Price",    width=9,  justify="right")
+    table.add_column("#",          width=3,  justify="right")
+    table.add_column("Ticker",     width=8,  no_wrap=True)
+    table.add_column("Score",      width=6,  justify="right")
+    table.add_column("Vol Regime", width=17, no_wrap=True)
+    table.add_column("RSI14",      width=6,  justify="right")
+    table.add_column("Price",      width=9,  justify="right")
+    table.add_column("Earnings",   width=20, no_wrap=True)
     if not no_options:
         table.add_column("Suggested Call", width=28)
 
     for i, (sym, sc) in enumerate(picks, start=1):
-        m20v = m20.get(sym)
-        m60v = m60.get(sym)
         rsiv = r14.iloc[-1].get(sym)
         px = price_row.get(sym)
+        vpr_v = vpr.get(sym)
+
+        if vpr_v is None or vpr_v != vpr_v:
+            vol_regime = "—"
+            vol_style = "dim"
+        elif vpr_v < 0.3:
+            vol_regime = f"COMPRESSED {vpr_v*100:.0f}%ile"
+            vol_style = "bold cyan"
+        elif vpr_v > 0.7:
+            vol_regime = f"ELEVATED {vpr_v*100:.0f}%ile"
+            vol_style = "bold yellow"
+        else:
+            vol_regime = f"NEUTRAL {vpr_v*100:.0f}%ile"
+            vol_style = "white"
+
+        earn_str = earnings_labels.get(sym, "—")
+        earn_style = "white"
+        if "RICH" in earn_str:
+            earn_style = "bold red"
+        elif "CHEAP" in earn_str:
+            earn_style = "bold green"
 
         row = [
             str(i),
             f"[bold]{sym}[/bold]",
             f"{sc:.2f}",
-            f"{m20v*100:+.1f}%" if m20v is not None else "—",
-            f"{m60v*100:+.1f}%" if m60v is not None else "—",
+            Text(vol_regime, style=vol_style),
             f"{rsiv:.0f}" if rsiv is not None and rsiv == rsiv else "—",
             f"${px:.2f}" if px is not None else "—",
+            Text(earn_str, style=earn_style),
         ]
 
         if not no_options:
@@ -211,6 +294,180 @@ def voltrades(
     console.print(table)
     console.print()
     console.print(
-        "[dim]Score = avg percentile rank of 20d/60d momentum within the high-vol slice. "
-        "Higher = stronger validated edge per the backtest.[/dim]"
+        "[dim]Score = momentum percentile within the high-vol slice (validated edge). "
+        "Vol Regime = this name's realized vol vs its OWN trailing 252d history — "
+        "COMPRESSED (<30%ile) historically saw vol expand 1.4× next, ELEVATED (>70%ile) faded to 0.76×. "
+        "Earnings = live implied move vs historical earnings move, only shown if reporting within "
+        f"{earnings_window}d.[/dim]"
     )
+
+
+# ── Earnings vol-pricing checker ────────────────────────────────────────────
+
+@app.command("earnings")
+def voltrades_earnings(
+    universe: str = typer.Option("sp500", "--universe", help="sp500 | dow30 | scan"),
+    days_ahead: int = typer.Option(10, "--days-ahead", help="Look for earnings within this many calendar days"),
+    min_history: int = typer.Option(4, "--min-history", help="Minimum past earnings prints required to trust the historical move stat"),
+) -> None:
+    """
+    "Don't overpay for vol" checker: for names reporting earnings soon,
+    compares the LIVE option-implied move against each ticker's own
+    historical earnings-day moves. No historical options/IV data exists in
+    lox, so this uses realized price history as the "was this fair"
+    reference instead — a live decision aid, not a backtested edge.
+    """
+    from lox.config import load_settings
+    from lox.universe.sp500 import fetch_sp500_symbols, fetch_dow30_symbols, build_scan_universe
+    from lox.backtest.vol_factors import fetch_universe_closes, realized_vol
+    from lox.backtest.earnings_vol import EarningsVolCheck, historical_earnings_moves, implied_move_pct, classify_richness
+    from lox.altdata.fmp import fetch_earnings_calendar
+    from lox.data.alpaca import make_clients, fetch_option_chain, to_candidates
+
+    console = Console()
+    settings = load_settings()
+
+    if universe == "dow30":
+        symbols = fetch_dow30_symbols(settings)
+    elif universe == "scan":
+        symbols = build_scan_universe(settings)
+    else:
+        symbols = fetch_sp500_symbols(settings)
+
+    if not symbols:
+        console.print("[red]Universe fetch returned no symbols (check FMP_API_KEY).[/red]")
+        raise typer.Exit(1)
+
+    today = date.today()
+    to_date = today + timedelta(days=days_ahead)
+
+    with console.status(f"Fetching earnings calendar ({today} → {to_date})…"):
+        cal_rows = fetch_earnings_calendar(settings=settings, tickers=symbols, from_date=str(today), to_date=str(to_date))
+
+    upcoming: dict[str, date] = {}
+    for r in cal_rows:
+        sym = str(r.get("symbol") or "").strip().upper()
+        d = r.get("date")
+        if not sym or not d:
+            continue
+        try:
+            edate = pd.Timestamp(str(d)[:10]).date()
+        except Exception:
+            continue
+        if sym not in upcoming or edate < upcoming[sym]:
+            upcoming[sym] = edate
+
+    if not upcoming:
+        console.print(f"[yellow]No upcoming earnings found for this universe in the next {days_ahead} days.[/yellow]")
+        raise typer.Exit(0)
+
+    console.print(Panel(
+        Text(f"Universe: {universe}  ·  {len(upcoming)} names reporting within {days_ahead} days", style="dim"),
+        title="[bold]LOX VOLTRADES EARNINGS — Don't Overpay for Vol[/bold]",
+        border_style="bright_blue",
+    ))
+    console.print("[yellow]Compares live implied move vs each name's OWN historical earnings-day moves — a decision aid, not a backtested edge (no historical options/IV data exists in lox).[/yellow]")
+    console.print()
+
+    lookback_start = today - timedelta(days=365 * 4)
+    with console.status(f"Fetching price history for {len(upcoming)} names…"):
+        closes = fetch_universe_closes(settings=settings, symbols=list(upcoming.keys()), start=str(lookback_start))
+
+    try:
+        _, data_client = make_clients(settings)
+    except Exception as exc:
+        console.print(f"[red]Alpaca option client unavailable: {exc}[/red]")
+        raise typer.Exit(1)
+
+    rv20 = realized_vol(closes, 20)
+    checks: list[EarningsVolCheck] = []
+
+    def _one(sym: str, edate: date):
+        if sym not in closes.columns:
+            return None
+        hist_moves = historical_earnings_moves(settings=settings, ticker=sym, closes=closes[sym])
+        if len(hist_moves) < min_history:
+            return None
+        med = sorted(hist_moves)[len(hist_moves) // 2]
+        avg = sum(hist_moves) / len(hist_moves)
+
+        try:
+            chain = fetch_option_chain(data_client, sym, feed=settings.alpaca_options_feed)
+            cands = list(to_candidates(chain, sym))
+        except Exception:
+            cands = []
+
+        spot = closes[sym].dropna().iloc[-1] if sym in closes.columns and not closes[sym].dropna().empty else None
+        trailing_vol = rv20[sym].dropna().iloc[-1] if sym in rv20.columns and not rv20[sym].dropna().empty else None
+        raw_move, expiry_used, implied = (None, None, None)
+        if cands and spot:
+            raw_move, expiry_used, implied = implied_move_pct(
+                cands, float(spot), edate, daily_vol_annualized=float(trailing_vol) if trailing_vol else None,
+            )
+
+        days_past = (expiry_used - edate).days if expiry_used else None
+        ratio = (implied / med) if (implied is not None and med > 0) else None
+        return EarningsVolCheck(
+            ticker=sym, earnings_date=edate, n_history=len(hist_moves),
+            median_historical_move_pct=round(med, 2), avg_historical_move_pct=round(avg, 2),
+            raw_straddle_move_pct=round(raw_move, 2) if raw_move is not None else None,
+            implied_move_pct=round(implied, 2) if implied is not None else None,
+            expiry_used=expiry_used,
+            days_past_event=days_past,
+            richness_ratio=round(ratio, 2) if ratio is not None else None,
+            label=classify_richness(ratio),
+        )
+
+    with console.status(f"Pulling live option chains for {len(upcoming)} names…"):
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            futures = [ex.submit(_one, sym, edate) for sym, edate in upcoming.items()]
+            for fut in as_completed(futures):
+                r = fut.result()
+                if r is not None:
+                    checks.append(r)
+
+    if not checks:
+        console.print("[yellow]No names had enough earnings history + live option data to compare.[/yellow]")
+        raise typer.Exit(0)
+
+    # Cheapest (most underpriced vs history) first; names with no implied-move data go last.
+    checks.sort(key=lambda c: (c.richness_ratio is None, c.richness_ratio if c.richness_ratio is not None else 0))
+
+    table = Table(box=None, padding=(0, 2), show_header=True, header_style="bold dim", expand=False)
+    table.add_column("Ticker",        width=8,  no_wrap=True)
+    table.add_column("Earnings",      width=11)
+    table.add_column("Hist Med Move", width=13, justify="right")
+    table.add_column("Implied (adj)", width=13, justify="right")
+    table.add_column("Ratio",         width=7,  justify="right")
+    table.add_column("Read",          width=8)
+    table.add_column("Expiry +Nd",    width=11, justify="right")
+    table.add_column("N hist",        width=7,  justify="right")
+
+    label_style = {"CHEAP": "bold green", "FAIR": "white", "RICH": "bold red", "NO DATA": "dim"}
+
+    for c in checks:
+        expiry_str = f"+{c.days_past_event}d" if c.days_past_event is not None else "—"
+        expiry_style = "yellow" if (c.days_past_event or 0) > 7 else "dim"
+        table.add_row(
+            f"[bold]{c.ticker}[/bold]",
+            str(c.earnings_date),
+            f"{c.median_historical_move_pct:.1f}%",
+            f"{c.implied_move_pct:.1f}%" if c.implied_move_pct is not None else "—",
+            f"{c.richness_ratio:.2f}×" if c.richness_ratio is not None else "—",
+            Text(c.label, style=label_style.get(c.label, "white")),
+            Text(expiry_str, style=expiry_style),
+            str(c.n_history),
+        )
+
+    console.print(table)
+    console.print()
+    console.print(
+        "[dim]Ratio = implied (event-adjusted) move ÷ historical median earnings move. "
+        "CHEAP (<0.85×) = market pricing less move than usual; RICH (>1.2×) = pricing more than usual.[/dim]"
+    )
+    console.print(
+        "[dim]Expiry +Nd = days between the earnings date and the nearest available expiry. "
+        "When >7d (no weeklies), \"Implied (adj)\" backs the extra weeks' ordinary vol out using trailing realized vol — "
+        "trust ratios less when this gap is large, since the adjustment is an estimate, not a market price.[/dim]"
+    )
+    console.print("[dim]Historical move = 2-day close-to-close span around each past print (bmo/amc timing not always reliable in the data).[/dim]")

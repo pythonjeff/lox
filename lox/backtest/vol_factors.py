@@ -107,6 +107,34 @@ def momentum(closes: pd.DataFrame, window: int) -> pd.DataFrame:
     return closes / closes.shift(window) - 1.0
 
 
+def vol_percentile_rank(closes: pd.DataFrame, window: int = 20, lookback: int = 252) -> pd.DataFrame:
+    """Where today's trailing `window`-day realized vol sits within each
+    ticker's OWN trailing `lookback`-day history of that same series.
+
+    0.0 = today's vol is the lowest it's been in the lookback window
+    ("coiled" / compressed). 1.0 = today's vol is the highest it's been
+    (already expanded). This is a per-ticker, own-history measure — unlike
+    realized_vol()'s cross-sectional ranking, it doesn't compare tickers
+    against each other, just each ticker against its own recent past.
+    Trailing-only (pandas .rolling), no lookahead.
+    """
+    rv = realized_vol(closes, window)
+    return rv.rolling(lookback).apply(lambda arr: (arr[-1] >= arr).mean(), raw=True)
+
+
+def latest_vol_percentile(closes: pd.DataFrame, window: int = 20, lookback: int = 252) -> pd.Series:
+    """Same idea as vol_percentile_rank, but only for the most recent date —
+    for live/snapshot use (e.g. a picker) where recomputing the full
+    historical rolling series for every date is unnecessary work.
+    """
+    rv = realized_vol(closes, window)
+    tail = rv.iloc[-lookback:]
+    if tail.empty:
+        return pd.Series(dtype=float)
+    latest = tail.iloc[-1]
+    return tail.le(latest).mean()
+
+
 def rsi(closes: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     delta = closes.diff()
     gain = delta.clip(lower=0)
@@ -257,3 +285,138 @@ def _tstat(values: list[float]) -> float:
     if std == 0:
         return 0.0
     return round(mean / (std / math.sqrt(n)), 3)
+
+
+# ── Vol-compression → expansion backtest ────────────────────────────────────
+# "About to experience high volatility": does a stock currently in a
+# compressed state (relative to ITS OWN recent history — not the cross-
+# sectional universe) tend to move more / see realized vol expand next?
+
+@dataclass
+class VolRegimeBucketResult:
+    quintile: int       # 1 = most compressed (own-history), 5 = most expanded
+    horizon: int
+    n: int
+    avg_abs_move: float          # magnitude proxy for option payoff
+    avg_return: float
+    avg_alpha: float
+    avg_fwd_vol_ratio: float     # forward realized vol / entry realized vol (>1 = vol expanded)
+    pct_vol_expanded: float      # % of cases where forward RV > entry RV
+    t_stat_abs_move: float
+
+
+def run_vol_compression_backtest(
+    closes: pd.DataFrame,
+    spy: pd.Series | None = None,
+    *,
+    vol_window: int = 20,
+    lookback: int = 252,
+    horizons: tuple[int, ...] = (5, 10, 20),
+    min_price: float = 5.0,
+) -> list[VolRegimeBucketResult]:
+    """
+    At each rebalance date T (data <= T only), bucket ALL eligible tickers
+    into quintiles by vol_percentile_rank (their OWN-history vol regime, not
+    a cross-sectional vol screen — this is the inverse question from
+    run_vol_factor_backtest: not "which names are already the most volatile
+    right now" but "which names' vol is unusually compressed vs their own
+    past, and does that predict expansion." Rebalances spaced by max(horizons).
+    """
+    rv = realized_vol(closes, vol_window)
+    vpr = vol_percentile_rank(closes, vol_window, lookback)
+
+    if spy is not None:
+        spy = spy.reindex(closes.index)
+
+    dates = closes.index
+    min_data = lookback + vol_window + 5
+    step = max(horizons)
+    rebalance_dates = dates[min_data::step]
+
+    records: list[tuple[int, int, float, float, float, float]] = []  # q,h,ret,alpha,fwd_vol_ratio,expanded
+
+    for t in rebalance_dates:
+        pos = dates.get_loc(t)
+        if pos + max(horizons) + 1 >= len(dates):
+            continue
+        entry_pos = pos + 1
+
+        vpr_row = vpr.iloc[pos]
+        entry_rv_row = rv.iloc[pos]
+        price_row = closes.iloc[pos]
+        eligible = [
+            s for s in vpr_row.dropna().index
+            if price_row.get(s, 0) >= min_price and pd.notna(entry_rv_row.get(s)) and entry_rv_row.get(s, 0) > 0
+        ]
+        if len(eligible) < 20:
+            continue
+
+        frow = vpr_row[eligible]
+        try:
+            quintiles = pd.qcut(frow, 5, labels=False, duplicates="drop") + 1
+        except Exception:
+            continue
+
+        entry_prices = closes.iloc[entry_pos]
+        spy_entry = spy.iloc[entry_pos] if spy is not None and entry_pos < len(spy) else None
+
+        for h in horizons:
+            exit_pos = entry_pos + h
+            if exit_pos >= len(dates):
+                continue
+            exit_prices = closes.iloc[exit_pos]
+            spy_exit = spy.iloc[exit_pos] if spy is not None and exit_pos < len(spy) else None
+            spy_ret = None
+            if spy_entry is not None and spy_exit is not None and pd.notna(spy_entry) and pd.notna(spy_exit) and spy_entry > 0:
+                spy_ret = (spy_exit / spy_entry - 1.0) * 100.0
+
+            for sym, q in quintiles.items():
+                ep = entry_prices.get(sym)
+                xp = exit_prices.get(sym)
+                if ep is None or xp is None or pd.isna(ep) or pd.isna(xp) or ep <= 0:
+                    continue
+                fwd_ret = (xp / ep - 1.0) * 100.0
+                alpha = (fwd_ret - spy_ret) if spy_ret is not None else float("nan")
+
+                # Forward realized vol over [entry_pos, exit_pos], vs entry RV.
+                window_px = closes[sym].iloc[entry_pos:exit_pos + 1].dropna()
+                fwd_vol_ratio = float("nan")
+                if len(window_px) >= max(3, h // 2):
+                    fwd_log_ret = np.log(window_px / window_px.shift(1)).dropna()
+                    if len(fwd_log_ret) >= 2 and fwd_log_ret.std() == fwd_log_ret.std():  # not NaN
+                        fwd_rv = float(fwd_log_ret.std()) * math.sqrt(252)
+                        entry_rv = entry_rv_row.get(sym)
+                        if entry_rv and entry_rv > 0:
+                            fwd_vol_ratio = fwd_rv / entry_rv
+
+                records.append((int(q), h, fwd_ret, alpha, fwd_vol_ratio, 1.0 if (fwd_vol_ratio == fwd_vol_ratio and fwd_vol_ratio > 1.0) else 0.0))
+
+    results: list[VolRegimeBucketResult] = []
+    by_bucket: dict[tuple[int, int], list[tuple[float, float, float, float]]] = {}
+    for q, h, ret, alpha, fvr, exp in records:
+        by_bucket.setdefault((q, h), []).append((ret, alpha, fvr, exp))
+
+    for (q, h), rows in by_bucket.items():
+        n = len(rows)
+        if n < 5:
+            continue
+        rets = [r for r, _, _, _ in rows]
+        alphas = [a for _, a, _, _ in rows if not math.isnan(a)]
+        fvrs = [f for _, _, f, _ in rows if not math.isnan(f)]
+        exps = [e for _, _, _, e in rows]
+        avg_abs = sum(abs(r) for r in rets) / n
+        avg_ret = sum(rets) / n
+        avg_alpha = sum(alphas) / len(alphas) if alphas else float("nan")
+        avg_fvr = sum(fvrs) / len(fvrs) if fvrs else float("nan")
+        pct_exp = sum(exps) / len(exps) * 100.0 if exps else float("nan")
+        t = _tstat([abs(r) for r in rets])  # t-stat on whether |move| differs from 0 (always will); used for bucket comparison context
+
+        results.append(VolRegimeBucketResult(
+            q, h, n, round(avg_abs, 2), round(avg_ret, 2),
+            round(avg_alpha, 2) if alphas else float("nan"),
+            round(avg_fvr, 3) if fvrs else float("nan"),
+            round(pct_exp, 1) if exps else float("nan"),
+            t,
+        ))
+
+    return sorted(results, key=lambda r: (r.horizon, r.quintile))

@@ -344,7 +344,13 @@ def fetch_earnings_calendar(
     syms = [t.strip().upper() for t in tickers if t and t.strip()]
     if not syms:
         return []
-    key = f"fmp_earnings_calendar_{','.join(sorted(syms))}_{from_date}_{to_date}"
+    # Hash the ticker set instead of joining it into the filename — a large
+    # universe (e.g. all ~500 S&P names) joined raw blows past the OS
+    # filename length limit, write_cache() throws, and the broad except
+    # below silently treats it as "endpoint failed" and returns [].
+    import hashlib
+    syms_hash = hashlib.sha1(",".join(sorted(syms)).encode()).hexdigest()[:12]
+    key = f"fmp_earnings_calendar_{syms_hash}_{len(syms)}_{from_date}_{to_date}"
     p = cache_path(key)
     cached = read_cache(p, max_age=cache_max_age)
     if isinstance(cached, list):
