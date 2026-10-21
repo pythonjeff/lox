@@ -64,4 +64,15 @@ MC_CACHE_LOCK = threading.Lock()
 MC_REFRESH_INTERVAL = 60 * 60  # 1 hour
 
 # ── Admin Secret ──
-ADMIN_SECRET = os.environ.get("PALMER_ADMIN_SECRET", "lox-admin-2026")
+# No default: if unset, secret-based admin access is disabled (fail closed).
+ADMIN_SECRET = os.environ.get("PALMER_ADMIN_SECRET") or os.environ.get("ADMIN_SECRET") or None
+
+
+def is_admin_request(secret: str) -> bool:
+    """True for a logged-in admin user, or a request carrying the configured admin secret."""
+    import hmac
+    from flask_login import current_user
+
+    if getattr(current_user, "is_admin", False):
+        return True
+    return bool(ADMIN_SECRET) and hmac.compare_digest(secret.encode(), ADMIN_SECRET.encode())

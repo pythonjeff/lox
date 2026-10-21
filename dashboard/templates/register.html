@@ -259,6 +259,7 @@
 
             <form method="POST" action="{{ url_for('auth.register', invite=invite.token) }}">
                 <input type="hidden" name="invite" value="{{ invite.token }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                     <div class="form-group">
