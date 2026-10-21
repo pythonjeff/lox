@@ -24,6 +24,7 @@ from flask import Flask
 from flask_login import LoginManager
 
 from dashboard.models import db, bcrypt, User
+from dashboard.security import csrf, limiter
 from dashboard.auth import auth as auth_blueprint
 from dashboard.routes.pages import pages
 from dashboard.routes.positions_api import positions_api
@@ -33,7 +34,14 @@ from dashboard.routes.market_api import market_api
 # Flask app setup
 # ═══════════════════════════════════════════════════════════════
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "lox-dev-secret-change-me")
+_secret_key = os.environ.get("FLASK_SECRET_KEY")
+if not _secret_key:
+    # No guessable default: an unset key gets a random per-process one (sessions reset on
+    # restart). Set FLASK_SECRET_KEY in production so sessions survive restarts/multiple workers.
+    import secrets
+    _secret_key = secrets.token_hex(32)
+    print("[Dashboard] WARNING: FLASK_SECRET_KEY not set — using a temporary random key.")
+app.config["SECRET_KEY"] = _secret_key
 
 _db_url = os.environ.get(
     "DATABASE_URL",
@@ -50,6 +58,16 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 300
 # ═══════════════════════════════════════════════════════════════
 db.init_app(app)
 bcrypt.init_app(app)
+csrf.init_app(app)
+limiter.init_app(app)
+
+# Heroku terminates TLS at its router: trust one proxy hop so rate limiting sees the real client IP
+# and cookies/URLs use https.
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("DYNO"))  # only Heroku is https
 
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"

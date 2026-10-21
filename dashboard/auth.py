@@ -9,6 +9,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_user, logout_user, login_required, current_user
 
 from dashboard.models import db, User, UserSession, Invite
+from dashboard.security import limiter
 
 auth = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -16,6 +17,7 @@ auth = Blueprint("auth", __name__, url_prefix="/auth")
 # ============ LOGIN ============
 
 @auth.route("/login", methods=["GET", "POST"])
+@limiter.limit("10 per minute", methods=["POST"])
 def login():
     """Show login form / process login."""
     # Already authenticated — go to dashboard
@@ -62,6 +64,7 @@ def login():
 # ============ REGISTER (invite-only) ============
 
 @auth.route("/register", methods=["GET", "POST"])
+@limiter.limit("10 per minute", methods=["POST"])
 def register():
     """Invite-only registration. Requires a valid invite token in ?invite=<token>."""
     if current_user.is_authenticated:

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from dashboard.cache import (
     PALMER_CACHE, PALMER_CACHE_LOCK,
-    ADMIN_SECRET,
+    is_admin_request,
 )
 
 regime_api = Blueprint("regime_api", __name__)
@@ -125,8 +125,8 @@ def api_regime_analysis():
 def api_regime_analysis_force():
     """Admin-only: Force refresh Palmer's analysis."""
     secret = request.args.get("secret", "")
-    if secret != ADMIN_SECRET:
-        return jsonify({"error": "Unauthorized. Admin secret required."}), 403
+    if not is_admin_request(secret):
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
     from dashboard.palmer import refresh_palmer_cache
     from flask import current_app
     refresh_palmer_cache(app=current_app._get_current_object())

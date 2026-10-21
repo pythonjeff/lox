@@ -1,13 +1,13 @@
 """Market data API routes: Monte Carlo, NAV, investors, news."""
 
 from flask import Blueprint, jsonify, request
-from flask_login import login_required
+from flask_login import login_required, current_user
 from datetime import datetime, timezone, timedelta
 
 from dashboard.cache import (
     MC_CACHE, MC_CACHE_LOCK,
     INVESTORS_CACHE, INVESTORS_CACHE_LOCK, INVESTORS_CACHE_TTL,
-    ADMIN_SECRET,
+    is_admin_request,
 )
 
 market_api = Blueprint("market_api", __name__)
@@ -30,8 +30,8 @@ def api_monte_carlo():
 def api_monte_carlo_force():
     """Admin-only: Force refresh Monte Carlo simulation."""
     secret = request.args.get("secret", "")
-    if secret != ADMIN_SECRET:
-        return jsonify({"error": "Unauthorized. Admin secret required."}), 403
+    if not is_admin_request(secret):
+        return jsonify({"error": "Unauthorized. Admin access required."}), 403
     from dashboard.monte_carlo import refresh_mc_cache
     refresh_mc_cache()
     return jsonify({"message": "Monte Carlo refreshed", "timestamp": datetime.now(timezone.utc).isoformat()})
@@ -95,12 +95,24 @@ def api_nav_history():
 @market_api.route('/api/investors')
 @login_required
 def api_investors():
-    """Investor ledger — LIVE updates."""
+    """Investor ledger — LIVE updates. Admins see everyone; investors see only their own row.
+
+    The shared cache holds the full ledger, so scoping happens per request, after the cache.
+    """
+    def _scoped(data: dict):
+        if getattr(current_user, "is_admin", False):
+            return data
+        code = getattr(current_user, "investor_code", None)
+        mine = [i for i in data.get("investors", []) if code and i.get("code") == code]
+        # Fund-level totals (total_capital, equity) are not another investor's data, but
+        # ownership percentages are only meaningful alongside the full list, so return the row as-is.
+        return {**{k: v for k, v in data.items() if k != "investors"}, "investors": mine}
+
     with INVESTORS_CACHE_LOCK:
         if INVESTORS_CACHE["data"] and INVESTORS_CACHE["timestamp"]:
             cache_age = (datetime.now(timezone.utc) - INVESTORS_CACHE["timestamp"]).total_seconds()
             if cache_age < INVESTORS_CACHE_TTL:
-                response = jsonify(INVESTORS_CACHE["data"])
+                response = jsonify(_scoped(INVESTORS_CACHE["data"]))
                 response.headers['Cache-Control'] = 'no-cache'
                 return response
     try:
@@ -109,13 +121,13 @@ def api_investors():
         with INVESTORS_CACHE_LOCK:
             INVESTORS_CACHE["data"] = data
             INVESTORS_CACHE["timestamp"] = datetime.now(timezone.utc)
-        response = jsonify(data)
+        response = jsonify(_scoped(data))
         response.headers['Cache-Control'] = 'no-cache'
         return response
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e), "investors": [], "fund_return": 0, "total_capital": 0})
+        return jsonify({"error": "Investor data unavailable", "investors": [], "fund_return": 0, "total_capital": 0})
 
 
 @market_api.route('/api/market-news')
