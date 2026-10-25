@@ -68,6 +68,30 @@ def fetch_option_chain(data_client: Any, ticker: str, *, feed: str | None = None
         req = OptionChainRequest(underlying_symbol=ticker)
     return data_client.get_option_chain(request_params=req)
 
+def fetch_open_interest(trading_client: Any, underlying: str, contracts: list[OptionCandidate]) -> dict[str, int]:
+    """Prior-day open interest by OCC symbol. The chain snapshot has none; the Trading API does."""
+    from alpaca.trading.requests import GetOptionContractsRequest
+
+    if not contracts:
+        return {}
+    strikes = [c.strike for c in contracts]
+    expiries = [c.expiry for c in contracts]
+    resp = trading_client.get_option_contracts(GetOptionContractsRequest(
+        underlying_symbols=[underlying],
+        expiration_date_gte=min(expiries),
+        expiration_date_lte=max(expiries),
+        strike_price_gte=str(min(strikes)),
+        strike_price_lte=str(max(strikes)),
+        type="call",
+        limit=1000,
+    ))
+    return {
+        r.symbol: int(r.open_interest)
+        for r in resp.option_contracts
+        if r.open_interest is not None
+    }
+
+
 def to_candidates(chain: dict[str, Any], ticker: str) -> Iterable[OptionCandidate]:
     from lox.utils.occ import parse_occ_option_symbol
 
